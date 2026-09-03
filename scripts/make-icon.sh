@@ -1,10 +1,9 @@
 #!/bin/sh
-# Renders resources/icon.svg into build/icon.png and build/icon.icns using only macOS tools.
+# Renders resources/eye.png into build/icon.png and build/icon.icns using only macOS tools.
 set -eu
 cd "$(dirname "$0")/.."
 mkdir -p build/icon.iconset
-qlmanage -t -s 1024 -o build resources/icon.svg >/dev/null 2>&1
-mv build/icon.svg.png build/icon.png
+swift scripts/make-icon.swift resources/eye.png build/icon.png
 for size in 16 32 128 256 512; do
   sips -z $size $size build/icon.png --out build/icon.iconset/icon_${size}x${size}.png >/dev/null
   double=$((size * 2))
