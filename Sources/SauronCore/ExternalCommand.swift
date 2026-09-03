@@ -8,6 +8,10 @@ public struct CommandResult: Sendable {
 }
 
 /// Runs an external executable asynchronously, capturing output.
+///
+/// Output goes to temporary files rather than pipes. A pipe would never reach end-of-file
+/// if the command leaves a daemon behind that inherits it, which is exactly what
+/// `tmux new-session` does when it starts a fresh server.
 public enum ExternalCommand {
     private static let logger = Logger(subsystem: "com.mattolson.sauron", category: "command")
 
@@ -24,19 +28,17 @@ public enum ExternalCommand {
         if let currentDirectory { process.currentDirectoryURL = currentDirectory }
         if let environment { process.environment = environment }
 
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
+        let stdoutFile = try OutputCapture()
+        let stderrFile = try OutputCapture()
+        process.standardOutput = stdoutFile.handle
+        process.standardError = stderrFile.handle
         process.standardInput = FileHandle.nullDevice
 
         logger.debug("run \(executable, privacy: .public) \(arguments.joined(separator: " "), privacy: .public)")
 
-        return try await withCheckedThrowingContinuation { continuation in
+        let exitCode: Int32 = try await withCheckedThrowingContinuation { continuation in
             process.terminationHandler = { proc in
-                let out = String(decoding: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-                let err = String(decoding: stderrPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-                continuation.resume(returning: CommandResult(stdout: out, stderr: err, exitCode: proc.terminationStatus))
+                continuation.resume(returning: proc.terminationStatus)
             }
             do {
                 try process.run()
@@ -44,6 +46,7 @@ public enum ExternalCommand {
                 continuation.resume(throwing: error)
             }
         }
+        return CommandResult(stdout: stdoutFile.finish(), stderr: stderrFile.finish(), exitCode: exitCode)
     }
 
     /// Runs the command and throws `SauronError.commandFailed` on a non-zero exit.
@@ -61,5 +64,28 @@ public enum ExternalCommand {
             throw SauronError.commandFailed(command: name, exitCode: result.exitCode, stderr: result.stderr)
         }
         return result.stdout
+    }
+}
+
+/// A temporary file that collects one output stream of a process.
+private final class OutputCapture {
+    let url: URL
+    let handle: FileHandle
+
+    init() throws {
+        url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sauron-cmd-\(UUID().uuidString)")
+        guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
+            throw SauronError.persistence("could not create temporary file for command output")
+        }
+        handle = try FileHandle(forWritingTo: url)
+    }
+
+    /// Closes the write handle, reads the captured text, and deletes the file.
+    func finish() -> String {
+        try? handle.close()
+        let data = (try? Data(contentsOf: url)) ?? Data()
+        try? FileManager.default.removeItem(at: url)
+        return String(decoding: data, as: UTF8.self)
     }
 }

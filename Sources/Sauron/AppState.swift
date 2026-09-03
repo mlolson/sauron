@@ -8,17 +8,31 @@ import os
 @MainActor
 @Observable
 final class AppState {
-    private static let logger = Logger(subsystem: "com.mattolson.sauron", category: "appstate")
+    static let logger = Logger(subsystem: "com.mattolson.sauron", category: "appstate")
 
     private(set) var projects: [Project] = []
+    private(set) var sessions: [Session] = []
+    /// tmux sessions with Sauron's prefix that have no record in sessions.json.
+    private(set) var orphanTmuxSessions: [String] = []
+    private(set) var toolPaths: ToolPaths?
     var selection: SidebarItem?
     var errorMessage: String?
     private(set) var isLoaded = false
 
-    private let persistence: Persistence
+    let persistence: Persistence
+    let paths: AppPaths
+    let terminals = TerminalRegistry()
+    private(set) var tmux: TmuxService?
+    private var livenessTask: Task<Void, Never>?
 
     init(persistence: Persistence) {
         self.persistence = persistence
+        self.paths = persistence.paths
+    }
+
+    var setupIsRequired: Bool {
+        guard let toolPaths else { return false }
+        return !toolPaths.missingRequired.isEmpty
     }
 
     // MARK: Loading
@@ -28,22 +42,65 @@ final class AppState {
         do {
             let config = try await persistence.loadConfig()
             projects = config.projects
+            sessions = try await persistence.loadSessions().sessions
             isLoaded = true
         } catch {
             Self.logger.error("load failed: \(error.localizedDescription, privacy: .public)")
             errorMessage = error.localizedDescription
         }
+        await resolveTools()
+        await reconcileSessions()
+        startLivenessPolling()
     }
 
-    private func persist() {
+    func resolveTools() async {
+        let resolved = await CLIResolver.resolve()
+        toolPaths = resolved
+        if let git = resolved.git { GitRepository.gitExecutable = git }
+        if let tmuxPath = resolved.tmux {
+            tmux = TmuxService(tmuxPath: tmuxPath, environment: CLIResolver.sessionEnvironment(path: resolved.path))
+        } else {
+            tmux = nil
+        }
+    }
+
+    func report(_ error: Error) {
+        Self.logger.error("\(error.localizedDescription, privacy: .public)")
+        errorMessage = error.localizedDescription
+    }
+
+    private func persistConfig() {
         let config = AppConfig(projects: projects)
         Task { await persistence.saveConfig(config) }
+    }
+
+    func persistSessions() {
+        let file = SessionsFile(sessions: sessions)
+        Task {
+            do {
+                try await persistence.saveSessions(file)
+            } catch {
+                report(error)
+            }
+        }
     }
 
     // MARK: Projects
 
     func project(id: UUID) -> Project? {
         projects.first { $0.id == id }
+    }
+
+    func session(id: UUID) -> Session? {
+        sessions.first { $0.id == id }
+    }
+
+    func sessions(for projectId: UUID?) -> [Session] {
+        sessions.filter { $0.projectId == projectId }
+    }
+
+    func aliveSessionCount(for projectId: UUID) -> Int {
+        sessions(for: projectId).filter(\.isAlive).count
     }
 
     /// Validates that `url` is inside a git repository and adds the repository root.
@@ -55,11 +112,10 @@ final class AppState {
             }
             let project = Project(name: root.lastPathComponent, path: root.path)
             projects.append(project)
-            persist()
+            persistConfig()
             selection = .project(project.id)
         } catch {
-            Self.logger.error("add project failed: \(error.localizedDescription, privacy: .public)")
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -72,7 +128,7 @@ final class AppState {
     func removeProject(id: UUID) {
         projects.removeAll { $0.id == id }
         if selection == .project(id) { selection = nil }
-        persist()
+        persistConfig()
     }
 
     func presentAddProjectPanel() {
@@ -86,9 +142,48 @@ final class AppState {
         let urls = panel.urls
         Task { await addProjects(at: urls) }
     }
+
+    // MARK: Session mutation helpers
+
+    func update(sessionId: UUID, _ change: (inout Session) -> Void) {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        change(&sessions[index])
+        persistSessions()
+    }
+
+    func append(session: Session) {
+        sessions.append(session)
+        persistSessions()
+    }
+
+    func setOrphans(_ names: [String]) {
+        orphanTmuxSessions = names
+    }
+
+    func removeSession(id: UUID) {
+        terminals.close(sessionId: id)
+        sessions.removeAll { $0.id == id }
+        if selection == .session(id) { selection = nil }
+        persistSessions()
+    }
+
+    // MARK: Liveness
+
+    private func startLivenessPolling() {
+        livenessTask?.cancel()
+        livenessTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard let self else { return }
+                await self.checkLiveness()
+            }
+        }
+    }
 }
 
 enum SidebarItem: Hashable {
     case master
     case project(UUID)
+    case session(UUID)
+    case orphan(String)
 }

@@ -7,23 +7,14 @@ struct ContentView: View {
 
     var body: some View {
         @Bindable var appState = appState
-        NavigationSplitView {
-            SidebarView()
-        } detail: {
-            switch appState.selection {
-            case .project(let id):
-                if let project = appState.project(id: id) {
-                    ProjectDetailView(project: project)
-                } else {
-                    EmptyDetailView()
-                }
-            case .master:
-                MasterPlaceholderView()
-            case nil:
-                EmptyDetailView()
+        Group {
+            if appState.setupIsRequired, let toolPaths = appState.toolPaths {
+                SetupView(toolPaths: toolPaths)
+            } else {
+                mainSplit
             }
         }
-        .frame(minWidth: 800, minHeight: 500)
+        .frame(minWidth: 900, minHeight: 560)
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             handleDrop(providers)
         }
@@ -34,6 +25,35 @@ struct ContentView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(appState.errorMessage ?? "")
+        }
+    }
+
+    private var mainSplit: some View {
+        @Bindable var appState = appState
+        return NavigationSplitView {
+            SidebarView()
+        } detail: {
+            switch appState.selection {
+            case .project(let id):
+                if let project = appState.project(id: id) {
+                    ProjectDetailView(project: project)
+                } else {
+                    EmptyDetailView()
+                }
+            case .session(let id):
+                if let session = appState.session(id: id) {
+                    SessionView(session: session)
+                        .id(session.id)
+                } else {
+                    EmptyDetailView()
+                }
+            case .orphan(let name):
+                OrphanSessionView(tmuxName: name)
+            case .master:
+                MasterPlaceholderView()
+            case nil:
+                EmptyDetailView()
+            }
         }
     }
 

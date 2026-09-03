@@ -5,7 +5,7 @@ import os
 public actor Persistence {
     private static let logger = Logger(subsystem: "com.mattolson.sauron", category: "persistence")
 
-    public let paths: AppPaths
+    public nonisolated let paths: AppPaths
     private let debounceInterval: Duration
     private var pendingConfig: AppConfig?
     private var flushTask: Task<Void, Never>?
@@ -75,4 +75,25 @@ public actor Persistence {
         d.dateDecodingStrategy = .iso8601
         return d
     }()
+}
+
+// MARK: Sessions
+
+extension Persistence {
+    public func loadSessions() throws -> SessionsFile {
+        try paths.createLayout()
+        let url = paths.sessionsFile
+        guard FileManager.default.fileExists(atPath: url.path) else { return SessionsFile() }
+        let data = try Data(contentsOf: url)
+        let file = try Self.decoder.decode(SessionsFile.self, from: data)
+        guard file.version <= SessionsFile.currentVersion else {
+            throw SauronError.persistence("sessions.json version \(file.version) is newer than this app supports (\(SessionsFile.currentVersion)).")
+        }
+        return file
+    }
+
+    /// Sessions change often and matter for crash recovery, so they are written immediately.
+    public func saveSessions(_ file: SessionsFile) throws {
+        try Self.write(file, to: paths.sessionsFile)
+    }
 }

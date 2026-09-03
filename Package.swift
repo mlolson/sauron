@@ -8,6 +8,9 @@ let package = Package(
         .executable(name: "Sauron", targets: ["Sauron"]),
         .library(name: "SauronCore", targets: ["SauronCore"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.2.0"),
+    ],
     targets: [
         .target(
             name: "SauronCore",
@@ -15,7 +18,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "Sauron",
-            dependencies: ["SauronCore"],
+            dependencies: [
+                "SauronCore",
+                .product(name: "SwiftTerm", package: "SwiftTerm"),
+            ],
             path: "Sources/Sauron"
         ),
         .testTarget(

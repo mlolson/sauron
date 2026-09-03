@@ -7,8 +7,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let appState else { return }
+        let files = urls.filter(\.isFileURL)
+        let commands = urls.filter { $0.scheme == "sauron" }
         Task { @MainActor in
-            await appState.addProjects(at: urls)
+            await appState.addProjects(at: files)
+            for url in commands {
+                await appState.handle(commandURL: url)
+            }
         }
     }
 
