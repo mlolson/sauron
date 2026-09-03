@@ -92,7 +92,11 @@ export function App() {
       break
     case 'document': {
       const project = snapshot.projects.find((p) => p.id === selection.projectId)
-      detail = project ? <DocumentView key={`${project.id}:${selection.path}`} project={project} path={selection.path} onSelect={setSelection} /> : <EmptyDetail />
+      detail = project ? (
+        <DocumentView key={`${project.id}:${selection.path}`} project={project} path={selection.path} documents={snapshot.documents[project.id] ?? []} onSelect={setSelection} />
+      ) : (
+        <EmptyDetail />
+      )
       break
     }
     case 'master': {
