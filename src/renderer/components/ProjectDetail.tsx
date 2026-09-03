@@ -7,7 +7,7 @@ import { StateDot } from './StateDot'
 import { abbreviate } from './Sidebar'
 import { relativeTime } from '../time'
 import { NewSessionBar } from './NewSessionBar'
-import { toolGlyph } from './glyph'
+import { ToolIcon } from './ToolIcon'
 
 interface Props {
   project: Project
@@ -97,7 +97,7 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, status,
           <ul className="session-list">
             {mine.map((s) => (
               <li key={s.id} onClick={() => onSelect({ kind: 'session', id: s.id })}>
-                <span className="glyph">{toolGlyph(s.tool)}</span>
+                <span className="glyph"><ToolIcon tool={s.tool} /></span>
                 <span className="name">
                   {s.displayName}
                   {s.worktreePath && <span className="tag accent" style={{ marginLeft: 8 }}>{worktrees.find((w) => w.path === s.worktreePath)?.branch ?? 'worktree'}</span>}
@@ -118,7 +118,7 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, status,
           <ul className="session-list">
             {external.slice(0, 30).map((s) => (
               <li key={s.id} onClick={() => onSelect({ kind: 'session', id: s.id })}>
-                <span className="glyph">◇</span>
+                <span className="glyph external"><ToolIcon tool={s.tool} /></span>
                 <span className="name">{s.displayName}</span>
                 <StateDot state={s.state} />
                 <span className="muted small">active {relativeTime(s.lastActivityAt)}</span>

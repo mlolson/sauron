@@ -4,6 +4,7 @@ import { isAlive } from '@shared/types'
 import { SessionTerminal } from './SessionTerminal'
 import { TranscriptView } from './TranscriptView'
 import { StateDot } from './StateDot'
+import { ToolIcon } from './ToolIcon'
 
 interface Props {
   session: Session
@@ -35,6 +36,7 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
   return (
     <div className="session-view">
       <header className="session-header">
+        <ToolIcon tool={session.tool} className="large" />
         <div className="titles">
           {editing ? (
             <input
@@ -71,6 +73,7 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
             {siblings.map((s) => (
               <button key={s.id} className={`tab ${s.id === session.id ? 'active' : ''}`} onClick={() => onSelect({ kind: 'session', id: s.id })}>
                 <StateDot state={s.state} />
+                <ToolIcon tool={s.tool} />
                 {s.displayName}
               </button>
             ))}

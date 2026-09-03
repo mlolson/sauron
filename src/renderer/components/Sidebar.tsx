@@ -5,7 +5,7 @@ import { sameTarget } from '../store'
 import { StateDot } from './StateDot'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { RenameDialog } from './RenameDialog'
-import { toolGlyph } from './glyph'
+import { ToolIcon } from './ToolIcon'
 
 interface Props {
   snapshot: Snapshot
@@ -124,7 +124,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   onContextMenu={session.kind === 'managed' ? (e) => openMenu(e, sessionMenu(session)) : undefined}
                 >
                   <span className={`glyph ${session.kind === 'external' ? 'external' : isAlive(session) ? 'accent' : 'muted'}`} title={session.kind === 'external' ? 'Started outside Sauron' : undefined}>
-                    {session.kind === 'external' ? '◇' : toolGlyph(session.tool)}
+                    <ToolIcon tool={session.tool} />
                   </span>
                   <span className={`label ${isAlive(session) ? '' : 'muted'}`}>
                     <span className="name">{session.displayName}</span>
@@ -153,7 +153,9 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                 onClick={() => onSelect({ kind: 'session', id: session.id })}
                 onContextMenu={(e) => openMenu(e, sessionMenu(session))}
               >
-                <span className="glyph">✦</span>
+                <span className="glyph">
+                  <ToolIcon tool={session.tool} />
+                </span>
                 <span className="label">{session.displayName}</span>
                 <StateDot state={session.state} />
               </Row>

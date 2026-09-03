@@ -301,3 +301,13 @@ button:disabled { opacity: 0.5; }
 .modal.small { width: 420px; }
 .modal input.text { width: 100%; font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; margin: 8px 0; user-select: text; -webkit-user-select: text; }
 .modal .actions.right { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
+/* Tool icons */
+.tool-icon { display: inline-block; width: 14px; height: 14px; vertical-align: middle; flex: none; }
+.tool-icon-wrap { display: inline-flex; }
+.tool-icon.shell { width: auto; font-family: Menlo, monospace; font-size: 11px; font-weight: 700; line-height: 14px; }
+.tool-icon.large { width: 20px; height: 20px; margin-right: 4px; }
+.tool-icon.large.shell { font-size: 14px; line-height: 20px; }
+.row .glyph { display: inline-flex; align-items: center; justify-content: center; width: 16px; }
+.row .glyph.external .tool-icon, .session-list .glyph.external .tool-icon { opacity: 0.55; }
+.row .glyph.muted .tool-icon { opacity: 0.5; filter: grayscale(1); }
