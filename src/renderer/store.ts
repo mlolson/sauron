@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { AppError, SelectionTarget, Snapshot } from '@shared/types'
 
-const empty: Snapshot = { projects: [], sessions: [], orphanTmuxSessions: [], toolPaths: null, worktrees: {}, preferences: { notificationsMuted: false }, loaded: false }
+const empty: Snapshot = { projects: [], sessions: [], orphanTmuxSessions: [], toolPaths: null, worktrees: {}, preferences: { notificationsMuted: false, externalRecentHours: 24 }, loaded: false }
 
 export function useSnapshot(): Snapshot {
   const [snapshot, setSnapshot] = useState<Snapshot>(empty)

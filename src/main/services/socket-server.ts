@@ -96,7 +96,7 @@ export class SocketServer {
       case 'sessions.list': {
         const project = req.project === undefined ? null : this.findProject(req.project)
         if (req.project !== undefined && !project) throw new Error(`unknown project ${req.project}`)
-        return state.sessions
+        return state.allSessions
           .filter((s) => !project || s.projectId === project.id)
           .map(({ id, projectId, tool, kind, displayName, tmuxName, state: st, workingDir }) => ({ id, projectId, tool, kind, displayName, tmuxName, state: st, workingDir }))
       }

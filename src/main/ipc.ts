@@ -66,6 +66,14 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
   })
   handle('setPreferences', async (prefs) => state.setPreferences(prefs))
 
+  handle('transcriptOpen', async (sessionId) => {
+    const win = getWindow()
+    state.setTranscriptListener(sessionId, (entries) => win?.webContents.send(`transcript:append:${sessionId}`, entries))
+    return state.transcriptOpen(sessionId)
+  })
+  handle('transcriptClose', async (sessionId) => state.transcriptClose(sessionId))
+  handle('transcriptLoadOlder', async (sessionId, beforeIndex, count) => state.transcriptLoadOlder(sessionId, beforeIndex, count))
+
   on('revealInFinder', (path) => shell.showItemInFolder(path))
   on('copyToClipboard', (text) => clipboard.writeText(text))
 }

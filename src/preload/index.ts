@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AppError, SauronApi, SelectionTarget, Snapshot } from '@shared/types'
+import type { TranscriptEntry } from '@shared/transcript-types'
 
 function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
   const listener = (_event: Electron.IpcRendererEvent, payload: T) => cb(payload)
@@ -38,6 +39,10 @@ const api: SauronApi = {
 
   setActiveSession: (sessionId) => ipcRenderer.send('setActiveSession', sessionId),
   setPreferences: (prefs) => ipcRenderer.invoke('setPreferences', prefs),
+  transcriptOpen: (sessionId) => ipcRenderer.invoke('transcriptOpen', sessionId),
+  transcriptClose: (sessionId) => ipcRenderer.invoke('transcriptClose', sessionId),
+  transcriptLoadOlder: (sessionId, beforeIndex, count) => ipcRenderer.invoke('transcriptLoadOlder', sessionId, beforeIndex, count),
+  onTranscriptAppend: (sessionId, cb) => subscribe<TranscriptEntry[]>(`transcript:append:${sessionId}`, cb),
   revealInFinder: (path) => ipcRenderer.send('revealInFinder', path),
   copyToClipboard: (text) => ipcRenderer.send('copyToClipboard', text),
 }

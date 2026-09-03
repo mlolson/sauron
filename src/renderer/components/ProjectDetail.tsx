@@ -18,7 +18,10 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, onSelec
   const [prompt, setPrompt] = useState('')
   const [useWorktree, setUseWorktree] = useState(false)
   const [branch, setBranch] = useState('')
-  const mine = sessions.filter((s) => s.projectId === project.id)
+  const mine = sessions.filter((s) => s.projectId === project.id && s.kind === 'managed')
+  const external = sessions
+    .filter((s) => s.projectId === project.id && s.kind === 'external')
+    .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
   const codexAvailable = Boolean(toolPaths?.codex)
 
   useEffect(() => {
@@ -114,6 +117,24 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, onSelec
                 </span>
                 <StateDot state={s.state} />
                 <span className="muted small">{relativeTime(s.createdAt)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="card">
+        <h2>External Sessions</h2>
+        {external.length === 0 ? (
+          <p className="muted">None found. Sessions started from a terminal in this directory appear here automatically.</p>
+        ) : (
+          <ul className="session-list">
+            {external.slice(0, 30).map((s) => (
+              <li key={s.id} onClick={() => onSelect({ kind: 'session', id: s.id })}>
+                <span className="glyph">◇</span>
+                <span className="name">{s.displayName}</span>
+                <StateDot state={s.state} />
+                <span className="muted small">active {relativeTime(s.lastActivityAt)}</span>
               </li>
             ))}
           </ul>

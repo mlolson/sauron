@@ -426,18 +426,18 @@ Done when
 ### Slice 6 — See sessions you started in your own terminal (≈3 d)
 
 Tasks
-- [ ] S6.1 `ClaudeTranscriptParser` with fixture files and tests.
-- [ ] S6.2 `CodexRolloutParser` with fixture files and tests; `session_meta` gives cwd and
+- [x] S6.1 `ClaudeTranscriptParser` with fixture files and tests.
+- [x] S6.2 `CodexRolloutParser` with fixture files and tests; `session_meta` gives cwd and
       session id, which also completes Codex id discovery for Slice 3 resume.
-- [ ] S6.3 `TranscriptIndexer`: scan both transcript roots, header-only reads, cwd-to-project
+- [x] S6.3 `TranscriptIndexer`: scan both transcript roots, header-only reads, cwd-to-project
       matching including worktrees and subdirectories, directory watching for new files.
-- [ ] S6.4 `TranscriptTailer`: per-file offset, `DispatchSource` watching, capped in-memory
+- [x] S6.4 `TranscriptTailer`: per-file offset, `DispatchSource` watching, capped in-memory
       model, load-older.
-- [ ] S6.5 `TranscriptView`: role-styled messages, collapsible tool calls, auto-scroll with
+- [x] S6.5 `TranscriptView`: role-styled messages, collapsible tool calls, auto-scroll with
       jump-to-bottom, read-only banner for external sessions.
-- [ ] S6.6 External sessions in the sidebar, visually distinct, grouped active vs recent by
+- [x] S6.6 External sessions in the sidebar, visually distinct, grouped active vs recent by
       mtime with a configurable cutoff; state derived from mtime and last record.
-- [ ] S6.7 Managed sessions get a Transcript tab beside the terminal using the same view.
+- [x] S6.7 Managed sessions get a Transcript tab beside the terminal using the same view.
 
 Done when
 - Start `claude` in a Sauron project from Terminal.app; within a few seconds it appears

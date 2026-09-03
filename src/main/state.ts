@@ -8,6 +8,9 @@ import { claudeHookSettings, codexNotifyConfig, looksLikeApprovalPrompt, transit
 import { writeJsonAtomic } from './services/persistence'
 import { join } from 'node:path'
 import { Notifier } from './services/notifier'
+import { TranscriptIndexer, TranscriptTailer, type TranscriptFile } from './services/transcripts'
+import { projectForCwd } from '@shared/transcripts'
+import type { TranscriptEntry, TranscriptPage } from '@shared/transcript-types'
 import type { Worktree } from '@shared/worktrees'
 import { defaultWorktreeBranch } from '@shared/worktrees'
 import { WorktreeService } from './services/worktrees'
@@ -43,6 +46,12 @@ export class AppState extends EventEmitter<StateEvents> {
   activeSessionId: string | null = null
   windowFocused = true
   readonly notifier = new Notifier()
+  /** Sessions discovered from transcripts on disk; never persisted. Keyed by transcript path. */
+  private externalSessions = new Map<string, Session>()
+  private readonly indexer = new TranscriptIndexer(() => void this.rescanTranscripts())
+  private tailers = new Map<string, TranscriptTailer>()
+  private transcriptListeners = new Map<string, (entries: TranscriptEntry[]) => void>()
+  private transcriptTimer: NodeJS.Timeout | null = null
 
   tmux: TmuxService | null = null
   pty: PtyService | null = null
@@ -57,10 +66,15 @@ export class AppState extends EventEmitter<StateEvents> {
     return this.persistence.paths
   }
 
+  /** Managed sessions plus discovered external ones. */
+  get allSessions(): Session[] {
+    return [...this.sessions, ...this.externalSessions.values()]
+  }
+
   snapshot(): Snapshot {
     return {
       projects: this.projects,
-      sessions: this.sessions,
+      sessions: this.allSessions,
       orphanTmuxSessions: this.orphanTmuxSessions,
       toolPaths: this.toolPaths,
       worktrees: this.worktrees,
@@ -100,6 +114,9 @@ export class AppState extends EventEmitter<StateEvents> {
     await this.reconcileSessions()
     await Promise.all(this.projects.map((p) => this.refreshWorktrees(p.id, false)))
     this.startLivenessPolling()
+    this.indexer.start()
+    await this.rescanTranscripts()
+    this.transcriptTimer = setInterval(() => void this.rescanTranscripts(), 30_000)
     this.changed()
   }
 
@@ -141,7 +158,7 @@ export class AppState extends EventEmitter<StateEvents> {
   }
 
   session(id: string): Session | undefined {
-    return this.sessions.find((s) => s.id === id)
+    return this.sessions.find((s) => s.id === id) ?? [...this.externalSessions.values()].find((s) => s.id === id)
   }
 
   sessionsFor(projectId: string | null): Session[] {
@@ -453,6 +470,123 @@ export class AppState extends EventEmitter<StateEvents> {
     }
   }
 
+  // MARK: Transcripts and external sessions
+
+  /** Re-reads the transcript index: links managed sessions to their files, discovers external ones. */
+  async rescanTranscripts(): Promise<void> {
+    let files: TranscriptFile[]
+    try {
+      files = await this.indexer.scan()
+    } catch (error) {
+      console.warn('transcript scan failed', error)
+      return
+    }
+    const worktreePaths: Record<string, string[]> = {}
+    for (const [pid, wts] of Object.entries(this.worktrees)) worktreePaths[pid] = wts.map((w) => w.path)
+    const managedByCliId = new Map(this.sessions.filter((s) => s.cliSessionId).map((s) => [s.cliSessionId!, s]))
+    const managedByPath = new Map(this.sessions.filter((s) => s.transcriptPath).map((s) => [s.transcriptPath!, s]))
+    let managedChanged = false
+    const next = new Map<string, Session>()
+    const now = Date.now()
+
+    // Codex sessions get their id from the first rollout in the same cwd created after launch.
+    const unlinkedCodex = this.sessions.filter((s) => s.tool === 'codex' && s.kind === 'managed' && !s.cliSessionId)
+    const claimed = new Set<string>()
+
+    for (const f of files) {
+      const { sessionId, cwd } = f.header
+      if (!sessionId || !cwd) continue
+      const managed = managedByCliId.get(sessionId) ?? managedByPath.get(f.path)
+      if (managed) {
+        if (managed.transcriptPath !== f.path) {
+          managed.transcriptPath = f.path
+          managedChanged = true
+        }
+        continue
+      }
+      if (f.tool === 'codex') {
+        const candidate = unlinkedCodex.find((s) => !claimed.has(s.id) && (s.worktreePath ?? s.workingDir) === cwd && f.header.startedAt && f.header.startedAt >= s.createdAt)
+        if (candidate) {
+          claimed.add(candidate.id)
+          candidate.cliSessionId = sessionId
+          candidate.transcriptPath = f.path
+          managedChanged = true
+          continue
+        }
+      }
+      const projectId = projectForCwd(cwd, this.projects, worktreePaths)
+      if (!projectId) continue
+      const existing = this.externalSessions.get(f.path)
+      const ageMs = now - f.mtimeMs
+      const state: Session['state'] = ageMs < 2 * 60_000 ? 'running' : 'idle'
+      const session: Session = existing ?? {
+        id: `external:${f.tool}:${sessionId}`,
+        projectId,
+        tool: f.tool,
+        kind: 'external',
+        displayName: `${f.tool === 'claude' ? 'Claude' : 'Codex'} ${sessionId.slice(0, 8)}`,
+        tmuxName: null,
+        cliSessionId: sessionId,
+        transcriptPath: f.path,
+        workingDir: cwd,
+        worktreePath: null,
+        createdAt: f.header.startedAt ?? new Date(f.mtimeMs).toISOString(),
+        lastActivityAt: new Date(f.mtimeMs).toISOString(),
+        state,
+        stateSource: 'inferred',
+      }
+      session.projectId = projectId
+      session.lastActivityAt = new Date(f.mtimeMs).toISOString()
+      session.state = state
+      next.set(f.path, session)
+    }
+    this.externalSessions = next
+    if (managedChanged) this.persistSessions()
+    this.changed()
+  }
+
+  async transcriptOpen(sessionId: string): Promise<TranscriptPage | null> {
+    const session = this.session(sessionId)
+    if (!session?.transcriptPath) return null
+    let tailer = this.tailers.get(sessionId)
+    if (!tailer) {
+      const path = session.transcriptPath
+      tailer = new TranscriptTailer(path, session.tool, {
+        onEntries: (entries) => this.transcriptListeners.get(sessionId)?.(entries),
+      })
+      this.tailers.set(sessionId, tailer)
+      try {
+        await tailer.start()
+      } catch (error) {
+        this.tailers.delete(sessionId)
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { entries: [], total: 0 }
+        throw error
+      }
+    }
+    const entries = tailer.entries.slice(-300)
+    return { entries, total: tailer.entries.length }
+  }
+
+  transcriptLoadOlder(sessionId: string, beforeIndex: number, count: number): TranscriptEntry[] {
+    const tailer = this.tailers.get(sessionId)
+    if (!tailer) return []
+    const all = tailer.entries
+    const end = all.findIndex((e) => e.index >= beforeIndex)
+    const stop = end === -1 ? all.length : end
+    return all.slice(Math.max(0, stop - count), stop)
+  }
+
+  transcriptClose(sessionId: string): void {
+    this.tailers.get(sessionId)?.stop()
+    this.tailers.delete(sessionId)
+    this.transcriptListeners.delete(sessionId)
+  }
+
+  setTranscriptListener(sessionId: string, cb: ((entries: TranscriptEntry[]) => void) | null): void {
+    if (cb) this.transcriptListeners.set(sessionId, cb)
+    else this.transcriptListeners.delete(sessionId)
+  }
+
   // MARK: Orphans
 
   adoptOrphan(tmuxName: string): void {
@@ -536,6 +670,9 @@ export class AppState extends EventEmitter<StateEvents> {
 
   async shutdown(): Promise<void> {
     if (this.livenessTimer) clearInterval(this.livenessTimer)
+    if (this.transcriptTimer) clearInterval(this.transcriptTimer)
+    this.indexer.stop()
+    for (const id of [...this.tailers.keys()]) this.transcriptClose(id)
     this.pty?.closeAll()
     await this.persistence.flush()
   }

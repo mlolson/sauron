@@ -72,8 +72,11 @@ export function Sidebar({ snapshot, selection, onSelect }: Props) {
         <div className="section-title">Projects</div>
         {snapshot.projects.length === 0 && <div className="hint">Drop a git repository here or press ⌘O.</div>}
         {snapshot.projects.map((project) => {
-          const sessions = snapshot.sessions.filter((s) => s.projectId === project.id)
-          const alive = sessions.filter(isAlive).length
+          const cutoff = Date.now() - snapshot.preferences.externalRecentHours * 3600_000
+          const all = snapshot.sessions.filter((s) => s.projectId === project.id)
+          const sessions = all.filter((s) => s.kind === 'managed' || new Date(s.lastActivityAt).getTime() >= cutoff)
+          const olderExternal = all.length - sessions.length
+          const alive = sessions.filter((s) => s.kind === 'managed' && isAlive(s)).length
           const waiting = sessions.filter((s) => s.state === 'waitingForInput').length
           return (
             <div key={project.id}>
@@ -96,9 +99,11 @@ export function Sidebar({ snapshot, selection, onSelect }: Props) {
                   nested
                   selected={sameTarget(selection, { kind: 'session', id: session.id })}
                   onClick={() => onSelect({ kind: 'session', id: session.id })}
-                  onContextMenu={(e) => openMenu(e, sessionMenu(session))}
+                  onContextMenu={session.kind === 'managed' ? (e) => openMenu(e, sessionMenu(session)) : undefined}
                 >
-                  <span className={`glyph ${isAlive(session) ? 'accent' : 'muted'}`}>{session.tool === 'claude' ? '✦' : '⌘'}</span>
+                  <span className={`glyph ${session.kind === 'external' ? 'external' : isAlive(session) ? 'accent' : 'muted'}`} title={session.kind === 'external' ? 'Started outside Sauron' : undefined}>
+                    {session.kind === 'external' ? '◇' : session.tool === 'claude' ? '✦' : '⌘'}
+                  </span>
                   <span className={`label ${isAlive(session) ? '' : 'muted'}`}>
                     <span className="name">{session.displayName}</span>
                     {session.worktreePath && <span className="sub">{branchOf(snapshot, session)}</span>}
@@ -106,6 +111,12 @@ export function Sidebar({ snapshot, selection, onSelect }: Props) {
                   <StateDot state={session.state} />
                 </Row>
               ))}
+              {olderExternal > 0 && (
+                <div className="row nested hint-row" title="Older external sessions are listed in the project view">
+                  <span className="glyph">…</span>
+                  <span className="label muted">{olderExternal} older external</span>
+                </div>
+              )}
             </div>
           )
         })}
