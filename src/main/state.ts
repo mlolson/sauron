@@ -16,6 +16,7 @@ import { StatusStore } from './services/status-store'
 import { MasterHome, RefreshScheduler } from './services/master'
 import { ensureClaudeTrusts } from './services/claude-config'
 import { GitWatcher } from './services/git-watcher'
+import { runCommand } from './services/command'
 import type { Worktree } from '@shared/worktrees'
 import { defaultWorktreeBranch } from '@shared/worktrees'
 import { WorktreeService } from './services/worktrees'
@@ -788,7 +789,6 @@ export class AppState extends EventEmitter<StateEvents> {
     if (!project) throw new SauronError('invalid_state', `Unknown project ${projectId}`)
     let headCommit: string | null = null
     if (this.toolPaths?.git) {
-      const { runCommand } = await import('./services/command')
       const r = await runCommand(this.toolPaths.git, ['rev-parse', 'HEAD'], { cwd: project.path })
       if (r.code === 0) headCommit = r.stdout.trim()
     }
