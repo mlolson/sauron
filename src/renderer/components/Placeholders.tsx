@@ -13,12 +13,3 @@ export function EmptyDetail() {
   )
 }
 
-export function MasterPlaceholder() {
-  return (
-    <div className="placeholder">
-      <div className="big">◉</div>
-      <h2>Master Agent</h2>
-      <p>The coordinating agent arrives in a later slice.</p>
-    </div>
-  )
-}

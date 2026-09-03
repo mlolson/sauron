@@ -457,19 +457,19 @@ Done when
 ### Slice 7 — Master agent chat that keeps project summaries current (≈3 d)
 
 Tasks
-- [ ] S7.1 `ProjectStatus` model; `StatusStore` watching `App Support/Sauron/status/` and
+- [x] S7.1 `ProjectStatus` model; `StatusStore` watching `App Support/Sauron/status/` and
       decoding `<project-id>.json`; summary and relative `updated_at` on the project row and
       in detail; placeholder when absent.
-- [ ] S7.2 Master home directory; `CLAUDE.md` generated from a template with the project
+- [x] S7.2 Master home directory; `CLAUDE.md` generated from a template with the project
       table, store paths, transcript locations, CLI reference, and summary JSON schema;
       regenerated on project list change; `CLAUDE.local.md` preserved.
-- [ ] S7.3 `MasterAgentService`: start with `--resume` of the persisted id, fresh start on
+- [x] S7.3 `MasterAgentService`: start with `--resume` of the persisted id, fresh start on
       failure; stop; pinned sidebar row with terminal tab; auto-start preference.
-- [ ] S7.4 Socket commands and CLI subcommands `projects`, `sessions`, `launch`, `send`,
+- [x] S7.4 Socket commands and CLI subcommands `projects`, `sessions`, `launch`, `send`,
       `status set`; `send` refuses when the target is running.
-- [ ] S7.5 Manual "Refresh summary" and "Refresh all" buttons; `RefreshScheduler` with
+- [x] S7.5 Manual "Refresh summary" and "Refresh all" buttons; `RefreshScheduler` with
       collapse and idle-gated drain via `send-keys`; in-progress indicator on the row.
-- [ ] S7.6 Summary prompt template covering git history, transcripts, previous summary,
+- [x] S7.6 Summary prompt template covering git history, transcripts, previous summary,
       and repo docs.
 
 Done when

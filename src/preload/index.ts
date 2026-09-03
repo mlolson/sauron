@@ -39,6 +39,10 @@ const api: SauronApi = {
 
   setActiveSession: (sessionId) => ipcRenderer.send('setActiveSession', sessionId),
   setPreferences: (prefs) => ipcRenderer.invoke('setPreferences', prefs),
+  startMaster: () => ipcRenderer.invoke('startMaster'),
+  stopMaster: () => ipcRenderer.invoke('stopMaster'),
+  refreshStatus: (projectId) => ipcRenderer.invoke('refreshStatus', projectId),
+  refreshAllStatuses: () => ipcRenderer.invoke('refreshAllStatuses'),
   transcriptOpen: (sessionId) => ipcRenderer.invoke('transcriptOpen', sessionId),
   transcriptClose: (sessionId) => ipcRenderer.invoke('transcriptClose', sessionId),
   transcriptLoadOlder: (sessionId, beforeIndex, count) => ipcRenderer.invoke('transcriptLoadOlder', sessionId, beforeIndex, count),

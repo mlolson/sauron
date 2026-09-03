@@ -66,6 +66,13 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
   })
   handle('setPreferences', async (prefs) => state.setPreferences(prefs))
 
+  handle('startMaster', () => state.startMaster())
+  handle('stopMaster', () => state.stopMaster())
+  handle('refreshStatus', async (projectId) => state.requestRefresh(projectId))
+  handle('refreshAllStatuses', async () => {
+    for (const p of state.projects) state.requestRefresh(p.id)
+  })
+
   handle('transcriptOpen', async (sessionId) => {
     const win = getWindow()
     state.setTranscriptListener(sessionId, (entries) => win?.webContents.send(`transcript:append:${sessionId}`, entries))

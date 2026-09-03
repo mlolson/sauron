@@ -265,3 +265,10 @@ button:disabled { opacity: 0.5; }
 .segmented button { border: none; border-radius: 0; background: transparent; }
 .segmented button.active { background: var(--bg-selected); }
 .stopped-transcript { width: 100%; height: 50vh; margin-top: 16px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; text-align: left; }
+
+.card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.card-head h2 { margin: 0; flex: 1; }
+.card p.summary { font-size: 14px; line-height: 1.5; user-select: text; -webkit-user-select: text; }
+.card pre.details { white-space: pre-wrap; font-family: inherit; font-size: 13px; line-height: 1.5; color: var(--fg-muted); margin: 8px 0 0; user-select: text; -webkit-user-select: text; }
+.spinner { width: 10px; height: 10px; border: 2px solid var(--fg-muted); border-top-color: transparent; border-radius: 50%; animation: spin 0.9s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Project, SelectionTarget, Session, ToolPaths } from '@shared/types'
 import { isAlive } from '@shared/types'
 import type { Worktree } from '@shared/worktrees'
+import type { ProjectStatus, RefreshState } from '@shared/status'
 import { StateDot } from './StateDot'
 import { abbreviate } from './Sidebar'
 import { relativeTime } from '../time'
@@ -11,10 +12,15 @@ interface Props {
   sessions: Session[]
   toolPaths: ToolPaths | null
   worktrees: Worktree[]
+  status: ProjectStatus | undefined
+  refresh: RefreshState
+  masterAlive: boolean
   onSelect: (t: SelectionTarget) => void
 }
 
-export function ProjectDetail({ project, sessions, toolPaths, worktrees, onSelect }: Props) {
+export function ProjectDetail({ project, sessions, toolPaths, worktrees, status, refresh, masterAlive, onSelect }: Props) {
+  const refreshing = refresh.inProgress === project.id
+  const queued = refresh.queued.includes(project.id)
   const [prompt, setPrompt] = useState('')
   const [useWorktree, setUseWorktree] = useState(false)
   const [branch, setBranch] = useState('')
@@ -98,8 +104,28 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, onSelec
       </div>
 
       <section className="card">
-        <h2>Status</h2>
-        <p className="muted">No summary yet. The master agent will write one in a later slice.</p>
+        <div className="card-head">
+          <h2>Status</h2>
+          <span className="muted small">
+            {status ? `updated ${relativeTime(status.updatedAt)}` : ''}
+            {refreshing ? ' · refreshing…' : queued ? ' · refresh queued' : ''}
+          </span>
+          <button
+            disabled={refreshing || queued}
+            title={masterAlive ? 'Ask the master agent to rewrite this summary' : 'Start the master agent first'}
+            onClick={() => void window.sauron.refreshStatus(project.id)}
+          >
+            Refresh
+          </button>
+        </div>
+        {status ? (
+          <>
+            <p className="summary">{status.summary}</p>
+            {status.details && <pre className="details">{status.details}</pre>}
+          </>
+        ) : (
+          <p className="muted">{masterAlive ? 'No summary yet. Click Refresh to have the master agent write one.' : 'No summary yet. Start the master agent to generate one.'}</p>
+        )}
       </section>
 
       <section className="card">

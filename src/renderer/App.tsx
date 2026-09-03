@@ -5,7 +5,8 @@ import { ProjectDetail } from './components/ProjectDetail'
 import { SessionView } from './components/SessionView'
 import { OrphanView } from './components/OrphanView'
 import { SetupView } from './components/SetupView'
-import { EmptyDetail, MasterPlaceholder } from './components/Placeholders'
+import { EmptyDetail } from './components/Placeholders'
+import { MasterView } from './components/MasterView'
 import { ErrorBanners } from './components/ErrorBanners'
 import { useErrors, useSelection, useSnapshot } from './store'
 
@@ -50,7 +51,7 @@ export function App() {
     case 'project': {
       const project = snapshot.projects.find((p) => p.id === selection.id)
       detail = project ? (
-        <ProjectDetail project={project} sessions={snapshot.sessions} toolPaths={snapshot.toolPaths} worktrees={snapshot.worktrees[project.id] ?? []} onSelect={setSelection} />
+        <ProjectDetail project={project} sessions={snapshot.sessions} toolPaths={snapshot.toolPaths} worktrees={snapshot.worktrees[project.id] ?? []} status={snapshot.statuses[project.id]} refresh={snapshot.refresh} masterAlive={snapshot.sessions.some((s) => s.id === 'master' && s.state !== 'stopped')} onSelect={setSelection} />
       ) : (
         <EmptyDetail />
       )
@@ -68,9 +69,11 @@ export function App() {
     case 'orphan':
       detail = <OrphanView name={selection.name} onSelect={setSelection} />
       break
-    case 'master':
-      detail = <MasterPlaceholder />
+    case 'master': {
+      const master = snapshot.sessions.find((s) => s.id === 'master')
+      detail = master && master.state !== 'stopped' ? <SessionView key="master" session={master} snapshot={snapshot} onSelect={setSelection} /> : <MasterView session={master} />
       break
+    }
     default:
       detail = <EmptyDetail />
   }

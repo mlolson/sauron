@@ -124,6 +124,31 @@ export class SocketServer {
         await state.removeWorktree(project.id, String(req.path), Boolean(req.force))
         return state.worktrees[project.id] ?? []
       }
+      case 'sessions.send': {
+        await state.sendToSession(String(req.session), String(req.text ?? ''))
+        return null
+      }
+      case 'status.get': {
+        const project = this.findProject(req.project)
+        if (!project) throw new Error(`unknown project ${req.project}`)
+        return state.statusStore.statuses[project.id] ?? null
+      }
+      case 'status.set': {
+        const project = this.findProject(req.project)
+        if (!project) throw new Error(`unknown project ${req.project}`)
+        if (typeof req.summary !== 'string' || !req.summary.trim()) throw new Error('summary is required')
+        return state.setStatus(project.id, req.summary, typeof req.details === 'string' && req.details.trim() ? req.details : null)
+      }
+      case 'status.refresh': {
+        const project = this.findProject(req.project)
+        if (!project) throw new Error(`unknown project ${req.project}`)
+        state.requestRefresh(project.id)
+        return null
+      }
+      case 'master.start': {
+        await state.startMaster()
+        return state.masterSession() ?? null
+      }
       case 'sessions.stop': {
         await state.stopSession(String(req.session))
         return null

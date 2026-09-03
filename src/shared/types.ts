@@ -1,5 +1,6 @@
 import type { Worktree } from './worktrees'
 import type { TranscriptEntry, TranscriptPage } from './transcript-types'
+import type { ProjectStatus, RefreshState } from './status'
 
 export interface Project {
   id: string
@@ -14,9 +15,11 @@ export interface Preferences {
   notificationsMuted: boolean
   /** External sessions idle longer than this are listed under "recent" instead of the sidebar. */
   externalRecentHours: number
+  /** Start the master agent when Sauron launches. */
+  masterAutoStart: boolean
 }
 
-export const defaultPreferences: Preferences = { notificationsMuted: false, externalRecentHours: 24 }
+export const defaultPreferences: Preferences = { notificationsMuted: false, externalRecentHours: 24, masterAutoStart: true }
 
 export interface AppConfig {
   version: number
@@ -87,6 +90,8 @@ export interface Snapshot {
   /** Worktrees per project id, refreshed on demand and after changes. */
   worktrees: Record<string, Worktree[]>
   preferences: Preferences
+  statuses: Record<string, ProjectStatus>
+  refresh: RefreshState
   loaded: boolean
 }
 
@@ -159,6 +164,11 @@ export interface SauronApi {
   /** Tells the main process which session is in front of the user, for notification suppression. */
   setActiveSession(sessionId: string | null): void
   setPreferences(prefs: Partial<Preferences>): Promise<void>
+
+  startMaster(): Promise<void>
+  stopMaster(): Promise<void>
+  refreshStatus(projectId: string): Promise<void>
+  refreshAllStatuses(): Promise<void>
 
   /** Opens a live transcript view; returns the most recent page. */
   transcriptOpen(sessionId: string): Promise<TranscriptPage | null>

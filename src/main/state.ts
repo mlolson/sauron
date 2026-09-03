@@ -11,6 +11,10 @@ import { Notifier } from './services/notifier'
 import { TranscriptIndexer, TranscriptTailer, type TranscriptFile } from './services/transcripts'
 import { projectForCwd } from '@shared/transcripts'
 import type { TranscriptEntry, TranscriptPage } from '@shared/transcript-types'
+import { MASTER_SESSION_ID, type ProjectStatus } from '@shared/status'
+import { StatusStore } from './services/status-store'
+import { MasterHome, RefreshScheduler } from './services/master'
+import { ensureClaudeTrusts } from './services/claude-config'
 import type { Worktree } from '@shared/worktrees'
 import { defaultWorktreeBranch } from '@shared/worktrees'
 import { WorktreeService } from './services/worktrees'
@@ -52,6 +56,9 @@ export class AppState extends EventEmitter<StateEvents> {
   private tailers = new Map<string, TranscriptTailer>()
   private transcriptListeners = new Map<string, (entries: TranscriptEntry[]) => void>()
   private transcriptTimer: NodeJS.Timeout | null = null
+  readonly statusStore: StatusStore
+  readonly masterHome: MasterHome
+  readonly refresh: RefreshScheduler
 
   tmux: TmuxService | null = null
   pty: PtyService | null = null
@@ -60,6 +67,16 @@ export class AppState extends EventEmitter<StateEvents> {
 
   constructor(public readonly persistence: Persistence) {
     super()
+    this.statusStore = new StatusStore(persistence.paths.statusDir, () => {
+      this.refresh.markDone()
+      this.changed()
+    })
+    this.masterHome = new MasterHome(persistence.paths.masterDir, persistence.paths.statusDir)
+    this.refresh = new RefreshScheduler({
+      isMasterIdle: () => this.masterSession()?.state === 'idle',
+      send: (projectId) => this.sendRefreshPrompt(projectId),
+      onChange: () => this.changed(),
+    })
   }
 
   get paths() {
@@ -79,6 +96,8 @@ export class AppState extends EventEmitter<StateEvents> {
       toolPaths: this.toolPaths,
       worktrees: this.worktrees,
       preferences: this.preferences,
+      statuses: this.statusStore.statuses,
+      refresh: { queued: this.refresh.queued, inProgress: this.refresh.inProgress },
       loaded: this.loaded,
     }
   }
@@ -117,6 +136,11 @@ export class AppState extends EventEmitter<StateEvents> {
     this.indexer.start()
     await this.rescanTranscripts()
     this.transcriptTimer = setInterval(() => void this.rescanTranscripts(), 30_000)
+    await this.statusStore.start()
+    await this.regenerateMasterHome()
+    if (this.preferences.masterAutoStart && !(this.masterSession() && isAlive(this.masterSession()!))) {
+      await this.startMaster()
+    }
     this.changed()
   }
 
@@ -177,6 +201,9 @@ export class AppState extends EventEmitter<StateEvents> {
       this.persistConfig()
       this.changed()
       this.select({ kind: 'project', id: project.id })
+      await this.regenerateMasterHome()
+      await this.refreshWorktrees(project.id)
+      this.refresh.enqueue(project.id)
     } catch (error) {
       this.report(error)
     }
@@ -188,8 +215,10 @@ export class AppState extends EventEmitter<StateEvents> {
 
   removeProject(id: string): void {
     this.projects = this.projects.filter((p) => p.id !== id)
+    this.refresh.remove(id)
     this.persistConfig()
     this.changed()
+    void this.regenerateMasterHome()
   }
 
   // MARK: Session helpers
@@ -442,6 +471,11 @@ export class AppState extends EventEmitter<StateEvents> {
     })
     if (transition.state === 'stopped' && !wasStopped) this.pty?.close(sessionId)
     this.notifier.setBadge(this.waitingCount())
+    if (sessionId === MASTER_SESSION_ID) {
+      if (transition.state === 'idle') this.refresh.markDone()
+      // The master's own turn-complete is noise; only prompts for input matter.
+      if (event.event === 'Stop') return
+    }
     if (transition.notify && !this.isInFront(sessionId)) {
       this.notifier.post({ ...transition.notify, onClick: () => this.select({ kind: 'session', id: sessionId }) })
     }
@@ -587,6 +621,145 @@ export class AppState extends EventEmitter<StateEvents> {
     else this.transcriptListeners.delete(sessionId)
   }
 
+  // MARK: Master agent
+
+  masterSession(): Session | undefined {
+    return this.sessions.find((s) => s.id === MASTER_SESSION_ID)
+  }
+
+  async regenerateMasterHome(): Promise<void> {
+    if (!this.sauronBin) return
+    try {
+      await this.masterHome.regenerate(this.projects, this.sauronBin)
+    } catch (error) {
+      this.report(error)
+    }
+  }
+
+  /** Starts the master agent, resuming its previous conversation when possible. */
+  async startMaster(): Promise<void> {
+    const existing = this.masterSession()
+    if (existing && isAlive(existing)) {
+      this.select({ kind: 'session', id: MASTER_SESSION_ID })
+      return
+    }
+    try {
+      const { tools, tmux } = this.requireTools()
+      if (!tools.claude) throw new SauronError('executable_not_found', 'claude was not found on PATH.')
+      await this.regenerateMasterHome()
+      await ensureClaudeTrusts(this.masterHome.dir)
+      const addDirs = this.projects.flatMap((p) => ['--add-dir', p.path])
+      const settings = await this.claudeSettingsArgs(MASTER_SESSION_ID)
+      const tryStart = async (cliSessionId: string, resume: boolean): Promise<string> => {
+        const tmuxName = tmuxSessionName('master', randomUUID())
+        const command = resume
+          ? [tools.claude!, '--resume', cliSessionId, ...settings, ...addDirs]
+          : [tools.claude!, '--session-id', cliSessionId, ...settings, ...addDirs]
+        await tmux.newSession({ name: tmuxName, workingDir: this.masterHome.dir, environment: this.launchEnvironment(MASTER_SESSION_ID, tools), command })
+        return tmuxName
+      }
+      let cliSessionId = existing?.cliSessionId ?? null
+      let tmuxName: string
+      let resumed = false
+      if (cliSessionId) {
+        tmuxName = await tryStart(cliSessionId, true)
+        await sleep(3000)
+        resumed = await tmux.hasSession(tmuxName)
+        if (!resumed) console.warn('master resume failed; starting fresh')
+      }
+      if (!resumed) {
+        cliSessionId = randomUUID()
+        tmuxName = await tryStart(cliSessionId, false)
+      }
+      const now = new Date().toISOString()
+      const session: Session = {
+        id: MASTER_SESSION_ID,
+        projectId: null,
+        tool: 'claude',
+        kind: 'managed',
+        displayName: 'Master Agent',
+        tmuxName: tmuxName!,
+        cliSessionId,
+        transcriptPath: claudeTranscriptPath(homedir(), this.masterHome.dir, cliSessionId!),
+        workingDir: this.masterHome.dir,
+        worktreePath: null,
+        createdAt: existing?.createdAt ?? now,
+        lastActivityAt: now,
+        state: 'running',
+        stateSource: 'inferred',
+      }
+      this.pty?.close(MASTER_SESSION_ID)
+      this.sessions = [session, ...this.sessions.filter((s) => s.id !== MASTER_SESSION_ID)]
+      this.persistSessions()
+      this.changed()
+    } catch (error) {
+      this.report(error, { sessionId: MASTER_SESSION_ID })
+    }
+  }
+
+  async stopMaster(): Promise<void> {
+    await this.stopSession(MASTER_SESSION_ID)
+  }
+
+  private masterPromptFor(projectId: string): string | null {
+    const project = this.project(projectId)
+    if (!project) return null
+    return `Please refresh the status summary for project "${project.name}" (id ${project.id}, path ${project.path}). Follow the "Status refresh" procedure in CLAUDE.md and reply with one line when done.`
+  }
+
+  private async sendRefreshPrompt(projectId: string): Promise<boolean> {
+    const master = this.masterSession()
+    const prompt = this.masterPromptFor(projectId)
+    if (!master?.tmuxName || !isAlive(master) || !prompt || !this.tmux) return false
+    try {
+      await this.tmux.sendText(master.tmuxName, prompt)
+      this.updateSession(MASTER_SESSION_ID, (s) => {
+        s.state = 'running'
+      })
+      return true
+    } catch (error) {
+      this.report(error, { sessionId: MASTER_SESSION_ID })
+      return false
+    }
+  }
+
+  requestRefresh(projectId: string): void {
+    if (!this.project(projectId)) return
+    const master = this.masterSession()
+    if (!master || !isAlive(master)) {
+      this.report(new SauronError('invalid_state', 'The master agent is not running. Start it to refresh summaries.'), { projectId })
+    }
+    this.refresh.enqueue(projectId)
+  }
+
+  /** Types text into a running managed session. Refused while the agent is mid-turn. */
+  async sendToSession(sessionId: string, text: string): Promise<void> {
+    const session = this.session(sessionId)
+    if (!session?.tmuxName || session.kind !== 'managed' || !isAlive(session)) throw new SauronError('invalid_state', `Session ${sessionId} is not running.`)
+    if (session.state === 'running' && session.stateSource === 'hook') throw new SauronError('invalid_state', `${session.displayName} is mid-turn; try again when it is idle.`)
+    const { tmux } = this.requireTools()
+    await tmux.sendText(session.tmuxName, text)
+    this.updateSession(sessionId, (s) => {
+      s.lastActivityAt = new Date().toISOString()
+    })
+  }
+
+  async setStatus(projectId: string, summary: string, details: string | null, source: ProjectStatus['source'] = 'master'): Promise<ProjectStatus> {
+    const project = this.project(projectId)
+    if (!project) throw new SauronError('invalid_state', `Unknown project ${projectId}`)
+    let headCommit: string | null = null
+    if (this.toolPaths?.git) {
+      const { runCommand } = await import('./services/command')
+      const r = await runCommand(this.toolPaths.git, ['rev-parse', 'HEAD'], { cwd: project.path })
+      if (r.code === 0) headCommit = r.stdout.trim()
+    }
+    const status: ProjectStatus = { projectId, summary: summary.trim(), details, updatedAt: new Date().toISOString(), headCommit, source }
+    await this.statusStore.write(status)
+    this.refresh.markDone(projectId)
+    this.changed()
+    return status
+  }
+
   // MARK: Orphans
 
   adoptOrphan(tmuxName: string): void {
@@ -672,6 +845,7 @@ export class AppState extends EventEmitter<StateEvents> {
     if (this.livenessTimer) clearInterval(this.livenessTimer)
     if (this.transcriptTimer) clearInterval(this.transcriptTimer)
     this.indexer.stop()
+    this.statusStore.stop()
     for (const id of [...this.tailers.keys()]) this.transcriptClose(id)
     this.pty?.closeAll()
     await this.persistence.flush()

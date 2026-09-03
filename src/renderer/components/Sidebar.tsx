@@ -47,7 +47,7 @@ export function Sidebar({ snapshot, selection, onSelect }: Props) {
           { label: 'Forget', destructive: true, action: () => void window.sauron.forgetSession(session.id) },
         ]
 
-  const unassigned = snapshot.sessions.filter((s) => s.projectId === null)
+  const unassigned = snapshot.sessions.filter((s) => s.projectId === null && s.id !== 'master')
 
   return (
     <aside className="sidebar">
@@ -64,10 +64,19 @@ export function Sidebar({ snapshot, selection, onSelect }: Props) {
         </button>
       </div>
       <nav>
-        <Row selected={sameTarget(selection, { kind: 'master' })} onClick={() => onSelect({ kind: 'master' })}>
-          <span className="glyph">◉</span>
-          <span className="label">Master Agent</span>
-        </Row>
+        {(() => {
+          const master = snapshot.sessions.find((s) => s.id === 'master')
+          return (
+            <Row selected={sameTarget(selection, { kind: 'master' })} onClick={() => onSelect({ kind: 'master' })} onContextMenu={master && isAlive(master) ? (e) => openMenu(e, sessionMenu(master)) : undefined}>
+              <span className={`glyph ${master && isAlive(master) ? 'accent' : 'muted'}`}>◉</span>
+              <span className="label">
+                <span className="name">Master Agent</span>
+                <span className="sub">{master && isAlive(master) ? (snapshot.refresh.inProgress ? 'refreshing a summary' : 'ready') : 'not running'}</span>
+              </span>
+              {master && <StateDot state={master.state} />}
+            </Row>
+          )
+        })()}
 
         <div className="section-title">Projects</div>
         {snapshot.projects.length === 0 && <div className="hint">Drop a git repository here or press ⌘O.</div>}
@@ -88,8 +97,11 @@ export function Sidebar({ snapshot, selection, onSelect }: Props) {
                 <span className="glyph">▸</span>
                 <span className="label">
                   <span className="name">{project.name}</span>
-                  <span className="sub">{abbreviate(project.path)}</span>
+                  <span className="sub" title={snapshot.statuses[project.id]?.summary}>{snapshot.statuses[project.id]?.summary ?? abbreviate(project.path)}</span>
                 </span>
+                {(snapshot.refresh.inProgress === project.id || snapshot.refresh.queued.includes(project.id)) && (
+                  <span className="spinner" title={snapshot.refresh.inProgress === project.id ? 'Refreshing summary' : 'Refresh queued'} />
+                )}
                 {waiting > 0 && <span className="badge waiting" title="Sessions waiting for input">{waiting}</span>}
                 {alive > 0 && <span className="badge">{alive}</span>}
               </Row>

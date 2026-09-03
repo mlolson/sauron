@@ -9,6 +9,11 @@
  *   sauron worktrees --project <name|id>
  *   sauron worktrees remove --project <name|id> --path <dir> [--force]
  *   sauron stop --session <id>
+ *   sauron send --session <id> --text <text>
+ *   sauron status [get] --project <name|id>
+ *   sauron status set --project <name|id> --summary <text> [--details <text>]
+ *   sauron status refresh --project <name|id>
+ *   sauron master                 (start or focus the master agent)
  *   sauron select --project <name|id> | --session <id>
  *   sauron raw '<json>'
  *   sauron hook claude <Event>      (Claude Code hook: JSON payload on stdin)
@@ -143,6 +148,17 @@ async function main(): Promise<void> {
     case 'resume':
       payload = { cmd: 'sessions.resume', session: flags.session }
       break
+    case 'send':
+      payload = { cmd: 'sessions.send', session: flags.session, text: flags.text ?? positional.slice(1).join(' ') }
+      break
+    case 'status':
+      if (sub === 'set') payload = { cmd: 'status.set', project: flags.project, summary: flags.summary, details: flags.details }
+      else if (sub === 'refresh') payload = { cmd: 'status.refresh', project: flags.project }
+      else payload = { cmd: 'status.get', project: flags.project }
+      break
+    case 'master':
+      payload = { cmd: 'master.start' }
+      break
     case 'select':
       payload = { cmd: 'select', project: flags.project, session: flags.session }
       break
@@ -150,7 +166,7 @@ async function main(): Promise<void> {
       payload = JSON.parse(sub ?? '{}')
       break
     default:
-      console.error('usage: sauron <ping|projects|sessions|launch|stop|resume|select|worktrees|raw> [options]')
+      console.error('usage: sauron <ping|projects|sessions|launch|stop|resume|send|status|master|select|worktrees|hook|raw> [options]')
       process.exit(2)
   }
   const response = await request(payload)
