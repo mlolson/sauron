@@ -144,7 +144,7 @@ button.icon-button { width: 26px; height: 26px; padding: 0; font-size: 16px; lin
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
 }
-.session-header button, .session-header .tabs { -webkit-app-region: no-drag; }
+.session-header button, .session-header .tabs, .session-header .titles { -webkit-app-region: no-drag; }
 .session-header .titles { display: flex; flex-direction: column; line-height: 1.2; }
 .session-header .title { font-weight: 600; }
 .session-header .subtitle { font-size: 11px; color: var(--fg-muted); }
@@ -195,6 +195,7 @@ button.icon-button { width: 26px; height: 26px; padding: 0; font-size: 16px; lin
 
 /* Context menu */
 .context-menu {
+  -webkit-app-region: no-drag;
   position: fixed;
   z-index: 100;
   min-width: 180px;
@@ -275,7 +276,7 @@ button:disabled { opacity: 0.5; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* Modals */
-.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 50; display: flex; align-items: flex-start; justify-content: center; padding-top: 80px; }
+.modal-backdrop { -webkit-app-region: no-drag; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 50; display: flex; align-items: flex-start; justify-content: center; padding-top: 80px; }
 .modal { width: 640px; max-height: calc(100vh - 120px); overflow-y: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.45); padding: 16px 20px 20px; }
 .modal header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .modal h2 { margin: 0; font-size: 16px; }
@@ -294,7 +295,7 @@ button:disabled { opacity: 0.5; }
 .split-button { position: relative; display: inline-flex; }
 .split-button button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .split-button button.caret { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: 4px 8px; border-left: 1px solid rgba(255,255,255,0.35); }
-.context-menu.anchored { position: absolute; top: 100%; right: 0; margin-top: 4px; min-width: 220px; }
+.context-menu.anchored { -webkit-app-region: no-drag; position: absolute; top: 100%; right: 0; margin-top: 4px; min-width: 220px; }
 .session-header .title.editable { cursor: text; }
 .session-header .title.editable:hover { text-decoration: underline dotted; }
 .title-input { font: inherit; font-weight: 600; color: inherit; background: var(--bg-card); border: 1px solid var(--accent); border-radius: 4px; padding: 1px 6px; width: 260px; user-select: text; -webkit-user-select: text; }
