@@ -12,7 +12,8 @@ const logFile = installFileLogging(join(app.getPath('logs'), 'main.log'))
 let mainWindow: BrowserWindow | null = null
 const pendingOpens: string[] = []
 
-// Unpackaged builds would otherwise use the lowercase package name.
+// Unpackaged builds would otherwise be named after the package and store data under it.
+app.setName('Sauron')
 app.setPath('userData', join(app.getPath('appData'), 'Sauron'))
 const paths = new AppPaths(app.getPath('userData'))
 const state = new AppState(new Persistence(paths))
