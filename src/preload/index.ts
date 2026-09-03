@@ -41,6 +41,10 @@ const api: SauronApi = {
 
   setActiveSession: (sessionId) => ipcRenderer.send('setActiveSession', sessionId),
   setPreferences: (prefs) => ipcRenderer.invoke('setPreferences', prefs),
+  refreshDocuments: (projectId) => ipcRenderer.invoke('refreshDocuments', projectId),
+  addKeyDocumentDialog: (projectId) => ipcRenderer.invoke('addKeyDocumentDialog', projectId),
+  removeKeyDocument: (projectId, path) => ipcRenderer.invoke('removeKeyDocument', projectId, path),
+  readDocument: (projectId, path) => ipcRenderer.invoke('readDocument', projectId, path),
   startMaster: () => ipcRenderer.invoke('startMaster'),
   stopMaster: () => ipcRenderer.invoke('stopMaster'),
   refreshStatus: (projectId) => ipcRenderer.invoke('refreshStatus', projectId),

@@ -144,7 +144,14 @@ export class SocketServer {
         const project = this.findProject(req.project)
         if (!project) throw new Error(`unknown project ${req.project}`)
         if (typeof req.summary !== 'string' || !req.summary.trim()) throw new Error('summary is required')
-        return state.setStatus(project.id, req.summary, typeof req.details === 'string' && req.details.trim() ? req.details : null)
+        const strings = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : typeof v === 'string' && v ? [v] : [])
+        return state.setStatus(
+          project.id,
+          req.summary,
+          typeof req.details === 'string' && req.details.trim() ? req.details : null,
+          strings(req.updates),
+          strings(req.todos),
+        )
       }
       case 'status.refresh': {
         const project = this.findProject(req.project)
@@ -177,7 +184,11 @@ export class SocketServer {
         return null
       }
       case 'select': {
-        if (typeof req.session === 'string') state.select({ kind: 'session', id: req.session })
+        if (typeof req.document === 'string') {
+          const project = this.findProject(req.project)
+          if (!project) throw new Error(`unknown project ${req.project}`)
+          state.select({ kind: 'document', projectId: project.id, path: req.document })
+        } else if (typeof req.session === 'string') state.select({ kind: 'session', id: req.session })
         else if (req.project !== undefined) {
           const project = this.findProject(req.project)
           if (!project) throw new Error(`unknown project ${req.project}`)

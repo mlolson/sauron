@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AppError, SelectionTarget, Snapshot } from '@shared/types'
 import { defaultPreferences } from '@shared/types'
 
-const empty: Snapshot = { projects: [], sessions: [], orphanTmuxSessions: [], hiddenExternal: [], toolPaths: null, worktrees: {}, preferences: defaultPreferences, statuses: {}, refresh: { queued: [], inProgress: null }, loaded: false }
+const empty: Snapshot = { projects: [], sessions: [], orphanTmuxSessions: [], hiddenExternal: [], toolPaths: null, worktrees: {}, preferences: defaultPreferences, documents: {}, statuses: {}, refresh: { queued: [], inProgress: null }, loaded: false }
 
 export function useSnapshot(): Snapshot {
   const [snapshot, setSnapshot] = useState<Snapshot>(empty)
@@ -46,6 +46,7 @@ export function useErrors(): [Banner[], (id: number) => void] {
 export function sameTarget(a: SelectionTarget | null, b: SelectionTarget | null): boolean {
   if (!a || !b || a.kind !== b.kind) return false
   if (a.kind === 'orphan' && b.kind === 'orphan') return a.name === b.name
+  if (a.kind === 'document' && b.kind === 'document') return a.projectId === b.projectId && a.path === b.path
   if ('id' in a && 'id' in b) return a.id === b.id
   return a.kind === 'master'
 }

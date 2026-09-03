@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Project, SelectionTarget, Session, ToolPaths } from '@shared/types'
+import type { KeyDocument, Project, SelectionTarget, Session, ToolPaths } from '@shared/types'
 import { isAlive } from '@shared/types'
 import type { Worktree } from '@shared/worktrees'
 import type { ProjectStatus, RefreshState } from '@shared/status'
@@ -18,10 +18,11 @@ interface Props {
   refresh: RefreshState
   masterAlive: boolean
   hiddenExternal: string[]
+  documents: KeyDocument[]
   onSelect: (t: SelectionTarget) => void
 }
 
-export function ProjectDetail({ project, sessions, toolPaths, worktrees, status, refresh, masterAlive, hiddenExternal, onSelect }: Props) {
+export function ProjectDetail({ project, sessions, toolPaths, worktrees, status, refresh, masterAlive, hiddenExternal, documents, onSelect }: Props) {
   const refreshing = refresh.inProgress === project.id
   const queued = refresh.queued.includes(project.id)
   const [showHidden, setShowHidden] = useState(false)
@@ -34,6 +35,7 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, status,
 
   useEffect(() => {
     void window.sauron.refreshWorktrees(project.id)
+    void window.sauron.refreshDocuments(project.id)
   }, [project.id])
 
   const remove = async (wt: Worktree) => {
@@ -86,10 +88,66 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, status,
         {status ? (
           <>
             <p className="summary">{status.summary}</p>
+            <div className="status-columns">
+              <div>
+                <h3>Recent updates</h3>
+                {status.recentUpdates.length ? (
+                  <ul className="status-list">
+                    {status.recentUpdates.map((u, i) => (
+                      <li key={i}>{u}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="muted small">None recorded.</p>
+                )}
+              </div>
+              <div>
+                <h3>TODOs</h3>
+                {status.todos.length ? (
+                  <ul className="status-list todos">
+                    {status.todos.map((t, i) => (
+                      <li key={i} className={/^blocked/i.test(t) ? 'blocked' : ''}>
+                        {t}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="muted small">None recorded.</p>
+                )}
+              </div>
+            </div>
             {status.details && <pre className="details">{status.details}</pre>}
           </>
         ) : (
           <p className="muted">{masterAlive ? 'No summary yet. Click Refresh to have the supervisor agent write one.' : 'No summary yet. Start the supervisor agent to generate one.'}</p>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="card-head">
+          <h2>Key Documents</h2>
+          <span className="muted small">Markdown at the root or one level down, plus anything you add</span>
+          <button onClick={() => void window.sauron.addKeyDocumentDialog(project.id)}>Add…</button>
+        </div>
+        {documents.length === 0 ? (
+          <p className="muted">No documents found. Add one with the button above.</p>
+        ) : (
+          <ul className="doc-list">
+            {documents.map((d) => (
+              <li key={d.path}>
+                <button className="doc" onClick={() => onSelect({ kind: 'document', projectId: project.id, path: d.path })} title={d.path}>
+                  <span className="doc-icon">▤</span>
+                  <span className="name">{d.name}</span>
+                  {d.path.includes('/') && <span className="muted small">{d.path.slice(0, d.path.lastIndexOf('/'))}</span>}
+                  {d.source === 'added' && <span className="tag">added</span>}
+                </button>
+                <span className="muted small">{relativeTime(d.mtime)}</span>
+                <button className="link" title="Remove from key documents" onClick={() => void window.sauron.removeKeyDocument(project.id, d.path)}>
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 

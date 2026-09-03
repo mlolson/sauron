@@ -52,6 +52,11 @@ Run on a build from `main` with `scripts/app.sh`. Each item maps to a slice's Do
 - [ ] Quit and relaunch: the master remembers the previous conversation.
 - [ ] Adding a project regenerates CLAUDE.md; `sauron projects` from the master lists it.
 
+## Status structure and key documents
+- [ ] Refresh yields a one-sentence summary, a Recent updates list, and a TODOs list; a "Blocked:" todo shows a warning glyph.
+- [ ] Key Documents lists README and other root/one-level Markdown files; Add… adds a file from inside the project; ✕ removes (and stays removed after relaunch).
+- [ ] Clicking a document renders Markdown; Reload picks up edits; Reveal in Finder works.
+
 ## Slice 8: commit-triggered refresh
 - [ ] Commit in a project: row shows the spinner, then the summary updates within about a minute.
 - [ ] Three commits within 30 seconds: one refresh.

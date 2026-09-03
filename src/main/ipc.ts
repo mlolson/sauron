@@ -68,6 +68,23 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
   })
   handle('setPreferences', async (prefs) => state.setPreferences(prefs))
 
+  handle('refreshDocuments', (projectId) => state.refreshDocuments(projectId))
+  handle('addKeyDocumentDialog', async (projectId) => {
+    const project = state.project(projectId)
+    if (!project) return
+    const win = getWindow()
+    const result = await dialog.showOpenDialog(win ?? new BrowserWindow({ show: false }), {
+      title: 'Add Key Document',
+      message: `Choose a file inside ${project.name}.`,
+      defaultPath: project.path,
+      properties: ['openFile', 'multiSelections'],
+    })
+    if (result.canceled) return
+    for (const p of result.filePaths) await state.addKeyDocument(projectId, p)
+  })
+  handle('removeKeyDocument', (projectId, path) => state.removeKeyDocument(projectId, path))
+  handle('readDocument', (projectId, path) => state.readDocument(projectId, path))
+
   handle('startMaster', () => state.startMaster())
   handle('stopMaster', () => state.stopMaster())
   handle('refreshStatus', async (projectId) => state.requestRefresh(projectId))

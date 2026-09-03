@@ -9,6 +9,17 @@ export interface Project {
   path: string
   addedAt: string
   pinned: boolean
+  /** Manual adjustments to the key documents list (project-relative paths). */
+  keyDocuments?: { included: string[]; excluded: string[] }
+}
+
+export interface KeyDocument {
+  /** Project-relative path. */
+  path: string
+  name: string
+  sizeBytes: number
+  mtime: string
+  source: 'default' | 'added'
 }
 
 export interface Preferences {
@@ -73,6 +84,8 @@ export interface SessionsFile {
   sessions: Session[]
   /** cli session ids of external sessions the user hid. */
   hiddenExternal?: string[]
+  /** Hash of the CLAUDE.md the supervisor has been told about; a change triggers a re-read nudge. */
+  masterClaudeMdHash?: string
 }
 
 export const SESSIONS_VERSION = 1
@@ -108,6 +121,7 @@ export interface Snapshot {
   /** Worktrees per project id, refreshed on demand and after changes. */
   worktrees: Record<string, Worktree[]>
   preferences: Preferences
+  documents: Record<string, KeyDocument[]>
   statuses: Record<string, ProjectStatus>
   refresh: RefreshState
   loaded: boolean
@@ -190,6 +204,11 @@ export interface SauronApi {
   setActiveSession(sessionId: string | null): void
   setPreferences(prefs: Partial<Preferences>): Promise<void>
 
+  refreshDocuments(projectId: string): Promise<void>
+  addKeyDocumentDialog(projectId: string): Promise<void>
+  removeKeyDocument(projectId: string, path: string): Promise<void>
+  readDocument(projectId: string, path: string): Promise<{ content: string; mtime: string }>
+
   startMaster(): Promise<void>
   stopMaster(): Promise<void>
   refreshStatus(projectId: string): Promise<void>
@@ -211,3 +230,4 @@ export type SelectionTarget =
   | { kind: 'project'; id: string }
   | { kind: 'session'; id: string }
   | { kind: 'orphan'; name: string }
+  | { kind: 'document'; projectId: string; path: string }

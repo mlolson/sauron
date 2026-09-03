@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { parseStatusFile, renderMasterClaudeMd } from '@shared/status'
+import { firstSentence, parseStatusFile, renderMasterClaudeMd } from '@shared/status'
 
 describe('parseStatusFile', () => {
   it('accepts minimal and snake_case forms', () => {
-    const s = parseStatusFile('p1', JSON.stringify({ summary: ' Hello ', updated_at: '2026-09-03T00:00:00Z', head_commit: 'abc' }))
-    expect(s).toMatchObject({ projectId: 'p1', summary: 'Hello', details: null, updatedAt: '2026-09-03T00:00:00Z', headCommit: 'abc', source: 'master' })
+    const s = parseStatusFile('p1', JSON.stringify({ summary: ' Hello. World. ', updated_at: '2026-09-03T00:00:00Z', head_commit: 'abc', recent_updates: '- a\n- b', todos: ['c'] }))
+    expect(s).toMatchObject({ projectId: 'p1', summary: 'Hello.', recentUpdates: ['a', 'b'], todos: ['c'], details: null, updatedAt: '2026-09-03T00:00:00Z', headCommit: 'abc', source: 'master' })
+  })
+  it('keeps one sentence', () => {
+    expect(firstSentence('Sauron is an app (v1.2) for agents. It also does more.')).toBe('Sauron is an app (v1.2) for agents.')
+    expect(firstSentence('No terminal punctuation here')).toBe('No terminal punctuation here')
   })
   it('rejects garbage', () => {
     expect(parseStatusFile('p1', 'not json')).toBeNull()

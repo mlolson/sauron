@@ -1,8 +1,12 @@
 export interface ProjectStatus {
   projectId: string
-  /** One to three sentences for the project row. */
+  /** Exactly one sentence, shown on the project row. */
   summary: string
-  /** Optional longer markdown-ish text for the project page. */
+  /** Short bullets: what changed recently. */
+  recentUpdates: string[]
+  /** Short bullets: open work, blockers, next steps. */
+  todos: string[]
+  /** Optional free text for anything that fits neither list. */
   details: string | null
   updatedAt: string
   /** Commit hash the summary describes, when the writer knew it. */
@@ -28,14 +32,28 @@ export function parseStatusFile(projectId: string, raw: string): ProjectStatus |
   if (!obj || typeof obj !== 'object') return null
   const o = obj as Record<string, unknown>
   if (typeof o.summary !== 'string') return null
+  const list = (v: unknown): string[] => {
+    if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean)
+    if (typeof v === 'string') return v.split(/\n/).map((l) => l.replace(/^\s*[-*•]\s*/, '').trim()).filter(Boolean)
+    return []
+  }
   return {
     projectId,
-    summary: o.summary.trim(),
+    summary: firstSentence(o.summary),
+    recentUpdates: list(o.recentUpdates ?? o.recent_updates ?? o.updates),
+    todos: list(o.todos ?? o.todo),
     details: typeof o.details === 'string' && o.details.trim() ? o.details : null,
     updatedAt: typeof o.updatedAt === 'string' ? o.updatedAt : typeof o.updated_at === 'string' ? o.updated_at : new Date().toISOString(),
     headCommit: typeof o.headCommit === 'string' ? o.headCommit : typeof o.head_commit === 'string' ? o.head_commit : null,
     source: o.source === 'manual' ? 'manual' : 'master',
   }
+}
+
+/** Trims a summary to its first sentence so the project row stays one line of meaning. */
+export function firstSentence(text: string): string {
+  const t = text.trim().replace(/\s+/g, ' ')
+  const m = t.match(/^.+?[.!?](?=\s|$)/)
+  return (m ? m[0] : t).trim()
 }
 
 export interface MasterContext {
@@ -79,7 +97,7 @@ Every project path is readable from this session (they are passed with \`--add-d
 - \`sauron sessions [--project <name|id>]\` — list sessions with state (running, waitingForInput, idle, stopped)
 - \`sauron launch --project <name|id> [--tool claude|codex|shell] [--title "<short title>"] [--prompt "<text>"] [--worktree [<branch>]]\` — start a worker (give it a descriptive title)
 - \`sauron send --session <id> --text "<text>"\` — type a message into a running worker (refused while it is mid-turn)
-- \`sauron status set --project <name|id> --summary "<1-3 sentences>" [--details "<longer text>"]\` — write a status
+- \`sauron status set --project <name|id> --summary "<one sentence>" --update "<bullet>" [--update ...] --todo "<bullet>" [--todo ...] [--details "<text>"]\` — write a status (repeat \`--update\` and \`--todo\` per bullet)
 - \`sauron status get --project <name|id>\` — read the current status
 - \`sauron worktrees --project <name|id>\` — list worktrees
 
@@ -106,11 +124,15 @@ When Sauron or the user asks you to "refresh the status summary for project X", 
 3. Skim recent session transcripts for that project (last few user and assistant messages of
    the most recently modified files) to learn what agents are working on or blocked by.
 4. Read README, CLAUDE.md, AGENTS.md, TODO.md, or similar planning docs if present.
-5. Write the result with \`sauron status set --project X --summary "..." --details "..."\`.
-   - \`summary\`: one to three plain sentences: what the project is, what changed recently,
-     and what is in progress or blocked. No markdown, no preamble.
-   - \`details\`: a few short bullets: recent commits worth knowing, active sessions and their
-     tasks, open problems, obvious next steps.
+5. Write the result with
+   \`sauron status set --project X --summary "..." --update "..." --update "..." --todo "..." --todo "..."\`.
+   - \`--summary\`: exactly ONE plain sentence saying what the project is and where it stands.
+     No markdown, no preamble, no second sentence (Sauron truncates to the first sentence).
+   - \`--update\` (3 to 6 of them): one bullet each for recent changes worth knowing: notable
+     commits, what active sessions did, problems found or fixed. Newest first.
+   - \`--todo\` (3 to 8 of them): one bullet each for open work: in-progress tasks, blockers,
+     and obvious next steps. Mark blockers with "Blocked:".
+   - \`--details\` (optional): anything important that fits neither list.
 6. Reply with one line saying the status was updated. Keep it brief; the user may not be
    reading this session while refreshes run.
 

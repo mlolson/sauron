@@ -13,7 +13,7 @@
  *   sauron stop --session <id>       (kill but keep the record)
  *   sauron send --session <id> --text <text>
  *   sauron status [get] --project <name|id>
- *   sauron status set --project <name|id> --summary <text> [--details <text>]
+ *   sauron status set --project <name|id> --summary <one sentence> [--update <bullet>]... [--todo <bullet>]... [--details <text>]
  *   sauron status refresh --project <name|id>
  *   sauron master                 (start or focus the supervisor agent)
  *   sauron select --project <name|id> | --session <id>
@@ -28,25 +28,29 @@ import { homedir } from 'node:os'
 
 const socketPath = process.env.SAURON_SOCKET || join(homedir(), 'Library/Application Support/Sauron/sauron.sock')
 
-function parseFlags(args: string[]): { positional: string[]; flags: Record<string, string> } {
+const REPEATABLE = new Set(['update', 'todo'])
+
+function parseFlags(args: string[]): { positional: string[]; flags: Record<string, string>; lists: Record<string, string[]> } {
   const positional: string[] = []
   const flags: Record<string, string> = {}
+  const lists: Record<string, string[]> = {}
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!
     if (a.startsWith('--')) {
       const key = a.slice(2)
       const next = args[i + 1]
+      let value = 'true'
       if (next !== undefined && !next.startsWith('--')) {
-        flags[key] = next
+        value = next
         i++
-      } else {
-        flags[key] = 'true'
       }
+      if (REPEATABLE.has(key)) (lists[key] ??= []).push(value)
+      else flags[key] = value
     } else {
       positional.push(a)
     }
   }
-  return { positional, flags }
+  return { positional, flags, lists }
 }
 
 function request(payload: Record<string, unknown>): Promise<{ ok: boolean; result?: unknown; error?: string }> {
@@ -98,7 +102,7 @@ async function hookPayload(tool: string, positional: string[]): Promise<{ event:
 }
 
 async function main(): Promise<void> {
-  const { positional, flags } = parseFlags(process.argv.slice(2))
+  const { positional, flags, lists } = parseFlags(process.argv.slice(2))
   const [command, sub] = positional
   let payload: Record<string, unknown>
   switch (command) {
@@ -164,7 +168,7 @@ async function main(): Promise<void> {
       payload = { cmd: 'sessions.send', session: flags.session, text: flags.text ?? positional.slice(1).join(' ') }
       break
     case 'status':
-      if (sub === 'set') payload = { cmd: 'status.set', project: flags.project, summary: flags.summary, details: flags.details }
+      if (sub === 'set') payload = { cmd: 'status.set', project: flags.project, summary: flags.summary, details: flags.details, updates: lists.update ?? [], todos: lists.todo ?? [] }
       else if (sub === 'refresh') payload = { cmd: 'status.refresh', project: flags.project }
       else payload = { cmd: 'status.get', project: flags.project }
       break
@@ -172,7 +176,7 @@ async function main(): Promise<void> {
       payload = { cmd: 'master.start' }
       break
     case 'select':
-      payload = { cmd: 'select', project: flags.project, session: flags.session }
+      payload = { cmd: 'select', project: flags.project, session: flags.session, document: flags.document }
       break
     case 'raw':
       payload = JSON.parse(sub ?? '{}')

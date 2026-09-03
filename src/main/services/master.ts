@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { renderMasterClaudeMd } from '@shared/status'
@@ -11,7 +12,12 @@ export class MasterHome {
     private readonly statusDir: string,
   ) {}
 
-  async regenerate(projects: Project[], sauronBin: string): Promise<void> {
+  get claudeMdPath(): string {
+    return join(this.dir, 'CLAUDE.md')
+  }
+
+  /** Writes CLAUDE.md and returns a hash of its content. */
+  async regenerate(projects: Project[], sauronBin: string): Promise<string> {
     await mkdir(this.dir, { recursive: true })
     const md = renderMasterClaudeMd({
       projects: projects.map(({ id, name, path }) => ({ id, name, path })),
@@ -20,7 +26,8 @@ export class MasterHome {
       claudeTranscriptRoot: join(homedir(), '.claude', 'projects'),
       codexSessionRoot: join(homedir(), '.codex', 'sessions'),
     })
-    await writeFile(join(this.dir, 'CLAUDE.md'), md, 'utf8')
+    await writeFile(this.claudeMdPath, md, 'utf8')
+    return createHash('sha1').update(md).digest('hex')
   }
 }
 

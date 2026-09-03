@@ -247,6 +247,19 @@ progress shows an indicator.
 **MA-9 (Could)** Allow the user to edit the supervisor agent's CLAUDE.md preamble with custom
 instructions that survive regeneration.
 
+### 4.5a Key documents
+
+**DOC-1 (Must)** Each project page lists key documents: by default every Markdown file at
+the repository root or one directory below it (skipping `node_modules`, build output, and
+hidden directories), README first.
+
+**DOC-2 (Must)** The user can add any file inside the project to the list and remove any
+entry; both choices persist per project.
+
+**DOC-3 (Must)** Clicking a document opens it in a Markdown viewer in the detail pane, with
+Reload and Reveal in Finder; the view refreshes on window focus and periodically so agent
+edits show up. Non-Markdown files are shown as plain text.
+
 ### 4.6 Attention and notifications
 
 **ATT-1 (Must)** Sauron knows when a Sauron-managed Claude Code session is waiting for

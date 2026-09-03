@@ -9,6 +9,7 @@ import { EmptyDetail } from './components/Placeholders'
 import { MasterView } from './components/MasterView'
 import { PreferencesView } from './components/PreferencesView'
 import { QuickSwitcher } from './components/QuickSwitcher'
+import { DocumentView } from './components/DocumentView'
 import { isAlive } from '@shared/types'
 import { ErrorBanners } from './components/ErrorBanners'
 import { useErrors, useSelection, useSnapshot } from './store'
@@ -71,7 +72,7 @@ export function App() {
     case 'project': {
       const project = snapshot.projects.find((p) => p.id === selection.id)
       detail = project ? (
-        <ProjectDetail project={project} sessions={snapshot.sessions} toolPaths={snapshot.toolPaths} worktrees={snapshot.worktrees[project.id] ?? []} status={snapshot.statuses[project.id]} refresh={snapshot.refresh} masterAlive={snapshot.sessions.some((s) => s.id === 'master' && s.state !== 'stopped')} hiddenExternal={snapshot.hiddenExternal} onSelect={setSelection} />
+        <ProjectDetail project={project} sessions={snapshot.sessions} toolPaths={snapshot.toolPaths} worktrees={snapshot.worktrees[project.id] ?? []} status={snapshot.statuses[project.id]} refresh={snapshot.refresh} masterAlive={snapshot.sessions.some((s) => s.id === 'master' && s.state !== 'stopped')} hiddenExternal={snapshot.hiddenExternal} documents={snapshot.documents[project.id] ?? []} onSelect={setSelection} />
       ) : (
         <EmptyDetail />
       )
@@ -89,6 +90,11 @@ export function App() {
     case 'orphan':
       detail = <OrphanView name={selection.name} onSelect={setSelection} />
       break
+    case 'document': {
+      const project = snapshot.projects.find((p) => p.id === selection.projectId)
+      detail = project ? <DocumentView key={`${project.id}:${selection.path}`} project={project} path={selection.path} onSelect={setSelection} /> : <EmptyDetail />
+      break
+    }
     case 'master': {
       const master = snapshot.sessions.find((s) => s.id === 'master')
       detail = master && master.state !== 'stopped' ? <SessionView key="master" session={master} snapshot={snapshot} onSelect={setSelection} /> : <MasterView session={master} />

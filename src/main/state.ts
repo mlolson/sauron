@@ -11,11 +11,13 @@ import { Notifier } from './services/notifier'
 import { TranscriptIndexer, TranscriptTailer, type TranscriptFile } from './services/transcripts'
 import { projectForCwd } from '@shared/transcripts'
 import type { TranscriptEntry, TranscriptPage } from '@shared/transcript-types'
-import { MASTER_SESSION_ID, type ProjectStatus } from '@shared/status'
+import { MASTER_SESSION_ID, firstSentence, type ProjectStatus } from '@shared/status'
 import { StatusStore } from './services/status-store'
 import { MasterHome, RefreshScheduler } from './services/master'
 import { ensureClaudeTrusts } from './services/claude-config'
 import { GitWatcher } from './services/git-watcher'
+import { listKeyDocuments, readDocument, relativeInside } from './services/documents'
+import type { KeyDocument } from '@shared/types'
 import { runCommand } from './services/command'
 import type { Worktree } from '@shared/worktrees'
 import { defaultWorktreeBranch } from '@shared/worktrees'
@@ -43,8 +45,11 @@ export class AppState extends EventEmitter<StateEvents> {
   sessions: Session[] = []
   orphanTmuxSessions: string[] = []
   hiddenExternal = new Set<string>()
+  private masterClaudeMdHash: string | null = null
+  private masterNeedsReload = false
   toolPaths: ToolPaths | null = null
   worktrees: Record<string, Worktree[]> = {}
+  documents: Record<string, KeyDocument[]> = {}
   preferences: Preferences = { ...defaultPreferences }
   loaded = false
   /** Absolute path of the installed `sauron` shim; set by main before load(). */
@@ -101,6 +106,7 @@ export class AppState extends EventEmitter<StateEvents> {
       toolPaths: this.toolPaths,
       worktrees: this.worktrees,
       preferences: this.preferences,
+      documents: this.documents,
       statuses: this.statusStore.statuses,
       refresh: { queued: this.refresh.queued, inProgress: this.refresh.inProgress },
       loaded: this.loaded,
@@ -133,6 +139,7 @@ export class AppState extends EventEmitter<StateEvents> {
       this.sessions = file.sessions
       for (const s of this.sessions) if (s.id === MASTER_SESSION_ID && s.displayName === 'Master Agent') s.displayName = 'Supervisor Agent'
       this.hiddenExternal = new Set(file.hiddenExternal ?? [])
+      this.masterClaudeMdHash = file.masterClaudeMdHash ?? null
       this.loaded = true
     } catch (error) {
       this.report(error)
@@ -140,6 +147,7 @@ export class AppState extends EventEmitter<StateEvents> {
     await this.refreshTools()
     await this.reconcileSessions()
     await Promise.all(this.projects.map((p) => this.refreshWorktrees(p.id, false)))
+    await Promise.all(this.projects.map((p) => this.refreshDocuments(p.id, false)))
     this.startLivenessPolling()
     this.indexer.start()
     await this.rescanTranscripts()
@@ -187,7 +195,12 @@ export class AppState extends EventEmitter<StateEvents> {
 
   private persistSessions(): void {
     this.persistence
-      .saveSessions({ version: SESSIONS_VERSION, sessions: this.sessions, hiddenExternal: [...this.hiddenExternal] })
+      .saveSessions({
+        version: SESSIONS_VERSION,
+        sessions: this.sessions,
+        hiddenExternal: [...this.hiddenExternal],
+        masterClaudeMdHash: this.masterClaudeMdHash ?? undefined,
+      })
       .catch((e) => this.report(e))
   }
 
@@ -219,6 +232,7 @@ export class AppState extends EventEmitter<StateEvents> {
       this.select({ kind: 'project', id: project.id })
       await this.regenerateMasterHome()
       await this.refreshWorktrees(project.id)
+      await this.refreshDocuments(project.id)
       await this.syncGitWatchers()
       this.refresh.enqueue(project.id)
     } catch (error) {
@@ -535,6 +549,52 @@ export class AppState extends EventEmitter<StateEvents> {
     })
   }
 
+  // MARK: Key documents
+
+  async refreshDocuments(projectId: string, broadcast = true): Promise<void> {
+    const project = this.project(projectId)
+    if (!project) return
+    try {
+      this.documents[projectId] = await listKeyDocuments(project)
+      if (broadcast) this.changed()
+    } catch (error) {
+      this.report(error, { projectId })
+    }
+  }
+
+  async addKeyDocument(projectId: string, absolutePath: string): Promise<void> {
+    const project = this.project(projectId)
+    if (!project) return
+    try {
+      const rel = relativeInside(project, absolutePath)
+      const kd = project.keyDocuments ?? { included: [], excluded: [] }
+      kd.excluded = kd.excluded.filter((p) => p !== rel)
+      if (!kd.included.includes(rel)) kd.included.push(rel)
+      project.keyDocuments = kd
+      this.persistConfig()
+      await this.refreshDocuments(projectId)
+    } catch (error) {
+      this.report(error, { projectId })
+    }
+  }
+
+  async removeKeyDocument(projectId: string, rel: string): Promise<void> {
+    const project = this.project(projectId)
+    if (!project) return
+    const kd = project.keyDocuments ?? { included: [], excluded: [] }
+    if (kd.included.includes(rel)) kd.included = kd.included.filter((p) => p !== rel)
+    else if (!kd.excluded.includes(rel)) kd.excluded.push(rel)
+    project.keyDocuments = kd
+    this.persistConfig()
+    await this.refreshDocuments(projectId)
+  }
+
+  async readDocument(projectId: string, rel: string): Promise<{ content: string; mtime: string }> {
+    const project = this.project(projectId)
+    if (!project) throw new SauronError('invalid_state', `Unknown project ${projectId}`)
+    return readDocument(project, rel)
+  }
+
   // MARK: Worktrees
 
   async refreshWorktrees(projectId: string, broadcast = true): Promise<void> {
@@ -617,7 +677,9 @@ export class AppState extends EventEmitter<StateEvents> {
     if (nextState === 'stopped' && !wasStopped) this.pty?.close(sessionId)
     this.notifier.setBadge(this.waitingCount())
     if (sessionId === MASTER_SESSION_ID) {
-      if (transition.state === 'idle') this.refresh.markDone()
+      if (transition.state === 'idle') {
+        void this.nudgeMasterReload().then(() => this.refresh.markDone())
+      }
       // The master's own turn-complete is noise; only prompts for input matter.
       if (event.event === 'Stop') return
     }
@@ -774,12 +836,43 @@ export class AppState extends EventEmitter<StateEvents> {
     return this.sessions.find((s) => s.id === MASTER_SESSION_ID)
   }
 
+  /** Rewrites CLAUDE.md; if it changed since the supervisor last saw it, nudge it to re-read. */
   async regenerateMasterHome(): Promise<void> {
     if (!this.sauronBin) return
     try {
-      await this.masterHome.regenerate(this.projects, this.sauronBin)
+      const hash = await this.masterHome.regenerate(this.projects, this.sauronBin)
+      if (hash !== this.masterClaudeMdHash) {
+        const master = this.masterSession()
+        if (master && isAlive(master)) {
+          this.masterNeedsReload = true
+          await this.nudgeMasterReload()
+        } else {
+          // Not running: the next start loads the new file directly.
+          this.masterClaudeMdHash = hash
+          this.persistSessions()
+        }
+      }
     } catch (error) {
       this.report(error)
+    }
+  }
+
+  /** Sends the re-read notice when the supervisor is idle; returns once sent or skipped. */
+  private async nudgeMasterReload(): Promise<void> {
+    const master = this.masterSession()
+    if (!this.masterNeedsReload || !master || !isAlive(master) || master.state !== 'idle' || !this.tmux || !master.tmuxName) return
+    try {
+      await this.tmux.sendText(
+        master.tmuxName,
+        `Sauron regenerated your instructions. Read ${this.masterHome.claudeMdPath} again now and follow it from here on; reply with one line when done.`,
+      )
+      this.masterNeedsReload = false
+      this.masterClaudeMdHash = await this.masterHome.regenerate(this.projects, this.sauronBin!)
+      this.updateSession(MASTER_SESSION_ID, (s) => {
+        s.state = 'running'
+      })
+    } catch (error) {
+      this.report(error, { sessionId: MASTER_SESSION_ID })
     }
   }
 
@@ -837,6 +930,10 @@ export class AppState extends EventEmitter<StateEvents> {
       }
       this.pty?.close(MASTER_SESSION_ID)
       this.sessions = [session, ...this.sessions.filter((s) => s.id !== MASTER_SESSION_ID)]
+      if (!resumed) {
+        this.masterClaudeMdHash = await this.masterHome.regenerate(this.projects, this.sauronBin!)
+        this.masterNeedsReload = false
+      }
       this.persistSessions()
       this.changed()
     } catch (error) {
@@ -891,7 +988,14 @@ export class AppState extends EventEmitter<StateEvents> {
     })
   }
 
-  async setStatus(projectId: string, summary: string, details: string | null, source: ProjectStatus['source'] = 'master'): Promise<ProjectStatus> {
+  async setStatus(
+    projectId: string,
+    summary: string,
+    details: string | null,
+    recentUpdates: string[] = [],
+    todos: string[] = [],
+    source: ProjectStatus['source'] = 'master',
+  ): Promise<ProjectStatus> {
     const project = this.project(projectId)
     if (!project) throw new SauronError('invalid_state', `Unknown project ${projectId}`)
     let headCommit: string | null = null
@@ -899,7 +1003,7 @@ export class AppState extends EventEmitter<StateEvents> {
       const r = await runCommand(this.toolPaths.git, ['rev-parse', 'HEAD'], { cwd: project.path })
       if (r.code === 0) headCommit = r.stdout.trim()
     }
-    const status: ProjectStatus = { projectId, summary: summary.trim(), details, updatedAt: new Date().toISOString(), headCommit, source }
+    const status: ProjectStatus = { projectId, summary: firstSentence(summary), recentUpdates, todos, details, updatedAt: new Date().toISOString(), headCommit, source }
     await this.statusStore.write(status)
     this.refresh.markDone(projectId)
     this.changed()
