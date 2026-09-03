@@ -491,11 +491,11 @@ Done when
 ### Slice 8 — Summaries refresh themselves on commit (≈1 d)
 
 Tasks
-- [ ] S8.1 `GitWatcher` on `.git/HEAD`, `refs/heads`, `logs/HEAD` for every project and
+- [x] S8.1 `GitWatcher` on `.git/HEAD`, `refs/heads`, `logs/HEAD` for every project and
       Sauron worktree; change detected by comparing the resolved HEAD hash.
-- [ ] S8.2 Debounce (30 s) and enqueue into `RefreshScheduler`; never enqueue when the
+- [x] S8.2 Debounce (30 s) and enqueue into `RefreshScheduler`; never enqueue when the
       HEAD hash matches the one recorded with the last summary.
-- [ ] S8.3 "Refresh queued" state on the row while waiting for the master to go idle.
+- [x] S8.3 "Refresh queued" state on the row while waiting for the master to go idle.
 
 Done when
 - Commit in a project from a terminal; within about a minute the row shows "refresh

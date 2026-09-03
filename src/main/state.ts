@@ -15,6 +15,7 @@ import { MASTER_SESSION_ID, type ProjectStatus } from '@shared/status'
 import { StatusStore } from './services/status-store'
 import { MasterHome, RefreshScheduler } from './services/master'
 import { ensureClaudeTrusts } from './services/claude-config'
+import { GitWatcher } from './services/git-watcher'
 import type { Worktree } from '@shared/worktrees'
 import { defaultWorktreeBranch } from '@shared/worktrees'
 import { WorktreeService } from './services/worktrees'
@@ -57,6 +58,7 @@ export class AppState extends EventEmitter<StateEvents> {
   private transcriptListeners = new Map<string, (entries: TranscriptEntry[]) => void>()
   private transcriptTimer: NodeJS.Timeout | null = null
   readonly statusStore: StatusStore
+  private gitWatchers = new Map<string, GitWatcher>()
   readonly masterHome: MasterHome
   readonly refresh: RefreshScheduler
 
@@ -137,6 +139,7 @@ export class AppState extends EventEmitter<StateEvents> {
     await this.rescanTranscripts()
     this.transcriptTimer = setInterval(() => void this.rescanTranscripts(), 30_000)
     await this.statusStore.start()
+    await this.syncGitWatchers()
     await this.regenerateMasterHome()
     if (this.preferences.masterAutoStart && !(this.masterSession() && isAlive(this.masterSession()!))) {
       await this.startMaster()
@@ -203,6 +206,7 @@ export class AppState extends EventEmitter<StateEvents> {
       this.select({ kind: 'project', id: project.id })
       await this.regenerateMasterHome()
       await this.refreshWorktrees(project.id)
+      await this.syncGitWatchers()
       this.refresh.enqueue(project.id)
     } catch (error) {
       this.report(error)
@@ -219,6 +223,36 @@ export class AppState extends EventEmitter<StateEvents> {
     this.persistConfig()
     this.changed()
     void this.regenerateMasterHome()
+    void this.syncGitWatchers()
+  }
+
+  /** One watcher per project. On startup, projects whose HEAD moved since their last summary are queued. */
+  async syncGitWatchers(): Promise<void> {
+    const git = this.toolPaths?.git
+    if (!git) return
+    const wanted = new Set(this.projects.map((p) => p.id))
+    for (const [id, w] of this.gitWatchers) {
+      if (!wanted.has(id)) {
+        w.stop()
+        this.gitWatchers.delete(id)
+      }
+    }
+    for (const project of this.projects) {
+      if (this.gitWatchers.has(project.id)) continue
+      const watcher = new GitWatcher(git, project.path, () => {
+        console.log('commit detected in', project.name)
+        this.refresh.enqueue(project.id)
+        void this.refreshWorktrees(project.id)
+      })
+      this.gitWatchers.set(project.id, watcher)
+      await watcher.start()
+      const status = this.statusStore.statuses[project.id]
+      const head = await watcher.headCommit()
+      if (status && head && status.headCommit && status.headCommit !== head) {
+        console.log('HEAD moved since last summary for', project.name)
+        this.refresh.enqueue(project.id)
+      }
+    }
   }
 
   // MARK: Session helpers
@@ -846,6 +880,7 @@ export class AppState extends EventEmitter<StateEvents> {
     if (this.transcriptTimer) clearInterval(this.transcriptTimer)
     this.indexer.stop()
     this.statusStore.stop()
+    for (const w of this.gitWatchers.values()) w.stop()
     for (const id of [...this.tailers.keys()]) this.transcriptClose(id)
     this.pty?.closeAll()
     await this.persistence.flush()
