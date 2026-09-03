@@ -221,3 +221,17 @@ button.icon-button { width: 26px; height: 26px; padding: 0; font-size: 16px; lin
 .launch-bar input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 button:disabled { opacity: 0.5; }
 .context-menu .separator { height: 1px; background: var(--border); margin: 4px 6px; }
+
+.launch-options { display: flex; gap: 12px; align-items: center; margin: -8px 0 16px; font-size: 12px; color: var(--fg-muted); }
+.launch-options label { display: inline-flex; align-items: center; gap: 6px; }
+.launch-options input[type="text"] {
+  font: inherit; color: var(--fg); background: var(--bg-card); border: 1px solid var(--border); border-radius: 5px; padding: 3px 8px; width: 220px;
+  user-select: text; -webkit-user-select: text;
+}
+.worktree-list { list-style: none; margin: 0; padding: 0; }
+.worktree-list li { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-top: 1px solid var(--border); }
+.worktree-list li:first-child { border-top: none; }
+.worktree-list .branch { font-weight: 600; min-width: 160px; }
+.worktree-list .path { flex: 1; color: var(--fg-muted); font-family: Menlo, monospace; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 4px; background: rgba(128,128,128,0.2); color: var(--fg-muted); }
+.tag.accent { background: var(--bg-selected); color: var(--fg); }

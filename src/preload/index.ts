@@ -18,7 +18,10 @@ const api: SauronApi = {
   removeProject: (id) => ipcRenderer.invoke('removeProject', id),
   resolveTools: () => ipcRenderer.invoke('resolveTools'),
 
-  launchSession: (projectId, tool, prompt) => ipcRenderer.invoke('launchSession', projectId, tool, prompt),
+  launchSession: (projectId, tool, options) => ipcRenderer.invoke('launchSession', projectId, tool, options),
+  refreshWorktrees: (projectId) => ipcRenderer.invoke('refreshWorktrees', projectId),
+  checkWorktreeRemoval: (projectId, path) => ipcRenderer.invoke('checkWorktreeRemoval', projectId, path),
+  removeWorktree: (projectId, path, force) => ipcRenderer.invoke('removeWorktree', projectId, path, force),
   stopSession: (id) => ipcRenderer.invoke('stopSession', id),
   detachSession: (id) => ipcRenderer.invoke('detachSession', id),
   resumeSession: (id) => ipcRenderer.invoke('resumeSession', id),

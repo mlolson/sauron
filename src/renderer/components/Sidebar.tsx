@@ -90,7 +90,10 @@ export function Sidebar({ snapshot, selection, onSelect }: Props) {
                   onContextMenu={(e) => openMenu(e, sessionMenu(session))}
                 >
                   <span className={`glyph ${isAlive(session) ? 'accent' : 'muted'}`}>{session.tool === 'claude' ? '✦' : '⌘'}</span>
-                  <span className={`label ${isAlive(session) ? '' : 'muted'}`}>{session.displayName}</span>
+                  <span className={`label ${isAlive(session) ? '' : 'muted'}`}>
+                    <span className="name">{session.displayName}</span>
+                    {session.worktreePath && <span className="sub">{branchOf(snapshot, session)}</span>}
+                  </span>
                   <StateDot state={session.state} />
                 </Row>
               ))}
@@ -151,6 +154,11 @@ function Row({
       {children}
     </div>
   )
+}
+
+function branchOf(snapshot: Snapshot, session: Session): string {
+  const wt = session.projectId ? snapshot.worktrees[session.projectId]?.find((w) => w.path === session.worktreePath) : undefined
+  return wt?.branch ?? session.worktreePath?.split('/').pop() ?? ''
 }
 
 export function abbreviate(path: string): string {

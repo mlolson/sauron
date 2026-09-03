@@ -1,3 +1,5 @@
+import type { Worktree } from './worktrees'
+
 export interface Project {
   id: string
   name: string
@@ -72,7 +74,21 @@ export interface Snapshot {
   sessions: Session[]
   orphanTmuxSessions: string[]
   toolPaths: ToolPaths | null
+  /** Worktrees per project id, refreshed on demand and after changes. */
+  worktrees: Record<string, Worktree[]>
   loaded: boolean
+}
+
+export interface LaunchOptions {
+  prompt?: string
+  /** Run the session in a new git worktree on this branch. */
+  worktreeBranch?: string
+}
+
+export interface WorktreeRemovalCheck {
+  dirty: boolean
+  unmergedCommits: number
+  inUseBy: string[]
 }
 
 export interface AppError {
@@ -109,7 +125,10 @@ export interface SauronApi {
   removeProject(id: string): Promise<void>
   resolveTools(): Promise<void>
 
-  launchSession(projectId: string, tool: AgentTool, prompt?: string): Promise<void>
+  launchSession(projectId: string, tool: AgentTool, options?: LaunchOptions): Promise<void>
+  refreshWorktrees(projectId: string): Promise<void>
+  checkWorktreeRemoval(projectId: string, path: string): Promise<WorktreeRemovalCheck>
+  removeWorktree(projectId: string, path: string, force: boolean): Promise<void>
   stopSession(id: string): Promise<void>
   detachSession(id: string): Promise<void>
   resumeSession(id: string): Promise<void>

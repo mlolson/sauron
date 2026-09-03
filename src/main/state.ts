@@ -2,7 +2,10 @@ import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { basename, resolve } from 'node:path'
 import { homedir } from 'node:os'
-import type { AgentTool, AppError, Project, Session, SelectionTarget, Snapshot, ToolPaths } from '@shared/types'
+import type { AgentTool, AppError, LaunchOptions, Project, Session, SelectionTarget, Snapshot, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
+import type { Worktree } from '@shared/worktrees'
+import { defaultWorktreeBranch } from '@shared/worktrees'
+import { WorktreeService } from './services/worktrees'
 import { CONFIG_VERSION, SESSIONS_VERSION, SauronError, isAlive } from '@shared/types'
 import { tmuxSessionName } from '@shared/tmux-args'
 import { claudeTranscriptPath } from '@shared/transcripts'
@@ -26,10 +29,12 @@ export class AppState extends EventEmitter<StateEvents> {
   sessions: Session[] = []
   orphanTmuxSessions: string[] = []
   toolPaths: ToolPaths | null = null
+  worktrees: Record<string, Worktree[]> = {}
   loaded = false
 
   tmux: TmuxService | null = null
   pty: PtyService | null = null
+  worktreeService: WorktreeService | null = null
   private livenessTimer: NodeJS.Timeout | null = null
 
   constructor(public readonly persistence: Persistence) {
@@ -46,6 +51,7 @@ export class AppState extends EventEmitter<StateEvents> {
       sessions: this.sessions,
       orphanTmuxSessions: this.orphanTmuxSessions,
       toolPaths: this.toolPaths,
+      worktrees: this.worktrees,
       loaded: this.loaded,
     }
   }
@@ -77,6 +83,7 @@ export class AppState extends EventEmitter<StateEvents> {
     }
     await this.refreshTools()
     await this.reconcileSessions()
+    await Promise.all(this.projects.map((p) => this.refreshWorktrees(p.id, false)))
     this.startLivenessPolling()
     this.changed()
   }
@@ -84,6 +91,7 @@ export class AppState extends EventEmitter<StateEvents> {
   async refreshTools(): Promise<void> {
     const tools = await resolveTools()
     this.toolPaths = tools
+    this.worktreeService = tools.git ? new WorktreeService(tools.git, this.paths.worktreesDir) : null
     if (tools.tmux) {
       const env = sessionEnvironment(tools.path)
       this.tmux = new TmuxService(tools.tmux, env)
@@ -178,7 +186,7 @@ export class AppState extends EventEmitter<StateEvents> {
 
   // MARK: Session lifecycle
 
-  async launchSession(projectId: string, tool: AgentTool, initialPrompt?: string): Promise<Session | null> {
+  async launchSession(projectId: string, tool: AgentTool, options: LaunchOptions = {}): Promise<Session | null> {
     const project = this.project(projectId)
     if (!project) {
       this.report(new SauronError('invalid_state', `Unknown project ${projectId}`))
@@ -188,7 +196,15 @@ export class AppState extends EventEmitter<StateEvents> {
       const { tools, tmux } = this.requireTools()
       const id = randomUUID()
       const tmuxName = tmuxSessionName(project.name, id)
-      const prompt = initialPrompt?.trim()
+      const prompt = options.prompt?.trim()
+      let worktreePath: string | null = null
+      if (options.worktreeBranch !== undefined) {
+        if (!this.worktreeService) throw new SauronError('executable_not_found', 'git was not found on PATH.')
+        const branch = options.worktreeBranch.trim() || defaultWorktreeBranch(id)
+        worktreePath = await this.worktreeService.create(project.path, project.name, branch)
+        await this.refreshWorktrees(project.id, false)
+      }
+      const cwd = worktreePath ?? project.path
       let command: string[]
       let cliSessionId: string | null
       let transcriptPath: string | null
@@ -196,16 +212,16 @@ export class AppState extends EventEmitter<StateEvents> {
         if (!tools.claude) throw new SauronError('executable_not_found', 'claude was not found on PATH.')
         command = [tools.claude, '--session-id', id]
         cliSessionId = id
-        transcriptPath = claudeTranscriptPath(homedir(), project.path, id)
+        transcriptPath = claudeTranscriptPath(homedir(), cwd, id)
       } else {
         if (!tools.codex) throw new SauronError('executable_not_found', 'codex was not found on PATH.')
-        command = [tools.codex, '-C', project.path]
+        command = [tools.codex, '-C', cwd]
         // Codex picks its own session id; the transcript indexer (slice 6) fills these in.
         cliSessionId = null
         transcriptPath = null
       }
       if (prompt) command.push(prompt)
-      await tmux.newSession({ name: tmuxName, workingDir: project.path, environment: this.launchEnvironment(id, tools), command })
+      await tmux.newSession({ name: tmuxName, workingDir: cwd, environment: this.launchEnvironment(id, tools), command })
       const now = new Date().toISOString()
       const session: Session = {
         id,
@@ -217,7 +233,7 @@ export class AppState extends EventEmitter<StateEvents> {
         cliSessionId,
         transcriptPath,
         workingDir: project.path,
-        worktreePath: null,
+        worktreePath,
         createdAt: now,
         lastActivityAt: now,
         state: 'running',
@@ -304,6 +320,46 @@ export class AppState extends EventEmitter<StateEvents> {
       s.state = 'stopped'
       s.lastActivityAt = new Date().toISOString()
     })
+  }
+
+  // MARK: Worktrees
+
+  async refreshWorktrees(projectId: string, broadcast = true): Promise<void> {
+    const project = this.project(projectId)
+    if (!project || !this.worktreeService) return
+    try {
+      this.worktrees[projectId] = await this.worktreeService.list(project.path, project.name)
+      if (broadcast) this.changed()
+    } catch (error) {
+      this.report(error, { projectId })
+    }
+  }
+
+  sessionsUsingWorktree(path: string): Session[] {
+    return this.sessions.filter((s) => s.worktreePath === path && isAlive(s))
+  }
+
+  async checkWorktreeRemoval(projectId: string, path: string): Promise<WorktreeRemovalCheck> {
+    const project = this.project(projectId)
+    if (!project || !this.worktreeService) throw new SauronError('invalid_state', 'No project or git.')
+    const safety = await this.worktreeService.safety(project.path, path)
+    return { ...safety, inUseBy: this.sessionsUsingWorktree(path).map((s) => s.displayName) }
+  }
+
+  async removeWorktree(projectId: string, path: string, force: boolean): Promise<void> {
+    const project = this.project(projectId)
+    if (!project || !this.worktreeService) return
+    try {
+      const inUse = this.sessionsUsingWorktree(path)
+      if (inUse.length) {
+        throw new SauronError('invalid_state', `Worktree is in use by ${inUse.map((s) => s.displayName).join(', ')}. Stop those sessions first.`)
+      }
+      await this.worktreeService.remove(project.path, path, force)
+      await this.refreshWorktrees(projectId)
+    } catch (error) {
+      this.report(error, { projectId })
+      throw error
+    }
   }
 
   // MARK: Orphans

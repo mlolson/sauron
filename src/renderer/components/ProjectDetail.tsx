@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Project, SelectionTarget, Session, ToolPaths } from '@shared/types'
+import { isAlive } from '@shared/types'
+import type { Worktree } from '@shared/worktrees'
 import { StateDot } from './StateDot'
 import { abbreviate } from './Sidebar'
 import { relativeTime } from '../time'
@@ -8,17 +10,43 @@ interface Props {
   project: Project
   sessions: Session[]
   toolPaths: ToolPaths | null
+  worktrees: Worktree[]
   onSelect: (t: SelectionTarget) => void
 }
 
-export function ProjectDetail({ project, sessions, toolPaths, onSelect }: Props) {
+export function ProjectDetail({ project, sessions, toolPaths, worktrees, onSelect }: Props) {
   const [prompt, setPrompt] = useState('')
+  const [useWorktree, setUseWorktree] = useState(false)
+  const [branch, setBranch] = useState('')
   const mine = sessions.filter((s) => s.projectId === project.id)
   const codexAvailable = Boolean(toolPaths?.codex)
 
+  useEffect(() => {
+    void window.sauron.refreshWorktrees(project.id)
+  }, [project.id])
+
   const launch = (tool: 'claude' | 'codex') => {
-    void window.sauron.launchSession(project.id, tool, prompt.trim() || undefined)
+    void window.sauron.launchSession(project.id, tool, {
+      prompt: prompt.trim() || undefined,
+      worktreeBranch: useWorktree ? branch.trim() : undefined,
+    })
     setPrompt('')
+  }
+
+  const remove = async (wt: Worktree) => {
+    const check = await window.sauron.checkWorktreeRemoval(project.id, wt.path)
+    if (check.inUseBy.length) {
+      alert(`This worktree is in use by ${check.inUseBy.join(', ')}. Stop those sessions first.`)
+      return
+    }
+    const warnings: string[] = []
+    if (check.dirty) warnings.push('it has uncommitted changes')
+    if (check.unmergedCommits > 0) warnings.push(`its branch has ${check.unmergedCommits} commit(s) the main checkout does not`)
+    const message = warnings.length
+      ? `Remove worktree ${wt.branch ?? wt.path}?\n\nWarning: ${warnings.join(' and ')}. The branch is kept; only the directory is removed.`
+      : `Remove worktree ${wt.branch ?? wt.path}?\n\nThe branch is kept; only the directory is removed.`
+    // Errors surface as banners from the main process.
+    if (confirm(message)) await window.sauron.removeWorktree(project.id, wt.path, check.dirty).catch(() => undefined)
   }
 
   return (
@@ -56,6 +84,15 @@ export function ProjectDetail({ project, sessions, toolPaths, onSelect }: Props)
           New Codex
         </button>
       </div>
+      <div className="launch-options">
+        <label>
+          <input type="checkbox" checked={useWorktree} onChange={(e) => setUseWorktree(e.target.checked)} />
+          Run in a new git worktree
+        </label>
+        {useWorktree && (
+          <input type="text" placeholder="branch name (default sauron/<id>)" value={branch} onChange={(e) => setBranch(e.target.value)} />
+        )}
+      </div>
 
       <section className="card">
         <h2>Status</h2>
@@ -71,11 +108,41 @@ export function ProjectDetail({ project, sessions, toolPaths, onSelect }: Props)
             {mine.map((s) => (
               <li key={s.id} onClick={() => onSelect({ kind: 'session', id: s.id })}>
                 <span className="glyph">{s.tool === 'claude' ? '✦' : '⌘'}</span>
-                <span className="name">{s.displayName}</span>
+                <span className="name">
+                  {s.displayName}
+                  {s.worktreePath && <span className="tag accent" style={{ marginLeft: 8 }}>{worktrees.find((w) => w.path === s.worktreePath)?.branch ?? 'worktree'}</span>}
+                </span>
                 <StateDot state={s.state} />
                 <span className="muted small">{relativeTime(s.createdAt)}</span>
               </li>
             ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="card">
+        <h2>Worktrees</h2>
+        {worktrees.length === 0 ? (
+          <p className="muted">Loading…</p>
+        ) : (
+          <ul className="worktree-list">
+            {worktrees.map((wt) => {
+              const users = mine.filter((s) => s.worktreePath === wt.path && isAlive(s))
+              return (
+                <li key={wt.path}>
+                  <span className="branch">{wt.branch ?? <span className="muted">(detached)</span>}</span>
+                  <span className="path" title={wt.path}>{abbreviate(wt.path)}</span>
+                  {wt.isMain && <span className="tag">main checkout</span>}
+                  {wt.isSauron && <span className="tag accent">sauron</span>}
+                  {users.length > 0 && <span className="tag">in use: {users.map((u) => u.displayName).join(', ')}</span>}
+                  {!wt.isMain && (
+                    <button className="destructive" disabled={users.length > 0} title={users.length ? 'Stop the sessions using it first' : 'Remove this worktree'} onClick={() => void remove(wt)}>
+                      Remove
+                    </button>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         )}
       </section>

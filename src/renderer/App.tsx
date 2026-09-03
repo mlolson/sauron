@@ -44,7 +44,11 @@ export function App() {
   switch (selection?.kind) {
     case 'project': {
       const project = snapshot.projects.find((p) => p.id === selection.id)
-      detail = project ? <ProjectDetail project={project} sessions={snapshot.sessions} toolPaths={snapshot.toolPaths} onSelect={setSelection} /> : <EmptyDetail />
+      detail = project ? (
+        <ProjectDetail project={project} sessions={snapshot.sessions} toolPaths={snapshot.toolPaths} worktrees={snapshot.worktrees[project.id] ?? []} onSelect={setSelection} />
+      ) : (
+        <EmptyDetail />
+      )
       break
     }
     case 'session': {

@@ -97,9 +97,24 @@ export class SocketServer {
         if (!project) throw new Error(`unknown project ${req.project}`)
         const tool = req.tool ?? 'claude'
         if (tool !== 'claude' && tool !== 'codex') throw new Error(`unsupported tool ${String(req.tool)}`)
-        const session = await state.launchSession(project.id, tool, typeof req.prompt === 'string' ? req.prompt : undefined)
+        const session = await state.launchSession(project.id, tool, {
+          prompt: typeof req.prompt === 'string' ? req.prompt : undefined,
+          worktreeBranch: req.worktree === undefined ? undefined : typeof req.worktree === 'string' ? req.worktree : '',
+        })
         if (!session) throw new Error('launch failed')
         return { id: session.id, tmuxName: session.tmuxName }
+      }
+      case 'worktrees.list': {
+        const project = this.findProject(req.project)
+        if (!project) throw new Error(`unknown project ${req.project}`)
+        await state.refreshWorktrees(project.id)
+        return state.worktrees[project.id] ?? []
+      }
+      case 'worktrees.remove': {
+        const project = this.findProject(req.project)
+        if (!project) throw new Error(`unknown project ${req.project}`)
+        await state.removeWorktree(project.id, String(req.path), Boolean(req.force))
+        return state.worktrees[project.id] ?? []
       }
       case 'sessions.stop': {
         await state.stopSession(String(req.session))

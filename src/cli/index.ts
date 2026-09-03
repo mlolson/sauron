@@ -5,7 +5,9 @@
  *   sauron projects
  *   sauron projects add <dir>
  *   sauron sessions [--project <name|id>]
- *   sauron launch --project <name|id> [--tool claude] [--prompt <text>]
+ *   sauron launch --project <name|id> [--tool claude|codex] [--prompt <text>] [--worktree [<branch>]]
+ *   sauron worktrees --project <name|id>
+ *   sauron worktrees remove --project <name|id> --path <dir> [--force]
  *   sauron stop --session <id>
  *   sauron select --project <name|id> | --session <id>
  *   sauron raw '<json>'
@@ -70,7 +72,20 @@ async function main(): Promise<void> {
       payload = { cmd: 'sessions.list', project: flags.project }
       break
     case 'launch':
-      payload = { cmd: 'sessions.launch', project: flags.project, tool: flags.tool, prompt: flags.prompt }
+      payload = {
+        cmd: 'sessions.launch',
+        project: flags.project,
+        tool: flags.tool,
+        prompt: flags.prompt,
+        // --worktree alone means "new worktree, default branch"; --worktree <branch> names it.
+        worktree: flags.worktree === undefined ? undefined : flags.worktree === 'true' ? '' : flags.worktree,
+      }
+      break
+    case 'worktrees':
+      payload =
+        sub === 'remove'
+          ? { cmd: 'worktrees.remove', project: flags.project, path: flags.path, force: flags.force === 'true' }
+          : { cmd: 'worktrees.list', project: flags.project }
       break
     case 'stop':
       payload = { cmd: 'sessions.stop', session: flags.session }
@@ -85,7 +100,7 @@ async function main(): Promise<void> {
       payload = JSON.parse(sub ?? '{}')
       break
     default:
-      console.error('usage: sauron <ping|projects|sessions|launch|stop|resume|select|raw> [options]')
+      console.error('usage: sauron <ping|projects|sessions|launch|stop|resume|select|worktrees|raw> [options]')
       process.exit(2)
   }
   const response = await request(payload)

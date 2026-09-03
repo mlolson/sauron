@@ -367,14 +367,14 @@ Done when
 ### Slice 4 — Run a session in its own worktree (≈1.5 d)
 
 Tasks
-- [ ] S4.1 `WorktreeService`: list via `git worktree list --porcelain`, add with a new
+- [x] S4.1 `WorktreeService`: list via `git worktree list --porcelain`, add with a new
       branch, remove, dirty and unpushed checks.
-- [ ] S4.2 Launch sheet with "run in a new worktree" toggle and editable branch name,
+- [x] S4.2 Launch sheet with "run in a new worktree" toggle and editable branch name,
       default `sauron/<short-id>`; base location preference defaulting to
       `App Support/Sauron/worktrees/<project>/`.
-- [ ] S4.3 Worktrees section in project detail: branch, Sauron-created flag, sessions
+- [x] S4.3 Worktrees section in project detail: branch, Sauron-created flag, sessions
       using it, Remove action with confirmation when dirty or unpushed, refused while in use.
-- [ ] S4.4 Session record carries `worktreePath`; sidebar shows the branch next to the
+- [x] S4.4 Session record carries `worktreePath`; sidebar shows the branch next to the
       session.
 
 Done when
