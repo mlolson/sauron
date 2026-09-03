@@ -250,112 +250,278 @@ On launch:
 
 ---
 
-## 6. MVP task list
+## 6. MVP delivery plan: vertical slices
 
-Ordered so that each milestone yields something usable. Task IDs are stable for reference
-in commits and issues. Estimates are rough working days.
+The MVP is built as a sequence of vertical slices. Each slice cuts through UI, state,
+services, and persistence to deliver one end-to-end capability the user can exercise the
+day it lands. A slice is complete only when its **Done when** criteria all hold on a real
+build of the app. Slices are ordered by dependency; within a slice, tasks are listed in
+suggested order. Estimates are rough working days.
 
-### Milestone 1 — Skeleton (≈2 d)
+Cross-cutting foundations (models, persistence, command wrapper, logging) are not a slice
+of their own; each is introduced by the first slice that needs it, in the minimal form that
+slice requires, and extended later.
 
-- [ ] **T1.1** Create the Xcode project: `Sauron` app target, macOS 15 deployment target,
-      SwiftUI lifecycle, sandbox disabled (needed for tmux, sockets, arbitrary paths).
-- [ ] **T1.2** Add local package `SauronCore` and test target; wire into the app.
-- [ ] **T1.3** Define models: `Project`, `Session`, `SessionState`, `ProjectStatus`,
-      `Preferences`. Codable, versioned.
-- [ ] **T1.4** `Persistence` actor: atomic, debounced JSON read/write in App Support;
-      creates the directory layout from §2 on first run.
-- [ ] **T1.5** `CLIResolver`: resolve login-shell PATH; locate `claude`, `codex`, `tmux`,
-      `git`; expose availability.
-- [ ] **T1.6** `SetupView`: shown when a required tool is missing, with install hints.
-- [ ] **T1.7** `AppState` (`@Observable`), `NavigationSplitView` shell: sidebar with
-      master placeholder and projects; empty detail.
-- [ ] **T1.8** Add project via `NSOpenPanel` and via drag-and-drop; validate with
-      `git rev-parse --show-toplevel`; remove project with confirmation.
-- [ ] **T1.9** `ProjectDetailView` with path, placeholder summary, empty sessions list.
-- [ ] **T1.10** `ExternalCommand` async wrapper with typed errors and logging.
+---
 
-### Milestone 2 — Managed sessions (≈3 d)
+### Slice 1 — Add a project and see it after restart (≈1.5 d)
 
-- [ ] **T2.1** `TmuxService`: new-session, list-sessions, has-session, send-keys,
-      kill-session, detach-client, set-option. Argument builders unit-tested.
-- [ ] **T2.2** `SessionManager`: launch (Claude and Codex), stop, detach, record
-      persistence, tmux name generation.
-- [ ] **T2.3** Add SwiftTerm; `SessionTerminalView` running `tmux attach`; view caching
-      per session; font and scrollback from preferences.
-- [ ] **T2.4** Session tabs in the detail area; open, close (detach), switch.
-- [ ] **T2.5** Sidebar: sessions nested under projects with tool icon and state dot.
-- [ ] **T2.6** Startup reconciliation (§3.8), including "unknown Sauron session" rows.
-- [ ] **T2.7** Resume offer for stopped sessions (`claude --resume`, `codex resume`).
-- [ ] **T2.8** Optional initial prompt on launch (passed as the first CLI argument).
+The thinnest possible app: a window, a project list, and persistence.
 
-### Milestone 3 — Worktrees (≈1.5 d)
+Tasks
+- [ ] S1.1 Xcode project, `Sauron` app target, macOS 15, SwiftUI lifecycle, sandbox off.
+- [ ] S1.2 Local package `SauronCore` with a test target, linked into the app.
+- [ ] S1.3 `Project` model, `Persistence` actor writing `config.json` atomically to App
+      Support with a `version` field; directory layout created on first run.
+- [ ] S1.4 `ExternalCommand` async wrapper (stdout, stderr, exit code, typed error).
+- [ ] S1.5 `AppState` and `NavigationSplitView` shell with an empty detail pane.
+- [ ] S1.6 Add project via `NSOpenPanel` and drag-and-drop; validate with
+      `git rev-parse --show-toplevel`; reject non-repos with a message.
+- [ ] S1.7 Remove project with confirmation; project detail showing name and path.
 
-- [ ] **T3.1** `WorktreeService`: list (parse `git worktree list --porcelain`), add with
-      new branch, remove, dirty and unpushed checks.
-- [ ] **T3.2** Launch sheet: "run in a new worktree" toggle with editable branch name and
-      base location from preferences.
-- [ ] **T3.3** Worktrees section in `ProjectDetailView`: branch, Sauron-created flag,
-      sessions using it, remove action with safety confirmation.
-- [ ] **T3.4** Preference for worktree base location; default
+Done when
+- Dragging a git repo folder onto the window adds a row; dragging a non-git folder shows
+  an error and adds nothing.
+- Quit and relaunch: the same projects appear in the same order.
+- Removing a project removes only the row; the directory on disk is untouched.
+- A unit test round-trips `config.json` through the model.
+
+---
+
+### Slice 2 — Launch a Claude session and talk to it in the app (≈3 d)
+
+Everything needed to start one agent and type into it. Claude only; Codex is a later slice.
+
+Tasks
+- [ ] S2.1 `CLIResolver`: login-shell PATH resolution; locate `claude`, `tmux`, `git`;
+      `SetupView` shown when any is missing.
+- [ ] S2.2 `Session` model and `sessions.json` persistence.
+- [ ] S2.3 `TmuxService`: new-session, has-session, list-sessions, kill-session,
+      detach-client, set-option; argument builders unit-tested.
+- [ ] S2.4 `SessionManager.launchClaude(project:)`: generate session id, build the command
+      with `--session-id` and `--name`, create the tmux session with Sauron options.
+- [ ] S2.5 SwiftTerm dependency; `SessionTerminalView` running `tmux attach`; cached per
+      session so tab switches do not re-attach.
+- [ ] S2.6 Session tabs in the detail pane; sidebar rows nested under the project with a
+      tool icon; "New Claude" button.
+- [ ] S2.7 Stop (interrupt, grace period, kill) and Detach actions.
+- [ ] S2.8 Startup reconciliation: match `sessions.json` to live `sauron-*` tmux sessions,
+      mark missing ones stopped, list orphaned tmux sessions with attach and kill.
+- [ ] S2.9 Resume a stopped session with `claude --resume <id>`.
+
+Done when
+- Clicking "New Claude" on a project opens a terminal tab with Claude Code running in the
+  repo directory; typing a prompt and pressing Enter gets a response.
+- `tmux ls` in a terminal shows the session, and `tmux attach` to it works from outside.
+- Quit Sauron while the agent is mid-task; relaunch; the session is still listed and the
+  terminal reattaches with the output intact.
+- Kill the tmux session from a terminal; Sauron shows it as stopped and offers Resume,
+  which starts a new tmux session continuing the same conversation.
+- Launching Sauron on a machine without `claude` on PATH shows the setup screen instead of
+  the main window.
+
+---
+
+### Slice 3 — Launch Codex too (≈1 d)
+
+Tasks
+- [ ] S3.1 `CLIResolver` locates `codex`; missing Codex disables the button, not the app.
+- [ ] S3.2 `SessionManager.launchCodex(project:)` with `-C <dir>`; tool shown in sidebar.
+- [ ] S3.3 Resume with `codex resume <id>` once the id is known (see Slice 6 for id
+      discovery; until then resume is offered only when the id is recorded).
+- [ ] S3.4 Optional initial prompt field on the launch control for both tools.
+
+Done when
+- "New Codex" opens a working Codex terminal in the repo directory.
+- With Codex uninstalled or off PATH, the app runs normally and the Codex button is
+  disabled with a tooltip.
+- Entering an initial prompt makes the agent start working on it immediately after launch.
+
+---
+
+### Slice 4 — Run a session in its own worktree (≈1.5 d)
+
+Tasks
+- [ ] S4.1 `WorktreeService`: list via `git worktree list --porcelain`, add with a new
+      branch, remove, dirty and unpushed checks.
+- [ ] S4.2 Launch sheet with "run in a new worktree" toggle and editable branch name,
+      default `sauron/<short-id>`; base location preference defaulting to
       `App Support/Sauron/worktrees/<project>/`.
+- [ ] S4.3 Worktrees section in project detail: branch, Sauron-created flag, sessions
+      using it, Remove action with confirmation when dirty or unpushed, refused while in use.
+- [ ] S4.4 Session record carries `worktreePath`; sidebar shows the branch next to the
+      session.
 
-### Milestone 4 — External sessions (≈3 d)
+Done when
+- Launching with the worktree toggle on creates a new branch and directory, and the agent's
+  terminal shows it is in that directory (`pwd` in the session).
+- The project's worktree list shows the new worktree and which session uses it.
+- Remove is disabled while the session runs; after stopping, removing a worktree with
+  uncommitted changes asks for confirmation, then `git worktree list` no longer shows it.
+- Two sessions on the same project in two worktrees can edit the same file without
+  interfering.
 
-- [ ] **T4.1** `ClaudeTranscriptParser` with fixtures and tests.
-- [ ] **T4.2** `CodexRolloutParser` with fixtures and tests.
-- [ ] **T4.3** `TranscriptIndexer`: scan both directories, header-only read, cwd-to-project
+---
+
+### Slice 5 — Know when a session needs you (≈2.5 d)
+
+Introduces the `sauron` CLI and socket, because hooks need them.
+
+Tasks
+- [ ] S5.1 `sauron` command-line target: argument parsing, socket client, `hook`
+      subcommand reading stdin; bundled and symlinked to `App Support/Sauron/bin`.
+- [ ] S5.2 `HookServer` on a Unix socket via `NWListener`; 0600 perms; stale socket
+      cleanup; request routing with `ok`/`error` responses.
+- [ ] S5.3 Per-session Claude settings file with SessionStart, UserPromptSubmit,
+      Notification, Stop, SessionEnd hooks; passed with `--settings`. Codex `notify` via
+      `-c` pointing at `sauron hook codex`.
+- [ ] S5.4 Session state machine (idle, running, waitingForInput, stopped) with
+      `stateSource` hook or inferred; Codex waiting-for-input inferred via `pipe-pane`
+      ring buffer and prompt-pattern timeout.
+- [ ] S5.5 Sidebar state dot and badge on sessions; waiting count on the project row.
+- [ ] S5.6 `NotificationService` with `UNUserNotificationCenter`: request permission, post
+      on waiting or turn-finished when the session is not focused, click focuses the tab.
+- [ ] S5.7 Global mute preference.
+
+Done when
+- Start a Claude session and ask it to run a command that needs permission: within a
+  second the session shows a waiting badge, the project row count increments, and a macOS
+  notification appears if the tab is not focused.
+- Answer the prompt; the badge clears. When the turn finishes, a "finished" notification
+  appears if unfocused, and none appears if the tab is focused.
+- Clicking a notification brings Sauron forward with that session's tab selected.
+- Codex turn completion produces the same finished state; an approval prompt is shown as
+  waiting with an "inferred" marker.
+- `sauron hook claude Stop < payload.json` from a shell updates the app state, proving the
+  socket path works independently of the CLIs.
+- Unit tests cover the state machine transitions and socket message coding.
+
+---
+
+### Slice 6 — See sessions you started in your own terminal (≈3 d)
+
+Tasks
+- [ ] S6.1 `ClaudeTranscriptParser` with fixture files and tests.
+- [ ] S6.2 `CodexRolloutParser` with fixture files and tests; `session_meta` gives cwd and
+      session id, which also completes Codex id discovery for Slice 3 resume.
+- [ ] S6.3 `TranscriptIndexer`: scan both transcript roots, header-only reads, cwd-to-project
       matching including worktrees and subdirectories, directory watching for new files.
-- [ ] **T4.4** `TranscriptTailer`: offset-based incremental reads, file watching, capped
-      in-memory model, load-older.
-- [ ] **T4.5** `TranscriptView`: message list with role styling, collapsible tool calls,
-      auto-scroll with "jump to bottom", read-only banner.
-- [ ] **T4.6** External sessions in the sidebar under their project, active/recent
-      grouping by mtime, configurable recent-age cutoff.
-- [ ] **T4.7** Link managed sessions to their transcripts and expose a "Transcript" tab
-      beside the terminal.
+- [ ] S6.4 `TranscriptTailer`: per-file offset, `DispatchSource` watching, capped in-memory
+      model, load-older.
+- [ ] S6.5 `TranscriptView`: role-styled messages, collapsible tool calls, auto-scroll with
+      jump-to-bottom, read-only banner for external sessions.
+- [ ] S6.6 External sessions in the sidebar, visually distinct, grouped active vs recent by
+      mtime with a configurable cutoff; state derived from mtime and last record.
+- [ ] S6.7 Managed sessions get a Transcript tab beside the terminal using the same view.
 
-### Milestone 5 — Attention and notifications (≈2 d)
+Done when
+- Start `claude` in a Sauron project from Terminal.app; within a few seconds it appears
+  under that project marked external, and its transcript view shows the conversation
+  updating live as you type in the terminal.
+- Same for `codex`.
+- A session started in a subdirectory or a worktree of the project is attributed to that
+  project.
+- Sessions older than the cutoff are collapsed under "recent"; the cutoff is adjustable.
+- Opening the Transcript tab on a Sauron-managed session shows the same content as its
+  terminal, structured.
+- A transcript with a deliberately malformed line still renders every other record, and
+  parser tests cover both formats.
 
-- [ ] **T5.1** `sauron` CLI target: argument parsing, socket client, `hook` subcommand
-      reading stdin. Bundle and symlink into `App Support/Sauron/bin`.
-- [ ] **T5.2** `HookServer`: `NWListener` on the Unix socket, request routing, 0600 perms,
-      stale socket cleanup on start.
-- [ ] **T5.3** Per-session Claude settings file generation with the hooks from §3.3;
-      Codex `notify` config via `-c`.
-- [ ] **T5.4** Session state machine driven by hook events; `stateSource` tracking; Codex
-      inferred waiting-for-input via `pipe-pane` heuristic.
-- [ ] **T5.5** Sidebar badges on sessions and per-project counts.
-- [ ] **T5.6** `NotificationService` with `UNUserNotificationCenter`: permission request,
-      post on waiting/finished when not focused, click-to-focus routing.
-- [ ] **T5.7** Global notification mute in preferences.
+---
 
-### Milestone 6 — Master agent (≈3 d)
+### Slice 7 — Master agent chat that keeps project summaries current (≈3 d)
 
-- [ ] **T6.1** `StatusStore`: directory watch and decode of `status/<id>.json`; project row
-      and detail bindings; `updated_at` shown relative.
-- [ ] **T6.2** Master home directory and `CLAUDE.md` generation from a template; regenerate
-      on project list change; leave `CLAUDE.local.md` alone.
-- [ ] **T6.3** `MasterAgentService`: start (with resume), stop, pinned sidebar row, terminal
-      tab, auto-start preference.
-- [ ] **T6.4** Socket commands `projects.list`, `sessions.list`, `sessions.launch`,
-      `sessions.send`, `status.set`, and matching `sauron` CLI subcommands.
-- [ ] **T6.5** `GitWatcher` on HEAD and refs for every project and worktree; change
-      detection by comparing resolved HEAD.
-- [ ] **T6.6** `RefreshScheduler`: queue, collapse, debounce, idle-gated drain via
-      `send-keys`; refresh and refresh-all buttons; in-progress indicator.
-- [ ] **T6.7** Summary prompt template covering git history, transcripts, previous summary,
-      and repo docs; JSON schema documented in `CLAUDE.md`.
+Tasks
+- [ ] S7.1 `ProjectStatus` model; `StatusStore` watching `App Support/Sauron/status/` and
+      decoding `<project-id>.json`; summary and relative `updated_at` on the project row and
+      in detail; placeholder when absent.
+- [ ] S7.2 Master home directory; `CLAUDE.md` generated from a template with the project
+      table, store paths, transcript locations, CLI reference, and summary JSON schema;
+      regenerated on project list change; `CLAUDE.local.md` preserved.
+- [ ] S7.3 `MasterAgentService`: start with `--resume` of the persisted id, fresh start on
+      failure; stop; pinned sidebar row with terminal tab; auto-start preference.
+- [ ] S7.4 Socket commands and CLI subcommands `projects`, `sessions`, `launch`, `send`,
+      `status set`; `send` refuses when the target is running.
+- [ ] S7.5 Manual "Refresh summary" and "Refresh all" buttons; `RefreshScheduler` with
+      collapse and idle-gated drain via `send-keys`; in-progress indicator on the row.
+- [ ] S7.6 Summary prompt template covering git history, transcripts, previous summary,
+      and repo docs.
 
-### Milestone 7 — Polish (≈1.5 d)
+Done when
+- On first launch the master agent starts in its home directory and its terminal is
+  reachable from the pinned sidebar row; you can chat with it.
+- Clicking Refresh on a project results, without further input, in a summary appearing on
+  that project's row with a fresh timestamp, and the JSON file exists in the status
+  directory.
+- Telling the master "start a Claude session on project X to do Y" produces a new managed
+  session in the sidebar with Y as its initial prompt.
+- Telling the master "tell session Z to stop and summarize" delivers that text into
+  session Z's terminal.
+- Quit and relaunch: the master resumes the same conversation (it remembers what you said
+  before quitting).
+- Adding a project regenerates `CLAUDE.md` and the master can list it via `sauron projects`.
 
-- [ ] **T7.1** `PreferencesView`: CLI path overrides, worktree base, notifications, master
-      auto-start, terminal font.
-- [ ] **T7.2** Keyboard: next/previous session, quick switcher (⌘K style).
-- [ ] **T7.3** Error banners for service failures; log viewer or "reveal logs" action.
-- [ ] **T7.4** `scripts/smoke.sh` integration script and `docs/QA.md` manual checklist.
-- [ ] **T7.5** App icon and README with build instructions.
+---
 
-Total ≈ 16 working days for the MVP.
+### Slice 8 — Summaries refresh themselves on commit (≈1 d)
+
+Tasks
+- [ ] S8.1 `GitWatcher` on `.git/HEAD`, `refs/heads`, `logs/HEAD` for every project and
+      Sauron worktree; change detected by comparing the resolved HEAD hash.
+- [ ] S8.2 Debounce (30 s) and enqueue into `RefreshScheduler`; never enqueue when the
+      HEAD hash matches the one recorded with the last summary.
+- [ ] S8.3 "Refresh queued" state on the row while waiting for the master to go idle.
+
+Done when
+- Commit in a project from a terminal; within about a minute the row shows "refresh
+  queued", then the summary updates and reflects the commit.
+- Three commits within 30 seconds produce exactly one refresh.
+- Committing while the master is mid-conversation queues the refresh and delivers it only
+  after the master's turn ends, without corrupting the in-progress turn.
+- No refresh fires on relaunch for projects whose HEAD is unchanged since their last
+  summary.
+
+---
+
+### Slice 9 — Daily-driver polish (≈1.5 d)
+
+Tasks
+- [ ] S9.1 `PreferencesView`: CLI path overrides, worktree base, notifications, master
+      auto-start, terminal font and scrollback.
+- [ ] S9.2 Keyboard navigation between sessions and a ⌘K quick switcher.
+- [ ] S9.3 Error banners for service failures on the affected project or session; "reveal
+      logs" action.
+- [ ] S9.4 `scripts/smoke.sh`: temp repo, launch through the CLI, verify tmux session,
+      send a message, check hook events arrive. `docs/QA.md` manual checklist covering the
+      Done criteria of every slice.
+- [ ] S9.5 App icon and README with build instructions.
+
+Done when
+- Every preference takes effect without restarting the app.
+- ⌘K, type part of a session or project name, Enter: that item is focused.
+- Breaking a CLI path in preferences produces a visible banner on the next launch attempt,
+  not a silent failure.
+- `scripts/smoke.sh` passes on a clean checkout, and every item in `docs/QA.md` has been
+  checked on a build from main.
+
+---
+
+### Summary
+
+| Slice | Capability | Est. |
+|---|---|---|
+| 1 | Add a project, persisted | 1.5 d |
+| 2 | Launch and chat with Claude, survives restart | 3 d |
+| 3 | Launch Codex, initial prompt | 1 d |
+| 4 | Sessions in worktrees | 1.5 d |
+| 5 | Attention badges and notifications, `sauron` CLI | 2.5 d |
+| 6 | External sessions with live transcripts | 3 d |
+| 7 | Master agent chat and on-demand summaries | 3 d |
+| 8 | Commit-triggered summaries | 1 d |
+| 9 | Preferences, keyboard, smoke test, QA | 1.5 d |
+
+Total ≈ 18 working days. Slices 1 and 2 together are the first usable build; slices 1
+through 5 constitute a minimum daily driver; 6 through 8 complete the v1 requirements.
 
 ---
 
