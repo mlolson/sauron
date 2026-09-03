@@ -25,7 +25,7 @@ pnpm package          # unsigned Sauron.app in dist/
 
 - **⌘O** add a project, **⌘,** preferences, **⌘K** quick switcher, **⌘⇧]** / **⌘⇧[** next and
   previous live session. Right-click projects and sessions for actions.
-- The **master agent** (pinned at the top) is a persistent Claude Code session with a generated
+- The **supervisor agent** (pinned at the top) is a persistent Claude Code session with a generated
   home under `~/Library/Application Support/Sauron/master`. Chat with it, ask it to start or direct
   workers, or click **Refresh** on a project to have it rewrite the status summary. Summaries also
   refresh automatically after commits.

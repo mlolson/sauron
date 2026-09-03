@@ -160,6 +160,14 @@ export class SocketServer {
         await state.stopSession(String(req.session))
         return null
       }
+      case 'sessions.hide': {
+        state.hideSession(String(req.session))
+        return null
+      }
+      case 'sessions.close': {
+        await state.closeSession(String(req.session))
+        return null
+      }
       case 'sessions.rename': {
         await state.renameSession(String(req.session), String(req.title ?? ''))
         return null

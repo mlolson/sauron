@@ -46,10 +46,10 @@ export interface MasterContext {
   codexSessionRoot: string
 }
 
-/** The CLAUDE.md Sauron writes into the master agent's home directory. */
+/** The CLAUDE.md Sauron writes into the supervisor agent's home directory. */
 export function renderMasterClaudeMd(ctx: MasterContext): string {
   const rows = ctx.projects.map((p) => `| ${p.name} | \`${p.id}\` | \`${p.path}\` |`).join('\n')
-  return `# Sauron master agent
+  return `# Sauron supervisor agent
 
 You are the coordinating agent inside Sauron, a desktop app that oversees coding-agent sessions
 across several git projects. You run in a long-lived session that the user chats with directly.

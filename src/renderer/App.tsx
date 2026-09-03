@@ -71,7 +71,7 @@ export function App() {
     case 'project': {
       const project = snapshot.projects.find((p) => p.id === selection.id)
       detail = project ? (
-        <ProjectDetail project={project} sessions={snapshot.sessions} toolPaths={snapshot.toolPaths} worktrees={snapshot.worktrees[project.id] ?? []} status={snapshot.statuses[project.id]} refresh={snapshot.refresh} masterAlive={snapshot.sessions.some((s) => s.id === 'master' && s.state !== 'stopped')} onSelect={setSelection} />
+        <ProjectDetail project={project} sessions={snapshot.sessions} toolPaths={snapshot.toolPaths} worktrees={snapshot.worktrees[project.id] ?? []} status={snapshot.statuses[project.id]} refresh={snapshot.refresh} masterAlive={snapshot.sessions.some((s) => s.id === 'master' && s.state !== 'stopped')} hiddenExternal={snapshot.hiddenExternal} onSelect={setSelection} />
       ) : (
         <EmptyDetail />
       )

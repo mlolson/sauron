@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { parseStatusFile, type ProjectStatus } from '@shared/status'
 import { writeJsonAtomic } from './persistence'
 
-/** Reads and watches `status/<project id>.json` files written by the master agent. */
+/** Reads and watches `status/<project id>.json` files written by the supervisor agent. */
 export class StatusStore {
   statuses: Record<string, ProjectStatus> = {}
   private watcher: FSWatcher | null = null

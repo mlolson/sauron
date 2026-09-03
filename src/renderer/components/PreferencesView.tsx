@@ -64,14 +64,14 @@ export function PreferencesView({ preferences, toolPaths, onClose }: Props) {
           </label>
         </section>
         <section>
-          <h3>Notifications and master agent</h3>
+          <h3>Notifications and supervisor agent</h3>
           <label className="pref-row check">
             <input type="checkbox" checked={!draft.notificationsMuted} onChange={(e) => save({ notificationsMuted: !e.target.checked })} />
             <span>Show notifications when a session needs input or finishes</span>
           </label>
           <label className="pref-row check">
             <input type="checkbox" checked={draft.masterAutoStart} onChange={(e) => save({ masterAutoStart: e.target.checked })} />
-            <span>Start the master agent when Sauron launches</span>
+            <span>Start the supervisor agent when Sauron launches</span>
           </label>
           <label className="pref-row">
             <span>Hide external sessions idle longer than (hours)</span>

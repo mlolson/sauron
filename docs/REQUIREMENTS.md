@@ -12,7 +12,7 @@ Status: Draft, agreed in design Q&A
 Sauron is a native macOS desktop application for overseeing AI coding agents across
 multiple software projects. It gives a single place to see every project you are working
 on, what state each is in, which Claude Code and Codex sessions are running there, and to
-talk to those sessions directly. A persistent "master agent" acts as a coordinator that
+talk to those sessions directly. A persistent "supervisor agent" acts as a coordinator that
 keeps project summaries current and can direct worker sessions on your behalf.
 
 ### 1.1 Problem
@@ -28,7 +28,7 @@ with one window.
 - Launch, view, and interact with Claude Code and Codex sessions per project.
 - See sessions started outside Sauron, not just those it launched.
 - Know at a glance which sessions need attention, and be notified when one does.
-- A coordinating master agent you can chat with, which maintains summaries and can
+- A coordinating supervisor agent you can chat with, which maintains summaries and can
   launch or message worker sessions.
 - Sessions survive Sauron restarts.
 
@@ -121,15 +121,17 @@ answering permission prompts and using the CLIs' interactive features.
 **SES-4 (Must)** On launch, Sauron enumerates existing tmux sessions with its prefix and
 reconstructs the session list, associating each with its project from stored metadata.
 
-**SES-5 (Must)** The user can stop a session. Stopping sends an interrupt and then kills
-the tmux session after a grace period. Detaching (closing the view but leaving tmux
-running) is a separate action.
+**SES-5 (Must)** The user can close a session: an interrupt, then the tmux session is
+killed. Claude and Codex sessions keep their record with the CLI session id and can be
+resumed later (a new terminal running `claude --resume` / `codex resume`); plain terminals
+are removed. External sessions offer Hide instead, which removes them from view without
+touching the process.
 
 **SES-6 (Must)** Sauron records per session: id, tool (claude/codex), project, worktree
 path if any, tmux session name, creation time, and the underlying CLI session id once
 known (needed for resume and for matching transcripts, see 4.4).
 
-**SES-7 (Should)** An initial prompt can be supplied through the CLI and by the master agent.
+**SES-7 (Should)** An initial prompt can be supplied through the CLI and by the supervisor agent.
 
 **SES-8 (Must)** Sessions have an editable title (inline in the session header, or Rename in the
 context menu). The title is persisted into tmux: the session is renamed and the title is stored
@@ -185,40 +187,40 @@ CLI session id) so the same transcript view can be shown alongside the terminal.
 **EXT-7 (Should)** Handle transcript format changes gracefully: unknown record types are
 skipped, and a parse failure for one record does not hide the rest.
 
-### 4.5 Master agent
+### 4.5 Supervisor agent
 
 A single, global, persistent Claude Code session owned by Sauron that acts as a
 coordinator across all projects.
 
-**MA-1 (Must)** Sauron maintains a home directory for the master agent at
+**MA-1 (Must)** Sauron maintains a home directory for the supervisor agent at
 `~/Library/Application Support/Sauron/master/`. It contains a Sauron-generated `CLAUDE.md`
 describing: the list of projects with paths, where and how to write status summaries, how
 to read other sessions' transcripts, and the `sauron` CLI (MA-6). Sauron regenerates this
 file whenever the project list changes.
 
-**MA-2 (Must)** The master agent runs as a Claude Code session in tmux, launched in its
+**MA-2 (Must)** The supervisor agent runs as a Claude Code session in tmux, launched in its
 home directory, and appears pinned at the top of the sidebar. The user interacts with it
 through the same embedded terminal as any other session. If it is not running, Sauron
 offers to start it; it is started automatically on app launch if it was running previously.
 
-**MA-3 (Must)** The master agent writes one status summary per project to Sauron's store
+**MA-3 (Must)** The supervisor agent writes one status summary per project to Sauron's store
 (for example `~/Library/Application Support/Sauron/status/<project-id>.json`) with at
 minimum: `summary` (short text suitable for a list row, roughly 1–3 sentences),
 `details` (longer text, optional), and `updated_at`. Sauron watches this directory and
 updates the UI when a file changes.
 
-**MA-4 (Must)** Refresh triggers. Sauron asks the master agent to refresh a project's
+**MA-4 (Must)** Refresh triggers. Sauron asks the supervisor agent to refresh a project's
 summary when:
 - the user clicks a refresh button on the project (or "refresh all");
 - a new commit appears in the project repository (detected by watching `.git` refs / HEAD).
 
-**MA-5 (Must)** A refresh is delivered by sending a prompt into the master agent's tmux
+**MA-5 (Must)** A refresh is delivered by sending a prompt into the supervisor agent's tmux
 session. Sauron must not interrupt the agent mid-turn: refresh requests are queued and sent
 only when the agent is idle (idle detection via Claude Code hooks, see 4.6). Multiple pending
 refreshes for the same project collapse into one. Rapid commits are debounced.
 
 **MA-6 (Must)** Sauron provides a small command-line tool, `sauron`, available on the
-master agent's PATH, with at least:
+supervisor agent's PATH, with at least:
 - `sauron projects` — list projects (id, name, path).
 - `sauron sessions [--project <id>]` — list running sessions.
 - `sauron launch --project <id> --tool claude|codex [--worktree [<branch>]] [--prompt <text>]`
@@ -238,7 +240,7 @@ its previous summary, and repo docs such as README, CLAUDE.md, AGENTS.md, TODO.m
 **MA-8 (Should)** Refresh activity is visible: a project whose refresh is queued or in
 progress shows an indicator.
 
-**MA-9 (Could)** Allow the user to edit the master agent's CLAUDE.md preamble with custom
+**MA-9 (Could)** Allow the user to edit the supervisor agent's CLAUDE.md preamble with custom
 instructions that survive regeneration.
 
 ### 4.6 Attention and notifications
@@ -267,7 +269,7 @@ notification focuses that session.
 
 ### 4.7 Application shell
 
-**APP-1 (Must)** Layout: a sidebar listing the master agent, then projects with their
+**APP-1 (Must)** Layout: a sidebar listing the supervisor agent, then projects with their
 sessions nested beneath; a main content area showing the selected item (project detail,
 session terminal, or external transcript).
 
@@ -279,7 +281,7 @@ and shows a setup screen listing anything missing with install hints. Codex bein
 is not fatal; the Codex launch button is disabled instead.
 
 **APP-4 (Must)** Preferences: paths to CLIs (override), worktree base location,
-notification toggle, master agent auto-start.
+notification toggle, supervisor agent auto-start.
 
 **APP-5 (Should)** Keyboard navigation between sessions and a quick switcher.
 
@@ -315,7 +317,7 @@ pinned: Bool
 Session
 ```
 id: UUID
-projectId: UUID?        # nil for the master agent
+projectId: UUID?        # nil for the supervisor agent
 tool: claude | codex
 kind: managed | external
 tmuxName: String?       # managed only
@@ -352,11 +354,11 @@ terminal tab attached to it, and records the session. When the hooks first fire,
 learns the Claude session id and locates its transcript.
 
 **Commit triggers refresh.** The worker commits. Sauron's watcher sees HEAD change,
-debounces, checks the master agent is idle, and sends
+debounces, checks the supervisor agent is idle, and sends
 "Refresh the status summary for project foo (id …)" into its tmux session. The agent reads
 git log, transcripts, and docs, then writes `status/<id>.json`. Sauron reloads the row.
 
-**Master launches a worker.** User tells the master agent "start a Codex session on bar to
+**Master launches a worker.** User tells the supervisor agent "start a Codex session on bar to
 fix the flaky test". The agent runs `sauron launch --project bar --tool codex --prompt "…"`.
 The CLI asks the app to launch; the new session appears in the sidebar.
 
@@ -397,7 +399,7 @@ any recorded session whose tmux session is gone as stopped.
    in Application Support.
 4. Whether the `sauron` CLI should be a separate small binary target in the Xcode project or
    a script that talks to the app over a socket.
-5. How the master agent should be resumed (`claude --resume <id>`) versus started fresh when
+5. How the supervisor agent should be resumed (`claude --resume <id>`) versus started fresh when
    its tmux session is gone.
 
 ---
@@ -409,6 +411,6 @@ any recorded session whose tmux session is gone as stopped.
 3. **Worktrees.** Create on launch, list, remove with safety checks.
 4. **External sessions.** Transcript discovery, live tail, read-only view.
 5. **Attention.** Hooks, badges, notifications.
-6. **Master agent.** Home dir, CLAUDE.md generation, status store, refresh triggers,
+6. **Supervisor agent.** Home dir, CLAUDE.md generation, status store, refresh triggers,
    `sauron` CLI.
 7. **Polish.** Preferences, setup screen, keyboard navigation.

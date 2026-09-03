@@ -42,6 +42,7 @@ export class AppState extends EventEmitter<StateEvents> {
   projects: Project[] = []
   sessions: Session[] = []
   orphanTmuxSessions: string[] = []
+  hiddenExternal = new Set<string>()
   toolPaths: ToolPaths | null = null
   worktrees: Record<string, Worktree[]> = {}
   preferences: Preferences = { ...defaultPreferences }
@@ -96,6 +97,7 @@ export class AppState extends EventEmitter<StateEvents> {
       projects: this.projects,
       sessions: this.allSessions,
       orphanTmuxSessions: this.orphanTmuxSessions,
+      hiddenExternal: [...this.hiddenExternal],
       toolPaths: this.toolPaths,
       worktrees: this.worktrees,
       preferences: this.preferences,
@@ -127,7 +129,10 @@ export class AppState extends EventEmitter<StateEvents> {
       this.projects = config.projects
       this.preferences = { ...defaultPreferences, ...config.preferences, toolOverrides: { ...defaultPreferences.toolOverrides, ...config.preferences?.toolOverrides } }
       this.notifier.muted = this.preferences.notificationsMuted
-      this.sessions = (await this.persistence.loadSessions()).sessions
+      const file = await this.persistence.loadSessions()
+      this.sessions = file.sessions
+      for (const s of this.sessions) if (s.id === MASTER_SESSION_ID && s.displayName === 'Master Agent') s.displayName = 'Supervisor Agent'
+      this.hiddenExternal = new Set(file.hiddenExternal ?? [])
       this.loaded = true
     } catch (error) {
       this.report(error)
@@ -181,7 +186,9 @@ export class AppState extends EventEmitter<StateEvents> {
   }
 
   private persistSessions(): void {
-    this.persistence.saveSessions({ version: SESSIONS_VERSION, sessions: this.sessions }).catch((e) => this.report(e))
+    this.persistence
+      .saveSessions({ version: SESSIONS_VERSION, sessions: this.sessions, hiddenExternal: [...this.hiddenExternal] })
+      .catch((e) => this.report(e))
   }
 
   // MARK: Projects
@@ -443,33 +450,75 @@ export class AppState extends EventEmitter<StateEvents> {
     }
   }
 
-  /** Interrupts the agent, then kills the tmux session if it is still there. */
+  /** Interrupts whatever runs in the session, then kills the tmux session. */
+  private async killTmux(session: Session): Promise<void> {
+    if (!session.tmuxName) return
+    const { tmux } = this.requireTools()
+    if (await tmux.hasSession(session.tmuxName)) {
+      await tmux.sendInterrupt(session.tmuxName)
+      await sleep(1500)
+      if (await tmux.hasSession(session.tmuxName)) await tmux.killSession(session.tmuxName)
+    }
+    this.pty?.close(session.id)
+  }
+
+  /**
+   * Closes a managed session: the tmux session dies. Claude and Codex sessions keep their
+   * record (stopped, resumable by CLI session id); plain terminals are forgotten.
+   */
+  async closeSession(id: string): Promise<void> {
+    const session = this.session(id)
+    if (!session || session.kind !== 'managed') return
+    try {
+      await this.killTmux(session)
+      if (session.tool === 'shell' || !session.cliSessionId) {
+        this.sessions = this.sessions.filter((s) => s.id !== id)
+        this.persistSessions()
+        this.changed()
+        if (session.projectId) this.select({ kind: 'project', id: session.projectId })
+      } else {
+        this.markStopped(id)
+      }
+      this.notifier.setBadge(this.waitingCount())
+    } catch (error) {
+      this.report(error, { sessionId: id })
+    }
+  }
+
+  /** Kept for the supervisor agent and the CLI's `stop`: close without forgetting. */
   async stopSession(id: string): Promise<void> {
     const session = this.session(id)
     if (!session?.tmuxName) return
     try {
-      const { tmux } = this.requireTools()
-      if (await tmux.hasSession(session.tmuxName)) {
-        await tmux.sendInterrupt(session.tmuxName)
-        await sleep(2000)
-        if (await tmux.hasSession(session.tmuxName)) await tmux.killSession(session.tmuxName)
-      }
-      this.pty?.close(id)
+      await this.killTmux(session)
       this.markStopped(id)
     } catch (error) {
       this.report(error, { sessionId: id })
     }
   }
 
-  /** Closes the embedded terminal; the tmux session keeps running. */
-  detachSession(id: string): void {
-    this.pty?.close(id)
-    const projectId = this.session(id)?.projectId
-    if (projectId) this.select({ kind: 'project', id: projectId })
+  /** External sessions only: remove from view; the transcript stays on disk. */
+  hideSession(id: string): void {
+    const session = this.session(id)
+    if (!session || session.kind !== 'external' || !session.cliSessionId) return
+    this.hiddenExternal.add(session.cliSessionId)
+    for (const [path, s] of this.externalSessions) if (s.id === id) this.externalSessions.delete(path)
+    this.persistSessions()
+    this.changed()
+    if (session.projectId) this.select({ kind: 'project', id: session.projectId })
+  }
+
+  unhideSession(cliSessionId: string): void {
+    this.hiddenExternal.delete(cliSessionId)
+    this.persistSessions()
+    void this.rescanTranscripts()
   }
 
   forgetSession(id: string): void {
     this.pty?.close(id)
+    // Its transcript stays on disk; keep it from coming back as an external session.
+    const cliId = this.session(id)?.cliSessionId
+    if (cliId) this.hiddenExternal.add(cliId)
     this.sessions = this.sessions.filter((s) => s.id !== id)
     this.persistSessions()
     this.changed()
@@ -550,8 +599,8 @@ export class AppState extends EventEmitter<StateEvents> {
       s.state = nextState
       s.stateSource = 'hook'
       s.lastActivityAt = new Date().toISOString()
+      // A terminal that ran an agent keeps that identity so it stays resumable.
       if (s.tool === 'shell') s.tool = event.tool
-      if (event.event === 'SessionEnd') s.tool = 'shell'
       if (event.tool === 'claude' && typeof event.payload.session_id === 'string') {
         s.cliSessionId = event.payload.session_id
         if (typeof event.payload.transcript_path === 'string') s.transcriptPath = event.payload.transcript_path
@@ -642,6 +691,7 @@ export class AppState extends EventEmitter<StateEvents> {
       }
       const projectId = projectForCwd(cwd, this.projects, worktreePaths)
       if (!projectId) continue
+      if (this.hiddenExternal.has(sessionId)) continue
       const existing = this.externalSessions.get(f.path)
       const ageMs = now - f.mtimeMs
       const state: Session['state'] = ageMs < 2 * 60_000 ? 'running' : 'idle'
@@ -714,7 +764,7 @@ export class AppState extends EventEmitter<StateEvents> {
     else this.transcriptListeners.delete(sessionId)
   }
 
-  // MARK: Master agent
+  // MARK: Supervisor agent
 
   masterSession(): Session | undefined {
     return this.sessions.find((s) => s.id === MASTER_SESSION_ID)
@@ -729,7 +779,7 @@ export class AppState extends EventEmitter<StateEvents> {
     }
   }
 
-  /** Starts the master agent, resuming its previous conversation when possible. */
+  /** Starts the supervisor agent, resuming its previous conversation when possible. */
   async startMaster(): Promise<void> {
     const existing = this.masterSession()
     if (existing && isAlive(existing)) {
@@ -744,7 +794,7 @@ export class AppState extends EventEmitter<StateEvents> {
       const addDirs = this.projects.flatMap((p) => ['--add-dir', p.path])
       const settings = await this.claudeSettingsArgs(MASTER_SESSION_ID)
       const tryStart = async (cliSessionId: string, resume: boolean): Promise<string> => {
-        const tmuxName = tmuxSessionName('master', randomUUID())
+        const tmuxName = tmuxSessionName('supervisor', randomUUID())
         const command = resume
           ? [tools.claude!, '--resume', cliSessionId, ...settings, ...addDirs]
           : [tools.claude!, '--session-id', cliSessionId, ...settings, ...addDirs]
@@ -770,7 +820,7 @@ export class AppState extends EventEmitter<StateEvents> {
         projectId: null,
         tool: 'claude',
         kind: 'managed',
-        displayName: 'Master Agent',
+        displayName: 'Supervisor Agent',
         tmuxName: tmuxName!,
         cliSessionId,
         transcriptPath: claudeTranscriptPath(homedir(), this.masterHome.dir, cliSessionId!),
@@ -820,7 +870,7 @@ export class AppState extends EventEmitter<StateEvents> {
     if (!this.project(projectId)) return
     const master = this.masterSession()
     if (!master || !isAlive(master)) {
-      this.report(new SauronError('invalid_state', 'The master agent is not running. Start it to refresh summaries.'), { projectId })
+      this.report(new SauronError('invalid_state', 'The supervisor agent is not running. Start it to refresh summaries.'), { projectId })
     }
     this.refresh.enqueue(projectId)
   }

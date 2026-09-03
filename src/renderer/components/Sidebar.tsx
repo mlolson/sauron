@@ -41,18 +41,27 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
     },
   ]
 
-  const sessionMenu = (session: Session): MenuItem[] =>
-    isAlive(session)
-      ? [
-          { label: 'Rename…', action: () => setRenaming(session) },
-          { label: 'Detach Terminal', action: () => void window.sauron.detachSession(session.id) },
-          { label: 'Stop', destructive: true, action: () => void window.sauron.stopSession(session.id) },
-        ]
-      : [
-          { label: 'Rename…', action: () => setRenaming(session) },
-          { label: session.cliSessionId ? 'Resume' : 'Restart terminal', action: () => void window.sauron.resumeSession(session.id) },
-          { label: 'Forget', destructive: true, action: () => void window.sauron.forgetSession(session.id) },
-        ]
+  const sessionMenu = (session: Session): MenuItem[] => {
+    if (session.kind === 'external') return [{ label: 'Hide', action: () => void window.sauron.hideSession(session.id) }]
+    if (isAlive(session)) {
+      return [
+        { label: 'Rename…', action: () => setRenaming(session) },
+        {
+          label: 'Close',
+          destructive: true,
+          action: () => {
+            const keeps = session.tool !== 'shell' && session.cliSessionId
+            if (keeps || confirm(`Close ${session.displayName}?\n\nThis kills the terminal. Plain terminals cannot be resumed.`)) void window.sauron.closeSession(session.id)
+          },
+        },
+      ]
+    }
+    return [
+      { label: 'Rename…', action: () => setRenaming(session) },
+      { label: 'Resume', action: () => void window.sauron.resumeSession(session.id) },
+      { label: 'Forget', destructive: true, action: () => void window.sauron.forgetSession(session.id) },
+    ]
+  }
 
   const unassigned = snapshot.sessions.filter((s) => s.projectId === null && s.id !== 'master')
 
@@ -80,7 +89,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
             <Row selected={sameTarget(selection, { kind: 'master' })} onClick={() => onSelect({ kind: 'master' })} onContextMenu={master && isAlive(master) ? (e) => openMenu(e, sessionMenu(master)) : undefined}>
               <span className={`glyph ${master && isAlive(master) ? 'accent' : 'muted'}`}>◉</span>
               <span className="label">
-                <span className="name">Master Agent</span>
+                <span className="name">Supervisor Agent</span>
                 <span className="sub">{master && isAlive(master) ? (snapshot.refresh.inProgress ? 'refreshing a summary' : 'ready') : 'not running'}</span>
               </span>
               {master && <StateDot state={master.state} />}
@@ -93,8 +102,9 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
         {snapshot.projects.map((project) => {
           const cutoff = Date.now() - snapshot.preferences.externalRecentHours * 3600_000
           const all = snapshot.sessions.filter((s) => s.projectId === project.id)
-          const sessions = all.filter((s) => s.kind === 'managed' || new Date(s.lastActivityAt).getTime() >= cutoff)
-          const olderExternal = all.length - sessions.length
+          // Closed (resumable) sessions live on the project page, not in the sidebar.
+          const sessions = all.filter((s) => (s.kind === 'managed' ? isAlive(s) : new Date(s.lastActivityAt).getTime() >= cutoff))
+          const olderExternal = all.filter((s) => s.kind === 'external').length - sessions.filter((s) => s.kind === 'external').length
           const alive = sessions.filter((s) => s.kind === 'managed' && isAlive(s)).length
           const waiting = sessions.filter((s) => s.state === 'waitingForInput').length
           return (
@@ -121,7 +131,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   nested
                   selected={sameTarget(selection, { kind: 'session', id: session.id })}
                   onClick={() => onSelect({ kind: 'session', id: session.id })}
-                  onContextMenu={session.kind === 'managed' ? (e) => openMenu(e, sessionMenu(session)) : undefined}
+                  onContextMenu={(e) => openMenu(e, sessionMenu(session))}
                 >
                   <span className={`glyph ${session.kind === 'external' ? 'external' : isAlive(session) ? 'accent' : 'muted'}`} title={session.kind === 'external' ? 'Started outside Sauron' : undefined}>
                     <ToolIcon tool={session.tool} />

@@ -14,7 +14,9 @@ Run on a build from `main` with `scripts/app.sh`. Each item maps to a slice's Do
 - [ ] New Claude opens a terminal running Claude Code in the repo; typing a prompt gets a reply.
 - [ ] `tmux ls` shows the session; `tmux attach -t <name>` works from Terminal.
 - [ ] Quit Sauron mid-task, relaunch: session listed, terminal reattaches with output intact.
-- [ ] `tmux kill-session` from outside: Sauron shows Stopped with Resume; Resume continues the conversation.
+- [ ] `tmux kill-session` from outside: Sauron shows Closed with Resume; Resume continues the conversation.
+- [ ] Close on a plain terminal removes it (after confirming); Close on a Claude/Codex terminal moves it to "Closed, resumable" on the project page, and Resume continues the conversation in a new terminal.
+- [ ] Hide on an external session removes it from the sidebar; the project page shows it under "hidden" with Unhide.
 - [ ] `SAURON_TOOL_CLAUDE=none scripts/app.sh`: setup screen instead of the main window.
 
 ## Slice 3: Codex
@@ -42,7 +44,7 @@ Run on a build from `main` with `scripts/app.sh`. Each item maps to a slice's Do
 - [ ] Sessions older than the preference cutoff appear only in the project's External Sessions card.
 - [ ] Transcript tab on a managed session shows the structured conversation.
 
-## Slice 7: master agent
+## Slice 7: supervisor agent
 - [ ] On first launch the master starts, pinned at the top; you can chat with it.
 - [ ] Refresh on a project produces a summary on the row and in the Status card with a fresh timestamp; `status/<id>.json` exists.
 - [ ] "Start a Claude session on X to do Y" in the master chat creates a worker with that prompt.

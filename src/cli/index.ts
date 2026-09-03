@@ -9,12 +9,13 @@
  *   sauron rename --session <id> --title <text>
  *   sauron worktrees --project <name|id>
  *   sauron worktrees remove --project <name|id> --path <dir> [--force]
- *   sauron stop --session <id>
+ *   sauron close --session <id>      (kill; agents stay resumable, plain terminals are forgotten)
+ *   sauron stop --session <id>       (kill but keep the record)
  *   sauron send --session <id> --text <text>
  *   sauron status [get] --project <name|id>
  *   sauron status set --project <name|id> --summary <text> [--details <text>]
  *   sauron status refresh --project <name|id>
- *   sauron master                 (start or focus the master agent)
+ *   sauron master                 (start or focus the supervisor agent)
  *   sauron select --project <name|id> | --session <id>
  *   sauron raw '<json>'
  *   sauron hook claude <Event>      (Claude Code hook: JSON payload on stdin)
@@ -146,6 +147,12 @@ async function main(): Promise<void> {
       break
     case 'stop':
       payload = { cmd: 'sessions.stop', session: flags.session }
+      break
+    case 'close':
+      payload = { cmd: 'sessions.close', session: flags.session }
+      break
+    case 'hide':
+      payload = { cmd: 'sessions.hide', session: flags.session }
       break
     case 'resume':
       payload = { cmd: 'sessions.resume', session: flags.session }

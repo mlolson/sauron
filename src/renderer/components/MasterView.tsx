@@ -4,7 +4,7 @@ export function MasterView({ session }: { session: Session | undefined }) {
   return (
     <div className="placeholder">
       <div className="big">◉</div>
-      <h2>Master Agent</h2>
+      <h2>Supervisor Agent</h2>
       <p>
         A long-lived Claude Code session that keeps project summaries current and can start or direct worker sessions. It runs in its own
         home directory with a generated CLAUDE.md.
@@ -12,7 +12,7 @@ export function MasterView({ session }: { session: Session | undefined }) {
       </p>
       <div className="actions">
         <button className="primary" onClick={() => void window.sauron.startMaster()}>
-          {session?.cliSessionId ? 'Resume Master Agent' : 'Start Master Agent'}
+          {session?.cliSessionId ? 'Resume Supervisor Agent' : 'Start Supervisor Agent'}
         </button>
       </div>
     </div>

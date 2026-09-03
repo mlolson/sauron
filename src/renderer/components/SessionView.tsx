@@ -97,13 +97,20 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
             </button>
           )}
           {!external && alive && (
-            <button title="Close this terminal; the session keeps running in tmux" onClick={() => void window.sauron.detachSession(session.id)}>
-              Detach
+            <button
+              className="destructive"
+              title={session.tool === 'shell' ? 'Kill this terminal. Plain terminals cannot be resumed.' : 'Kill this terminal. The agent conversation stays resumable.'}
+              onClick={() => {
+                const keeps = session.tool !== 'shell' && session.cliSessionId
+                if (keeps || confirm(`Close ${session.displayName}?\n\nThis kills the terminal. Plain terminals cannot be resumed.`)) void window.sauron.closeSession(session.id)
+              }}
+            >
+              Close
             </button>
           )}
-          {!external && alive && (
-            <button className="destructive" title="Interrupt the agent and end the tmux session" onClick={() => void window.sauron.stopSession(session.id)}>
-              Stop
+          {external && (
+            <button title="Remove this session from Sauron. It keeps running in your terminal." onClick={() => void window.sauron.hideSession(session.id)}>
+              Hide
             </button>
           )}
         </div>
@@ -115,12 +122,14 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
       ) : (
         <div className="placeholder">
           <div className="big">■</div>
-          <h2>Session Stopped</h2>
-          <p>{session.cliSessionId ? 'The tmux session is gone. Resume starts a new terminal and continues the same agent conversation.' : 'The tmux session is gone. Restart opens a new terminal in the same directory.'}</p>
+          <h2>Session Closed</h2>
+          <p>{session.cliSessionId ? 'Resume starts a new terminal and continues this agent conversation.' : 'This terminal is gone.'}</p>
           <div className="actions">
-            <button className="primary" onClick={() => void window.sauron.resumeSession(session.id)}>
-              {session.cliSessionId ? 'Resume' : 'Restart terminal'}
-            </button>
+            {session.cliSessionId && (
+              <button className="primary" onClick={() => void window.sauron.resumeSession(session.id)}>
+                Resume
+              </button>
+            )}
             <button onClick={() => void window.sauron.forgetSession(session.id)}>Forget</button>
             {session.transcriptPath && <button onClick={() => setView('transcript')}>View transcript</button>}
           </div>

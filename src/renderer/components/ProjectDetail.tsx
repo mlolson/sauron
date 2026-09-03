@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { Project, SelectionTarget, Session, ToolPaths } from '@shared/types'
 import { isAlive } from '@shared/types'
 import type { Worktree } from '@shared/worktrees'
@@ -17,13 +17,17 @@ interface Props {
   status: ProjectStatus | undefined
   refresh: RefreshState
   masterAlive: boolean
+  hiddenExternal: string[]
   onSelect: (t: SelectionTarget) => void
 }
 
-export function ProjectDetail({ project, sessions, toolPaths, worktrees, status, refresh, masterAlive, onSelect }: Props) {
+export function ProjectDetail({ project, sessions, toolPaths, worktrees, status, refresh, masterAlive, hiddenExternal, onSelect }: Props) {
   const refreshing = refresh.inProgress === project.id
   const queued = refresh.queued.includes(project.id)
-  const mine = sessions.filter((s) => s.projectId === project.id && s.kind === 'managed')
+  const [showHidden, setShowHidden] = useState(false)
+  const managed = sessions.filter((s) => s.projectId === project.id && s.kind === 'managed')
+  const mine = managed.filter(isAlive)
+  const resumable = managed.filter((s) => !isAlive(s))
   const external = sessions
     .filter((s) => s.projectId === project.id && s.kind === 'external')
     .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
@@ -73,7 +77,7 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, status,
           </span>
           <button
             disabled={refreshing || queued}
-            title={masterAlive ? 'Ask the master agent to rewrite this summary' : 'Start the master agent first'}
+            title={masterAlive ? 'Ask the supervisor agent to rewrite this summary' : 'Start the supervisor agent first'}
             onClick={() => void window.sauron.refreshStatus(project.id)}
           >
             Refresh
@@ -85,7 +89,7 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, status,
             {status.details && <pre className="details">{status.details}</pre>}
           </>
         ) : (
-          <p className="muted">{masterAlive ? 'No summary yet. Click Refresh to have the master agent write one.' : 'No summary yet. Start the master agent to generate one.'}</p>
+          <p className="muted">{masterAlive ? 'No summary yet. Click Refresh to have the supervisor agent write one.' : 'No summary yet. Start the supervisor agent to generate one.'}</p>
         )}
       </section>
 
@@ -110,8 +114,44 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, status,
         )}
       </section>
 
+      {resumable.length > 0 && (
+        <section className="card">
+          <h2>Closed, resumable</h2>
+          <ul className="session-list">
+            {resumable.map((s) => (
+              <li key={s.id}>
+                <span className="glyph"><ToolIcon tool={s.tool} /></span>
+                <span className="name">{s.displayName}</span>
+                <span className="muted small">closed {relativeTime(s.lastActivityAt)}</span>
+                <button onClick={() => void window.sauron.resumeSession(s.id)}>Resume</button>
+                <button className="destructive" onClick={() => void window.sauron.forgetSession(s.id)}>
+                  Forget
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section className="card">
-        <h2>External Sessions</h2>
+        <div className="card-head">
+          <h2>External Sessions</h2>
+          {hiddenExternal.length > 0 && (
+            <button className="link" onClick={() => setShowHidden((v) => !v)}>
+              {showHidden ? 'Hide hidden' : `${hiddenExternal.length} hidden`}
+            </button>
+          )}
+        </div>
+        {showHidden && hiddenExternal.length > 0 && (
+          <ul className="session-list muted">
+            {hiddenExternal.map((id) => (
+              <li key={id}>
+                <span className="name">{id.slice(0, 8)}</span>
+                <button onClick={() => void window.sauron.unhideSession(id)}>Unhide</button>
+              </li>
+            ))}
+          </ul>
+        )}
         {external.length === 0 ? (
           <p className="muted">None found. Sessions started from a terminal in this directory appear here automatically.</p>
         ) : (

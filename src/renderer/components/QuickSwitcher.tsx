@@ -15,7 +15,7 @@ export function QuickSwitcher({ snapshot, onSelect, onClose }: { snapshot: Snaps
   useEffect(() => input.current?.focus(), [])
 
   const items = useMemo<Item[]>(() => {
-    const all: Item[] = [{ label: 'Master Agent', detail: 'master', target: { kind: 'master' } }]
+    const all: Item[] = [{ label: 'Supervisor Agent', detail: 'master', target: { kind: 'master' } }]
     for (const p of snapshot.projects) all.push({ label: p.name, detail: p.path, target: { kind: 'project', id: p.id } })
     for (const s of snapshot.sessions) {
       if (s.id === 'master') continue

@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { renderMasterClaudeMd } from '@shared/status'
 import type { Project } from '@shared/types'
 
-/** The master agent's home directory: a generated CLAUDE.md plus whatever the user adds. */
+/** The supervisor agent's home directory: a generated CLAUDE.md plus whatever the user adds. */
 export class MasterHome {
   constructor(
     readonly dir: string,

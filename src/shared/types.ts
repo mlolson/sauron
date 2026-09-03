@@ -15,7 +15,7 @@ export interface Preferences {
   notificationsMuted: boolean
   /** External sessions idle longer than this are listed under "recent" instead of the sidebar. */
   externalRecentHours: number
-  /** Start the master agent when Sauron launches. */
+  /** Start the supervisor agent when Sauron launches. */
   masterAutoStart: boolean
   /** Explicit executable paths; empty means "find on PATH". */
   toolOverrides: { claude: string; codex: string; tmux: string; git: string }
@@ -51,7 +51,7 @@ export type StateSource = 'hook' | 'inferred'
 
 export interface Session {
   id: string
-  /** null for the master agent or an adopted orphan. */
+  /** null for the supervisor agent or an adopted orphan. */
   projectId: string | null
   tool: AgentTool
   kind: SessionKind
@@ -71,6 +71,8 @@ export interface Session {
 export interface SessionsFile {
   version: number
   sessions: Session[]
+  /** cli session ids of external sessions the user hid. */
+  hiddenExternal?: string[]
 }
 
 export const SESSIONS_VERSION = 1
@@ -101,6 +103,7 @@ export interface Snapshot {
   projects: Project[]
   sessions: Session[]
   orphanTmuxSessions: string[]
+  hiddenExternal: string[]
   toolPaths: ToolPaths | null
   /** Worktrees per project id, refreshed on demand and after changes. */
   worktrees: Record<string, Worktree[]>
@@ -113,7 +116,7 @@ export interface Snapshot {
 export interface LaunchOptions {
   /** Display title; also written into tmux. Defaults to "<Tool> <n>". */
   title?: string
-  /** Initial prompt for claude/codex launches (used by the CLI and the master agent). */
+  /** Initial prompt for claude/codex launches (used by the CLI and the supervisor agent). */
   prompt?: string
   /** Run the session in a new git worktree on this branch. */
   worktreeBranch?: string
@@ -164,10 +167,13 @@ export interface SauronApi {
   refreshWorktrees(projectId: string): Promise<void>
   checkWorktreeRemoval(projectId: string, path: string): Promise<WorktreeRemovalCheck>
   removeWorktree(projectId: string, path: string, force: boolean): Promise<void>
-  stopSession(id: string): Promise<void>
-  detachSession(id: string): Promise<void>
+  /** Kills the tmux session. Claude/Codex sessions stay resumable; plain terminals are removed. */
+  closeSession(id: string): Promise<void>
   resumeSession(id: string): Promise<void>
   forgetSession(id: string): Promise<void>
+  /** External sessions only: remove from view. */
+  hideSession(id: string): Promise<void>
+  unhideSession(cliSessionId: string): Promise<void>
   adoptOrphan(tmuxName: string): Promise<void>
   killOrphan(tmuxName: string): Promise<void>
 

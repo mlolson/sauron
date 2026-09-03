@@ -53,7 +53,7 @@ Consequences:
 └──────────────┬───────────────────────────────────┬───────────────────┘
                │ tmux CLI (child_process)          │ Unix domain socket
                ▼                                   ▼
-        tmux server                           sauron CLI  ◄── hooks, master agent
+        tmux server                           sauron CLI  ◄── hooks, supervisor agent
           ├─ sauron-master  → claude (home: App Support/Sauron/master)
           ├─ sauron-<p>-<id> → claude / codex in repo or worktree
           └─ ...
@@ -68,9 +68,9 @@ Principles:
 - **All state lives in the main process.** The renderer is a view: it receives state
   snapshots over IPC and sends commands. No Node access in the renderer
   (`contextIsolation: true`, `nodeIntegration: false`).
-- **One socket, one CLI.** Everything outside the app (hooks, the master agent, the user in a
+- **One socket, one CLI.** Everything outside the app (hooks, the supervisor agent, the user in a
   shell) talks to the main process through the `sauron` CLI over a Unix domain socket.
-- **Files are the integration surface for the master agent.** It writes status JSON; Sauron
+- **Files are the integration surface for the supervisor agent.** It writes status JSON; Sauron
   watches the directory.
 
 ### 2.1 Packages and layout
@@ -222,7 +222,7 @@ directory, and appends only new records. `TranscriptIndexer` scans both roots at
 and on directory change, reads only the first records of each file for cwd and session id,
 and maps them to projects (repo root, its worktrees, or any subdirectory).
 
-### 3.6 Master agent
+### 3.6 Supervisor agent
 
 - Home: `App Support/Sauron/master/` with a generated `CLAUDE.md` (project table, store
   paths, transcript locations, `sauron` CLI reference, summary JSON schema). A user-owned
@@ -460,7 +460,7 @@ Done when
 
 ---
 
-### Slice 7 — Master agent chat that keeps project summaries current (≈3 d)
+### Slice 7 — Supervisor agent chat that keeps project summaries current (≈3 d)
 
 Tasks
 - [x] S7.1 `ProjectStatus` model; `StatusStore` watching `App Support/Sauron/status/` and
@@ -479,7 +479,7 @@ Tasks
       and repo docs.
 
 Done when
-- On first launch the master agent starts in its home directory and its terminal is
+- On first launch the supervisor agent starts in its home directory and its terminal is
   reachable from the pinned sidebar row; you can chat with it.
 - Clicking Refresh on a project results, without further input, in a summary appearing on
   that project's row with a fresh timestamp, and the JSON file exists in the status
@@ -547,7 +547,7 @@ Done when
 | 4 | Sessions in worktrees | 1.5 d |
 | 5 | Attention badges and notifications, `sauron` CLI | 2.5 d |
 | 6 | External sessions with live transcripts | 3 d |
-| 7 | Master agent chat and on-demand summaries | 3 d |
+| 7 | Supervisor agent chat and on-demand summaries | 3 d |
 | 8 | Commit-triggered summaries | 1 d |
 | 9 | Preferences, keyboard, smoke test, QA | 1.5 d |
 
