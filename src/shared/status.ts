@@ -77,7 +77,7 @@ Every project path is readable from this session (they are passed with \`--add-d
 
 - \`sauron projects\` — list projects (id, name, path)
 - \`sauron sessions [--project <name|id>]\` — list sessions with state (running, waitingForInput, idle, stopped)
-- \`sauron launch --project <name|id> [--tool claude|codex] [--prompt "<text>"] [--worktree [<branch>]]\` — start a worker
+- \`sauron launch --project <name|id> [--tool claude|codex|shell] [--title "<short title>"] [--prompt "<text>"] [--worktree [<branch>]]\` — start a worker (give it a descriptive title)
 - \`sauron send --session <id> --text "<text>"\` — type a message into a running worker (refused while it is mid-turn)
 - \`sauron status set --project <name|id> --summary "<1-3 sentences>" [--details "<longer text>"]\` — write a status
 - \`sauron status get --project <name|id>\` — read the current status

@@ -34,6 +34,7 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
   handle('launchSession', async (projectId, tool, options) => {
     await state.launchSession(projectId, tool, options)
   })
+  handle('renameSession', (id, title) => state.renameSession(id, title))
   handle('refreshWorktrees', (projectId) => state.refreshWorktrees(projectId))
   handle('checkWorktreeRemoval', (projectId, path) => state.checkWorktreeRemoval(projectId, path))
   handle('removeWorktree', (projectId, path, force) => state.removeWorktree(projectId, path, force))

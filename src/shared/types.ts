@@ -43,7 +43,8 @@ export interface AppConfig {
 
 export const CONFIG_VERSION = 1
 
-export type AgentTool = 'claude' | 'codex'
+/** What the session was started with. A plain shell may later run an agent; hooks update this. */
+export type AgentTool = 'claude' | 'codex' | 'shell'
 export type SessionKind = 'managed' | 'external'
 export type SessionState = 'running' | 'waitingForInput' | 'idle' | 'stopped'
 export type StateSource = 'hook' | 'inferred'
@@ -110,6 +111,9 @@ export interface Snapshot {
 }
 
 export interface LaunchOptions {
+  /** Display title; also written into tmux. Defaults to "<Tool> <n>". */
+  title?: string
+  /** Initial prompt for claude/codex launches (used by the CLI and the master agent). */
   prompt?: string
   /** Run the session in a new git worktree on this branch. */
   worktreeBranch?: string
@@ -156,6 +160,7 @@ export interface SauronApi {
   resolveTools(): Promise<void>
 
   launchSession(projectId: string, tool: AgentTool, options?: LaunchOptions): Promise<void>
+  renameSession(id: string, title: string): Promise<void>
   refreshWorktrees(projectId: string): Promise<void>
   checkWorktreeRemoval(projectId: string, path: string): Promise<WorktreeRemovalCheck>
   removeWorktree(projectId: string, path: string, force: boolean): Promise<void>

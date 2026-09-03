@@ -21,6 +21,22 @@ export class TmuxService {
     await this.run(['set-option', '-t', t, 'destroy-unattached', 'off'])
   }
 
+  async setOption(name: string, option: string, value: string): Promise<void> {
+    await this.run(['set-option', '-t', tmuxTarget(name), option, value])
+  }
+
+  /** Reads one session option; null when unset. */
+  async getOption(name: string, option: string): Promise<string | null> {
+    const r = await runCommand(this.tmuxPath, ['show-options', '-t', tmuxTarget(name), '-v', option], { env: this.environment }).catch(() => null)
+    if (!r || r.code !== 0) return null
+    const v = r.stdout.replace(/\n$/, '')
+    return v === '' ? null : v
+  }
+
+  async renameSession(from: string, to: string): Promise<void> {
+    await this.run(['rename-session', '-t', tmuxTarget(from), to])
+  }
+
   async hasSession(name: string): Promise<boolean> {
     const result = await runCommand(this.tmuxPath, ['has-session', '-t', tmuxTarget(name)], { env: this.environment }).catch(() => null)
     return result?.code === 0

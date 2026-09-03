@@ -21,7 +21,7 @@ import type { Worktree } from '@shared/worktrees'
 import { defaultWorktreeBranch } from '@shared/worktrees'
 import { WorktreeService } from './services/worktrees'
 import { CONFIG_VERSION, SESSIONS_VERSION, SauronError, isAlive } from '@shared/types'
-import { tmuxSessionName } from '@shared/tmux-args'
+import { tmuxSessionName, shellCommandLine, TMUX_OPTION_PROJECT, TMUX_OPTION_SESSION, TMUX_OPTION_TITLE, TMUX_OPTION_TOOL } from '@shared/tmux-args'
 import { claudeTranscriptPath } from '@shared/transcripts'
 import { Persistence } from './services/persistence'
 import { gitToplevel } from './services/git'
@@ -287,13 +287,40 @@ export class AppState extends EventEmitter<StateEvents> {
   }
 
   private nextDisplayName(tool: AgentTool, projectId: string | null): string {
-    const label = tool === 'claude' ? 'Claude' : 'Codex'
+    const label = tool === 'claude' ? 'Claude' : tool === 'codex' ? 'Codex' : 'Terminal'
     const count = this.sessionsFor(projectId).filter((s) => s.tool === tool).length
     return count === 0 ? label : `${label} ${count + 1}`
   }
 
-  // MARK: Session lifecycle
+  /** The command line that starts an agent inside a session's shell, or null for a plain shell. */
+  private async agentCommand(tool: AgentTool, sessionId: string, prompt: string | undefined, tools: ToolPaths): Promise<string[] | null> {
+    if (tool === 'claude') {
+      if (!tools.claude) throw new SauronError('executable_not_found', 'claude was not found on PATH.')
+      const cmd = [tools.claude, '--session-id', sessionId, ...(await this.claudeSettingsArgs(sessionId))]
+      if (prompt) cmd.push(prompt)
+      return cmd
+    }
+    if (tool === 'codex') {
+      if (!tools.codex) throw new SauronError('executable_not_found', 'codex was not found on PATH.')
+      const cmd = [tools.codex, ...(this.sauronBin ? ['-c', codexNotifyConfig(this.sauronBin)] : [])]
+      if (prompt) cmd.push(prompt)
+      return cmd
+    }
+    return null
+  }
 
+  /** Stamps identifying options onto a tmux session so it can be recovered without sessions.json. */
+  private async stampTmux(tmux: TmuxService, tmuxName: string, session: Pick<Session, 'id' | 'projectId' | 'displayName' | 'tool'>): Promise<void> {
+    await tmux.setOption(tmuxName, TMUX_OPTION_SESSION, session.id)
+    await tmux.setOption(tmuxName, TMUX_OPTION_PROJECT, session.projectId ?? '')
+    await tmux.setOption(tmuxName, TMUX_OPTION_TITLE, session.displayName)
+    await tmux.setOption(tmuxName, TMUX_OPTION_TOOL, session.tool)
+  }
+
+  /**
+   * Starts a tmux session running the user's login shell in the project (or a new worktree).
+   * For claude/codex the agent command is typed into that shell, so the terminal outlives it.
+   */
   async launchSession(projectId: string, tool: AgentTool, options: LaunchOptions = {}): Promise<Session | null> {
     const project = this.project(projectId)
     if (!project) {
@@ -303,8 +330,8 @@ export class AppState extends EventEmitter<StateEvents> {
     try {
       const { tools, tmux } = this.requireTools()
       const id = randomUUID()
-      const tmuxName = tmuxSessionName(project.name, id)
-      const prompt = options.prompt?.trim()
+      const title = options.title?.trim() || this.nextDisplayName(tool, project.id)
+      const tmuxName = tmuxSessionName(title, id)
       let worktreePath: string | null = null
       if (options.worktreeBranch !== undefined) {
         if (!this.worktreeService) throw new SauronError('executable_not_found', 'git was not found on PATH.')
@@ -313,33 +340,20 @@ export class AppState extends EventEmitter<StateEvents> {
         await this.refreshWorktrees(project.id, false)
       }
       const cwd = worktreePath ?? project.path
-      let command: string[]
-      let cliSessionId: string | null
-      let transcriptPath: string | null
-      if (tool === 'claude') {
-        if (!tools.claude) throw new SauronError('executable_not_found', 'claude was not found on PATH.')
-        command = [tools.claude, '--session-id', id, ...(await this.claudeSettingsArgs(id))]
-        cliSessionId = id
-        transcriptPath = claudeTranscriptPath(homedir(), cwd, id)
-      } else {
-        if (!tools.codex) throw new SauronError('executable_not_found', 'codex was not found on PATH.')
-        command = [tools.codex, '-C', cwd, ...(this.sauronBin ? ['-c', codexNotifyConfig(this.sauronBin)] : [])]
-        // Codex picks its own session id; the transcript indexer (slice 6) fills these in.
-        cliSessionId = null
-        transcriptPath = null
-      }
-      if (prompt) command.push(prompt)
-      await tmux.newSession({ name: tmuxName, workingDir: cwd, environment: this.launchEnvironment(id, tools), command })
+      const agent = await this.agentCommand(tool, id, options.prompt?.trim() || undefined, tools)
+      const shell = process.env.SHELL || '/bin/zsh'
+      await tmux.newSession({ name: tmuxName, workingDir: cwd, environment: this.launchEnvironment(id, tools), command: [shell, '-l'] })
       const now = new Date().toISOString()
       const session: Session = {
         id,
         projectId: project.id,
         tool,
         kind: 'managed',
-        displayName: this.nextDisplayName(tool, project.id),
+        displayName: title,
         tmuxName,
-        cliSessionId,
-        transcriptPath,
+        cliSessionId: tool === 'claude' ? id : null,
+        // Codex picks its own session id; the transcript indexer fills it in later.
+        transcriptPath: tool === 'claude' ? claudeTranscriptPath(homedir(), cwd, id) : null,
         workingDir: project.path,
         worktreePath,
         createdAt: now,
@@ -347,6 +361,8 @@ export class AppState extends EventEmitter<StateEvents> {
         state: 'running',
         stateSource: 'inferred',
       }
+      await this.stampTmux(tmux, tmuxName, session)
+      if (agent) await tmux.sendText(tmuxName, shellCommandLine(agent))
       this.sessions.push(session)
       this.persistSessions()
       this.changed()
@@ -358,6 +374,30 @@ export class AppState extends EventEmitter<StateEvents> {
     }
   }
 
+  /** Renames a session everywhere: the record, the tmux session name, and the tmux title option. */
+  async renameSession(id: string, title: string): Promise<void> {
+    const session = this.session(id)
+    const clean = title.trim()
+    if (!session || !clean || session.kind !== 'managed') return
+    try {
+      if (session.tmuxName && isAlive(session) && this.tmux && id !== MASTER_SESSION_ID) {
+        const newName = tmuxSessionName(clean, id)
+        if (newName !== session.tmuxName) await this.tmux.renameSession(session.tmuxName, newName)
+        await this.tmux.setOption(newName, TMUX_OPTION_TITLE, clean)
+        this.updateSession(id, (s) => {
+          s.tmuxName = newName
+          s.displayName = clean
+        })
+      } else {
+        this.updateSession(id, (s) => {
+          s.displayName = clean
+        })
+      }
+    } catch (error) {
+      this.report(error, { sessionId: id })
+    }
+  }
+
   /** Writes the per-session Claude settings file carrying Sauron's hooks and returns the CLI args. */
   private async claudeSettingsArgs(sessionId: string): Promise<string[]> {
     if (!this.sauronBin) return []
@@ -366,26 +406,30 @@ export class AppState extends EventEmitter<StateEvents> {
     return ['--settings', file]
   }
 
+  /** Starts a new shell session and resumes the agent conversation inside it. */
   async resumeSession(id: string): Promise<void> {
     const session = this.session(id)
-    if (!session || session.state !== 'stopped' || !session.cliSessionId) return
+    if (!session || session.state !== 'stopped') return
     try {
       const { tools, tmux } = this.requireTools()
-      let command: string[]
-      if (session.tool === 'claude') {
+      let command: string[] | null = null
+      if (session.cliSessionId && session.tool === 'claude') {
         if (!tools.claude) throw new SauronError('executable_not_found', 'claude was not found on PATH.')
         command = [tools.claude, '--resume', session.cliSessionId, ...(await this.claudeSettingsArgs(session.id))]
-      } else {
+      } else if (session.cliSessionId && session.tool === 'codex') {
         if (!tools.codex) throw new SauronError('executable_not_found', 'codex was not found on PATH.')
         command = [tools.codex, ...(this.sauronBin ? ['-c', codexNotifyConfig(this.sauronBin)] : []), 'resume', session.cliSessionId]
       }
-      const tmuxName = tmuxSessionName(session.displayName, randomUUID())
+      const tmuxName = tmuxSessionName(session.displayName, session.id)
+      const shell = process.env.SHELL || '/bin/zsh'
       await tmux.newSession({
         name: tmuxName,
         workingDir: session.worktreePath ?? session.workingDir,
         environment: this.launchEnvironment(session.id, tools),
-        command,
+        command: [shell, '-l'],
       })
+      await this.stampTmux(tmux, tmuxName, session)
+      if (command) await tmux.sendText(tmuxName, shellCommandLine(command))
       this.pty?.close(id)
       this.updateSession(id, (s) => {
         s.tmuxName = tmuxName
@@ -499,17 +543,25 @@ export class AppState extends EventEmitter<StateEvents> {
     console.log('hook', session.displayName, event.event, '->', transition?.state ?? '(ignored)')
     if (!transition) return
     const wasStopped = session.state === 'stopped'
+    // The agent runs inside a shell that survives it: SessionEnd means idle, not stopped
+    // (the master runs claude directly, so for it the tmux liveness poll decides).
+    const nextState = transition.state === 'stopped' && sessionId !== MASTER_SESSION_ID ? 'idle' : transition.state
     this.updateSession(sessionId, (s) => {
-      s.state = transition.state
+      s.state = nextState
       s.stateSource = 'hook'
       s.lastActivityAt = new Date().toISOString()
-      if (event.tool === 'claude' && typeof event.payload.session_id === 'string') s.cliSessionId = event.payload.session_id
+      if (s.tool === 'shell') s.tool = event.tool
+      if (event.event === 'SessionEnd') s.tool = 'shell'
+      if (event.tool === 'claude' && typeof event.payload.session_id === 'string') {
+        s.cliSessionId = event.payload.session_id
+        if (typeof event.payload.transcript_path === 'string') s.transcriptPath = event.payload.transcript_path
+      }
       if (event.tool === 'codex') {
         const tid = event.payload['thread-id'] ?? event.payload.thread_id ?? event.payload['session-id']
         if (typeof tid === 'string') s.cliSessionId = tid
       }
     })
-    if (transition.state === 'stopped' && !wasStopped) this.pty?.close(sessionId)
+    if (nextState === 'stopped' && !wasStopped) this.pty?.close(sessionId)
     this.notifier.setBadge(this.waitingCount())
     if (sessionId === MASTER_SESSION_ID) {
       if (transition.state === 'idle') this.refresh.markDone()
@@ -625,6 +677,7 @@ export class AppState extends EventEmitter<StateEvents> {
     let tailer = this.tailers.get(sessionId)
     if (!tailer) {
       const path = session.transcriptPath
+      if (session.tool === 'shell') return { entries: [], total: 0 }
       tailer = new TranscriptTailer(path, session.tool, {
         onEntries: (entries) => this.transcriptListeners.get(sessionId)?.(entries),
       })
@@ -855,12 +908,49 @@ export class AppState extends EventEmitter<StateEvents> {
           s.state = 'stopped'
         }
       }
-      this.orphanTmuxSessions = [...live].filter((n) => !known.has(n)).sort()
+      const unknown = [...live].filter((n) => !known.has(n)).sort()
+      const stillOrphans: string[] = []
+      for (const name of unknown) {
+        const recovered = await this.recoverStampedSession(name)
+        if (!recovered) stillOrphans.push(name)
+      }
+      this.orphanTmuxSessions = stillOrphans
       this.persistSessions()
       this.changed()
     } catch (error) {
       this.report(error)
     }
+  }
+
+  /** Rebuilds a session record from the options Sauron stamped on a tmux session. */
+  private async recoverStampedSession(tmuxName: string): Promise<boolean> {
+    if (!this.tmux) return false
+    const id = await this.tmux.getOption(tmuxName, TMUX_OPTION_SESSION)
+    if (!id) return false
+    const projectId = (await this.tmux.getOption(tmuxName, TMUX_OPTION_PROJECT)) || null
+    const title = (await this.tmux.getOption(tmuxName, TMUX_OPTION_TITLE)) || tmuxName
+    const toolRaw = await this.tmux.getOption(tmuxName, TMUX_OPTION_TOOL)
+    const tool: AgentTool = toolRaw === 'claude' || toolRaw === 'codex' ? toolRaw : 'shell'
+    const project = projectId ? this.project(projectId) : undefined
+    const now = new Date().toISOString()
+    this.sessions.push({
+      id,
+      projectId: project?.id ?? null,
+      tool,
+      kind: 'managed',
+      displayName: title,
+      tmuxName,
+      cliSessionId: tool === 'claude' ? id : null,
+      transcriptPath: null,
+      workingDir: project?.path ?? homedir(),
+      worktreePath: null,
+      createdAt: now,
+      lastActivityAt: now,
+      state: 'idle',
+      stateSource: 'inferred',
+    })
+    console.log('recovered session from tmux options', tmuxName, title)
+    return true
   }
 
   async checkLiveness(): Promise<void> {

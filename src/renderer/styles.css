@@ -149,7 +149,8 @@ button.icon-button { width: 26px; height: 26px; padding: 0; font-size: 16px; lin
 .session-header .title { font-weight: 600; }
 .session-header .subtitle { font-size: 11px; color: var(--fg-muted); }
 .session-header .tabs { flex: 1; display: flex; gap: 4px; overflow-x: auto; }
-.tab { display: inline-flex; align-items: center; gap: 6px; background: transparent; border-color: transparent; }
+.tab { display: inline-flex; align-items: center; gap: 6px; background: transparent; border-color: transparent; white-space: nowrap; flex: none; max-width: 200px; }
+.tab { overflow: hidden; text-overflow: ellipsis; }
 .tab.active { background: var(--bg-selected); }
 .session-header .actions { display: flex; gap: 6px; }
 .terminal { flex: 1; min-height: 0; background: #000; padding: 4px 0 0 6px; }
@@ -289,3 +290,14 @@ button:disabled { opacity: 0.5; }
 .switcher li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; border-radius: 6px; }
 .switcher li.active { background: var(--accent); color: white; }
 .switcher li.active .muted { color: rgba(255,255,255,0.8); }
+
+.split-button { position: relative; display: inline-flex; }
+.split-button button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split-button button.caret { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: 4px 8px; border-left: 1px solid rgba(255,255,255,0.35); }
+.context-menu.anchored { position: absolute; top: 100%; right: 0; margin-top: 4px; min-width: 220px; }
+.session-header .title.editable { cursor: text; }
+.session-header .title.editable:hover { text-decoration: underline dotted; }
+.title-input { font: inherit; font-weight: 600; color: inherit; background: var(--bg-card); border: 1px solid var(--accent); border-radius: 4px; padding: 1px 6px; width: 260px; user-select: text; -webkit-user-select: text; }
+.modal.small { width: 420px; }
+.modal input.text { width: 100%; font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; margin: 8px 0; user-select: text; -webkit-user-select: text; }
+.modal .actions.right { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }

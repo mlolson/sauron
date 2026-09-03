@@ -5,11 +5,11 @@ import { homedir } from 'node:os'
 import { createInterface } from 'node:readline'
 import { parserFor, type TranscriptParser } from '@shared/transcripts'
 import type { TranscriptEntry, TranscriptHeader } from '@shared/transcript-types'
-import type { AgentTool } from '@shared/types'
+type TranscriptTool = 'claude' | 'codex'
 
 export interface TranscriptFile {
   path: string
-  tool: AgentTool
+  tool: TranscriptTool
   header: TranscriptHeader
   /** File modification time, ms since epoch. */
   mtimeMs: number
@@ -17,7 +17,7 @@ export interface TranscriptFile {
 }
 
 /** Reads only the first records of a transcript to learn its cwd and session id. */
-export async function readTranscriptHeader(path: string, tool: AgentTool, maxBytes = 256 * 1024): Promise<TranscriptHeader> {
+export async function readTranscriptHeader(path: string, tool: TranscriptTool, maxBytes = 256 * 1024): Promise<TranscriptHeader> {
   const parser = parserFor(tool)
   const handle = await open(path, 'r')
   try {
@@ -82,7 +82,7 @@ export class TranscriptIndexer {
   async scan(): Promise<TranscriptFile[]> {
     const found: TranscriptFile[] = []
     const seen = new Set<string>()
-    const visit = async (path: string, tool: AgentTool) => {
+    const visit = async (path: string, tool: TranscriptTool) => {
       seen.add(path)
       let s
       try {
@@ -147,7 +147,7 @@ export class TranscriptTailer {
 
   constructor(
     readonly path: string,
-    readonly tool: AgentTool,
+    readonly tool: TranscriptTool,
     private readonly handlers: TailerHandlers,
   ) {
     this.parser = parserFor(tool)

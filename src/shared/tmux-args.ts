@@ -42,3 +42,14 @@ export function newSessionArgs(opts: {
 export function attachArgs(name: string): string[] {
   return ['attach-session', '-t', tmuxTarget(name)]
 }
+
+/** Names of the tmux user options Sauron stamps on its sessions so they can be recovered. */
+export const TMUX_OPTION_TITLE = '@sauron_title'
+export const TMUX_OPTION_PROJECT = '@sauron_project'
+export const TMUX_OPTION_SESSION = '@sauron_session'
+export const TMUX_OPTION_TOOL = '@sauron_tool'
+
+/** Builds a shell command line for typing into an interactive shell. */
+export function shellCommandLine(words: string[]): string {
+  return words.map(shellQuote).join(' ')
+}

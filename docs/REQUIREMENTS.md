@@ -102,9 +102,11 @@ for user input (see 4.6).
 
 ### 4.2 Sauron-managed sessions
 
-**SES-1 (Must)** From a project, the user can launch a new Claude Code session or a new
-Codex session with one click. The session starts in the project directory (or a worktree,
-see 4.3) using each CLI's default settings.
+**SES-1 (Must)** From a project, the user can start a new terminal with one click: a tmux
+session running the login shell in the project directory (or a worktree, see 4.3). A dropdown
+on the same button offers "running Claude" and "running Codex", which type the agent command
+into that shell as a convenience; the terminal outlives the agent. The user may give the
+session a title before starting it.
 
 **SES-2 (Must)** Every Sauron-launched session runs inside a dedicated tmux session named
 with a Sauron-specific prefix (e.g. `sauron-<project>-<short-id>`), so that:
@@ -127,9 +129,11 @@ running) is a separate action.
 path if any, tmux session name, creation time, and the underlying CLI session id once
 known (needed for resume and for matching transcripts, see 4.4).
 
-**SES-7 (Should)** Launch with an optional initial prompt typed into a text field.
+**SES-7 (Should)** An initial prompt can be supplied through the CLI and by the master agent.
 
-**SES-8 (Should)** Rename a session for display.
+**SES-8 (Must)** Sessions have an editable title (inline in the session header, or Rename in the
+context menu). The title is persisted into tmux: the session is renamed and the title is stored
+in a tmux user option, so it survives Sauron and shows in `tmux ls`.
 
 **SES-9 (Could)** Launch dialog with model and permission-mode choices.
 

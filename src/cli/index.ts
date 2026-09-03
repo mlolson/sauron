@@ -5,7 +5,8 @@
  *   sauron projects
  *   sauron projects add <dir>
  *   sauron sessions [--project <name|id>]
- *   sauron launch --project <name|id> [--tool claude|codex] [--prompt <text>] [--worktree [<branch>]]
+ *   sauron launch --project <name|id> [--tool shell|claude|codex] [--title <text>] [--prompt <text>] [--worktree [<branch>]]
+ *   sauron rename --session <id> --title <text>
  *   sauron worktrees --project <name|id>
  *   sauron worktrees remove --project <name|id> --path <dir> [--force]
  *   sauron stop --session <id>
@@ -131,6 +132,7 @@ async function main(): Promise<void> {
         cmd: 'sessions.launch',
         project: flags.project,
         tool: flags.tool,
+        title: flags.title,
         prompt: flags.prompt,
         // --worktree alone means "new worktree, default branch"; --worktree <branch> names it.
         worktree: flags.worktree === undefined ? undefined : flags.worktree === 'true' ? '' : flags.worktree,
@@ -147,6 +149,9 @@ async function main(): Promise<void> {
       break
     case 'resume':
       payload = { cmd: 'sessions.resume', session: flags.session }
+      break
+    case 'rename':
+      payload = { cmd: 'sessions.rename', session: flags.session, title: flags.title }
       break
     case 'send':
       payload = { cmd: 'sessions.send', session: flags.session, text: flags.text ?? positional.slice(1).join(' ') }

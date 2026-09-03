@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import type { Project, SelectionTarget, Session, ToolPaths } from '@shared/types'
 import { isAlive } from '@shared/types'
 import type { Worktree } from '@shared/worktrees'
@@ -6,6 +6,8 @@ import type { ProjectStatus, RefreshState } from '@shared/status'
 import { StateDot } from './StateDot'
 import { abbreviate } from './Sidebar'
 import { relativeTime } from '../time'
+import { NewSessionBar } from './NewSessionBar'
+import { toolGlyph } from './glyph'
 
 interface Props {
   project: Project
@@ -21,26 +23,14 @@ interface Props {
 export function ProjectDetail({ project, sessions, toolPaths, worktrees, status, refresh, masterAlive, onSelect }: Props) {
   const refreshing = refresh.inProgress === project.id
   const queued = refresh.queued.includes(project.id)
-  const [prompt, setPrompt] = useState('')
-  const [useWorktree, setUseWorktree] = useState(false)
-  const [branch, setBranch] = useState('')
   const mine = sessions.filter((s) => s.projectId === project.id && s.kind === 'managed')
   const external = sessions
     .filter((s) => s.projectId === project.id && s.kind === 'external')
     .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
-  const codexAvailable = Boolean(toolPaths?.codex)
 
   useEffect(() => {
     void window.sauron.refreshWorktrees(project.id)
   }, [project.id])
-
-  const launch = (tool: 'claude' | 'codex') => {
-    void window.sauron.launchSession(project.id, tool, {
-      prompt: prompt.trim() || undefined,
-      worktreeBranch: useWorktree ? branch.trim() : undefined,
-    })
-    setPrompt('')
-  }
 
   const remove = async (wt: Worktree) => {
     const check = await window.sauron.checkWorktreeRemoval(project.id, wt.path)
@@ -72,36 +62,7 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, status,
         </div>
       </header>
 
-      <div className="launch-bar">
-        <input
-          type="text"
-          placeholder="Optional initial prompt for the new session…"
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) launch('claude')
-          }}
-        />
-        <button className="primary" onClick={() => launch('claude')}>
-          New Claude
-        </button>
-        <button
-          disabled={!codexAvailable}
-          title={codexAvailable ? 'Start a Codex session in this project' : 'codex was not found on PATH'}
-          onClick={() => launch('codex')}
-        >
-          New Codex
-        </button>
-      </div>
-      <div className="launch-options">
-        <label>
-          <input type="checkbox" checked={useWorktree} onChange={(e) => setUseWorktree(e.target.checked)} />
-          Run in a new git worktree
-        </label>
-        {useWorktree && (
-          <input type="text" placeholder="branch name (default sauron/<id>)" value={branch} onChange={(e) => setBranch(e.target.value)} />
-        )}
-      </div>
+      <NewSessionBar project={project} toolPaths={toolPaths} />
 
       <section className="card">
         <div className="card-head">
@@ -131,12 +92,12 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, status,
       <section className="card">
         <h2>Sessions</h2>
         {mine.length === 0 ? (
-          <p className="muted">No sessions yet. Use New Claude or New Codex to start one.</p>
+          <p className="muted">No sessions yet. Use New Terminal to start one.</p>
         ) : (
           <ul className="session-list">
             {mine.map((s) => (
               <li key={s.id} onClick={() => onSelect({ kind: 'session', id: s.id })}>
-                <span className="glyph">{s.tool === 'claude' ? '✦' : '⌘'}</span>
+                <span className="glyph">{toolGlyph(s.tool)}</span>
                 <span className="name">
                   {s.displayName}
                   {s.worktreePath && <span className="tag accent" style={{ marginLeft: 8 }}>{worktrees.find((w) => w.path === s.worktreePath)?.branch ?? 'worktree'}</span>}

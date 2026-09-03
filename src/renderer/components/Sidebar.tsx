@@ -4,6 +4,8 @@ import { isAlive } from '@shared/types'
 import { sameTarget } from '../store'
 import { StateDot } from './StateDot'
 import { ContextMenu, type MenuItem } from './ContextMenu'
+import { RenameDialog } from './RenameDialog'
+import { toolGlyph } from './glyph'
 
 interface Props {
   snapshot: Snapshot
@@ -14,6 +16,7 @@ interface Props {
 
 export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Props) {
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
+  const [renaming, setRenaming] = useState<Session | null>(null)
   const openMenu = (e: React.MouseEvent, items: MenuItem[]) => {
     e.preventDefault()
     setMenu({ x: e.clientX, y: e.clientY, items })
@@ -21,8 +24,9 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
 
   const codexAvailable = Boolean(snapshot.toolPaths?.codex)
   const projectMenu = (project: Project): MenuItem[] => [
-    { label: 'New Claude Session', action: () => void window.sauron.launchSession(project.id, 'claude') },
-    { label: 'New Codex Session', disabled: !codexAvailable, action: () => void window.sauron.launchSession(project.id, 'codex') },
+    { label: 'New Terminal', action: () => void window.sauron.launchSession(project.id, 'shell') },
+    { label: 'New Terminal running Claude', action: () => void window.sauron.launchSession(project.id, 'claude') },
+    { label: 'New Terminal running Codex', disabled: !codexAvailable, action: () => void window.sauron.launchSession(project.id, 'codex') },
     { separator: true },
     { label: 'Reveal in Finder', action: () => window.sauron.revealInFinder(project.path) },
     { separator: true },
@@ -40,11 +44,13 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
   const sessionMenu = (session: Session): MenuItem[] =>
     isAlive(session)
       ? [
+          { label: 'Rename…', action: () => setRenaming(session) },
           { label: 'Detach Terminal', action: () => void window.sauron.detachSession(session.id) },
           { label: 'Stop', destructive: true, action: () => void window.sauron.stopSession(session.id) },
         ]
       : [
-          ...(session.cliSessionId ? [{ label: 'Resume', action: () => void window.sauron.resumeSession(session.id) }] : []),
+          { label: 'Rename…', action: () => setRenaming(session) },
+          { label: session.cliSessionId ? 'Resume' : 'Restart terminal', action: () => void window.sauron.resumeSession(session.id) },
           { label: 'Forget', destructive: true, action: () => void window.sauron.forgetSession(session.id) },
         ]
 
@@ -118,7 +124,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   onContextMenu={session.kind === 'managed' ? (e) => openMenu(e, sessionMenu(session)) : undefined}
                 >
                   <span className={`glyph ${session.kind === 'external' ? 'external' : isAlive(session) ? 'accent' : 'muted'}`} title={session.kind === 'external' ? 'Started outside Sauron' : undefined}>
-                    {session.kind === 'external' ? '◇' : session.tool === 'claude' ? '✦' : '⌘'}
+                    {session.kind === 'external' ? '◇' : toolGlyph(session.tool)}
                   </span>
                   <span className={`label ${isAlive(session) ? '' : 'muted'}`}>
                     <span className="name">{session.displayName}</span>
@@ -168,6 +174,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
         )}
       </nav>
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
+      {renaming && <RenameDialog initial={renaming.displayName} onSubmit={(t) => void window.sauron.renameSession(renaming.id, t)} onClose={() => setRenaming(null)} />}
     </aside>
   )
 }

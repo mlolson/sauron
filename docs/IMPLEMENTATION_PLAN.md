@@ -111,6 +111,12 @@ Electron's Node ABI with `@electron/rebuild` on install.
 
 ### 3.1 Launching a managed session
 
+Revised after v1: every session is a tmux session running the user's login shell; Claude and
+Codex are convenience commands typed into that shell with `send-keys`, so the terminal outlives
+the agent. Sauron stamps `@sauron_session`, `@sauron_project`, `@sauron_title`, and
+`@sauron_tool` user options onto the tmux session so records can be rebuilt from tmux alone,
+and renames the tmux session when the title changes.
+
 1. Generate `sessionId = randomUUID()`.
 2. If a worktree was requested, `WorktreeService.create(repo, branch)` returns the path.
 3. Write a per-session settings file at

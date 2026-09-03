@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { SelectionTarget, Session, Snapshot } from '@shared/types'
 import { isAlive } from '@shared/types'
 import { SessionTerminal } from './SessionTerminal'
@@ -17,13 +17,50 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
   const alive = isAlive(session)
   const external = session.kind === 'external'
   const [view, setView] = useState<'terminal' | 'transcript'>(external ? 'transcript' : 'terminal')
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(session.displayName)
+  const titleInput = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (editing) {
+      titleInput.current?.focus()
+      titleInput.current?.select()
+    }
+  }, [editing])
+  const commitTitle = () => {
+    setEditing(false)
+    if (draft.trim() && draft.trim() !== session.displayName) void window.sauron.renameSession(session.id, draft.trim())
+  }
   const showTerminal = !external && alive && view === 'terminal'
 
   return (
     <div className="session-view">
       <header className="session-header">
         <div className="titles">
-          <span className="title">{session.displayName}</span>
+          {editing ? (
+            <input
+              ref={titleInput}
+              className="title-input"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitTitle()
+                if (e.key === 'Escape') setEditing(false)
+              }}
+            />
+          ) : (
+            <span
+              className={`title ${external ? '' : 'editable'}`}
+              title={external ? undefined : 'Click to rename'}
+              onClick={() => {
+                if (external) return
+                setDraft(session.displayName)
+                setEditing(true)
+              }}
+            >
+              {session.displayName}
+            </span>
+          )}
           <span className="subtitle">
             {project?.name ?? 'Unassigned'}
             {external && ' · external'}
@@ -76,13 +113,11 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
         <div className="placeholder">
           <div className="big">■</div>
           <h2>Session Stopped</h2>
-          <p>The tmux session is gone. Resume continues the same conversation in a new one.</p>
+          <p>{session.cliSessionId ? 'The tmux session is gone. Resume starts a new terminal and continues the same agent conversation.' : 'The tmux session is gone. Restart opens a new terminal in the same directory.'}</p>
           <div className="actions">
-            {session.cliSessionId && (
-              <button className="primary" onClick={() => void window.sauron.resumeSession(session.id)}>
-                Resume
-              </button>
-            )}
+            <button className="primary" onClick={() => void window.sauron.resumeSession(session.id)}>
+              {session.cliSessionId ? 'Resume' : 'Restart terminal'}
+            </button>
             <button onClick={() => void window.sauron.forgetSession(session.id)}>Forget</button>
             {session.transcriptPath && <button onClick={() => setView('transcript')}>View transcript</button>}
           </div>

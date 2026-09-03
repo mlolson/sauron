@@ -110,8 +110,9 @@ export class SocketServer {
         const project = this.findProject(req.project)
         if (!project) throw new Error(`unknown project ${req.project}`)
         const tool = req.tool ?? 'claude'
-        if (tool !== 'claude' && tool !== 'codex') throw new Error(`unsupported tool ${String(req.tool)}`)
+        if (tool !== 'claude' && tool !== 'codex' && tool !== 'shell') throw new Error(`unsupported tool ${String(req.tool)}`)
         const session = await state.launchSession(project.id, tool, {
+          title: typeof req.title === 'string' ? req.title : undefined,
           prompt: typeof req.prompt === 'string' ? req.prompt : undefined,
           worktreeBranch: req.worktree === undefined ? undefined : typeof req.worktree === 'string' ? req.worktree : '',
         })
@@ -157,6 +158,10 @@ export class SocketServer {
       }
       case 'sessions.stop': {
         await state.stopSession(String(req.session))
+        return null
+      }
+      case 'sessions.rename': {
+        await state.renameSession(String(req.session), String(req.title ?? ''))
         return null
       }
       case 'sessions.resume': {
