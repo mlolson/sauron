@@ -1,6 +1,6 @@
 # Sauron — Product Requirements Document
 
-Version: 1.0 (v1 scope)
+Version: 1.1 (v1 scope; stack changed to Electron)
 Date: 2026-09-03
 Owner: Matt Olson
 Status: Draft, agreed in design Q&A
@@ -39,7 +39,7 @@ with one window.
 - Code signing, notarization, or distribution to other users.
 - Support for agents other than Claude Code and Codex.
 - Structured (non-terminal) rendering of Sauron-launched sessions.
-- Windows or Linux.
+- Windows or Linux (Electron makes them possible later, but nothing is tested there).
 
 ---
 
@@ -56,9 +56,9 @@ must coexist with that workflow rather than replace it.
 | Item | Decision |
 |---|---|
 | Platform | macOS 15 Sequoia and later |
-| Language / UI | Swift, SwiftUI (AppKit where SwiftUI is insufficient) |
-| Project format | Xcode project, dependencies via Swift Package Manager |
-| Terminal widget | SwiftTerm (or equivalent PTY-backed terminal view) |
+| Language / UI | Electron, TypeScript, React |
+| Build | Vite via electron-vite; pnpm; Vitest for tests |
+| Terminal widget | xterm.js in the renderer, node-pty in the main process |
 | Session persistence | tmux; every Sauron-managed session runs inside a tmux session |
 | Distribution | Local, unsigned builds only |
 | External CLIs | `claude` (Claude Code), `codex` (Codex CLI), `tmux`, `git` |
@@ -76,8 +76,8 @@ time permits; "Could" items are explicitly later.
 
 ### 4.1 Projects
 
-**PRJ-1 (Must)** The user can add a project by choosing a directory via a file picker or by
-dragging a folder onto the window. The directory must be a git repository (contain `.git`
+**PRJ-1 (Must)** The user can add a project by choosing a directory via a file picker, by
+dragging a folder onto the window, or via `open -a Sauron <dir>`. The directory must be a git repository (contain `.git`
 or be inside a work tree); otherwise the add is rejected with an explanatory message.
 
 **PRJ-2 (Must)** The project list is persisted in Sauron's own store and restored on
@@ -112,8 +112,8 @@ with a Sauron-specific prefix (e.g. `sauron-<project>-<short-id>`), so that:
 - the user can attach to it from any terminal with `tmux attach`;
 - Sauron re-attaches to it on next launch.
 
-**SES-3 (Must)** Each session is displayed in an embedded terminal view attached to its
-tmux session. The user can type into it exactly as they would in a terminal, including
+**SES-3 (Must)** Each session is displayed in an embedded xterm.js terminal attached to
+its tmux session through a node-pty process in the main process. The user can type into it exactly as they would in a terminal, including
 answering permission prompts and using the CLIs' interactive features.
 
 **SES-4 (Must)** On launch, Sauron enumerates existing tmux sessions with its prefix and
@@ -253,7 +253,7 @@ inferred.
 **ATT-3 (Must)** Sidebar badges: sessions waiting for input or stopped show a badge; the
 project row shows the count of such sessions.
 
-**ATT-4 (Must)** A native macOS notification is posted when a session needs input or
+**ATT-4 (Must)** A macOS notification (Electron `Notification`) is posted when a session needs input or
 finishes, unless the session is currently focused in the foreground window. Clicking the
 notification focuses that session.
 
@@ -401,7 +401,7 @@ any recorded session whose tmux session is gone as stopped.
 ## 9. Milestones
 
 1. **Skeleton.** Xcode project, sidebar/detail layout, add/remove projects, persistence.
-2. **Sessions.** tmux launch, SwiftTerm attach, stop/detach, reattach on restart.
+2. **Sessions.** tmux launch, xterm.js attach, stop/detach, reattach on restart.
 3. **Worktrees.** Create on launch, list, remove with safety checks.
 4. **External sessions.** Transcript discovery, live tail, read-only view.
 5. **Attention.** Hooks, badges, notifications.

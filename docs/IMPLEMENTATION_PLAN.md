@@ -1,11 +1,16 @@
 # Sauron — Technical Implementation Plan
 
-Version: 1.0
+Version: 1.1 (Electron)
 Date: 2026-09-03
 Companion to: `docs/REQUIREMENTS.md`
 
 This document describes how Sauron v1 will be built: architecture, module boundaries,
 key mechanisms, verified CLI integration points, and an ordered task list for the MVP.
+
+History: v1.0 targeted Swift/SwiftUI. A prototype of slices 1 and 2 was built and is in git
+history (commit d713a70 and its successor work). It was abandoned because the machine has no
+Xcode, only the Command Line Tools, and the SwiftTerm terminal view rendered black under
+those conditions. The Electron stack keeps every design decision except the UI toolkit.
 
 ---
 
@@ -33,52 +38,72 @@ Consequences:
 ## 2. Architecture
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│ Sauron.app (SwiftUI, macOS 15)                                 │
-│                                                                │
-│  UI layer            SidebarView  ProjectDetailView            │
-│                      SessionTerminalView  TranscriptView       │
-│                      PreferencesView  SetupView                │
-│                                                                │
-│  AppState (@Observable, main actor)                            │
-│     projects, sessions, statuses, attention, masterAgent       │
-│                                                                │
-│  Services (actors / background)                                │
-│     ProjectStore     SessionManager    TmuxService             │
-│     WorktreeService  TranscriptIndexer TranscriptTailer        │
-│     StatusStore      MasterAgentService RefreshScheduler       │
-│     HookServer (UDS) NotificationService GitWatcher            │
-│     CLIResolver      Persistence                               │
-└──────────┬──────────────────────┬──────────────────────────────┘
-           │ tmux CLI             │ Unix domain socket
-           ▼                      ▼
-   tmux server                sauron CLI  ◄── invoked by hooks and by the master agent
-     ├─ sauron-master  → claude (home: App Support/Sauron/master)
-     ├─ sauron-<p>-<id> → claude / codex in repo or worktree
-     └─ ...
+┌──────────────────────────────────────────────────────────────────────┐
+│ Sauron (Electron)                                                    │
+│                                                                      │
+│  Renderer (React, xterm.js)          Main process (Node, TypeScript) │
+│    Sidebar  ProjectDetail              AppState + stores             │
+│    SessionTerminal  TranscriptView     ProjectStore  SessionManager  │
+│    Preferences  Setup                  TmuxService   PtyService      │
+│         ▲                              WorktreeService GitWatcher    │
+│         │ IPC (contextBridge,          TranscriptIndexer/Tailer      │
+│         │  typed channels)             StatusStore  MasterAgent      │
+│         ▼                              HookServer (UDS) Notifier     │
+│  Preload (exposes `window.sauron`)     CLIResolver   Persistence     │
+└──────────────┬───────────────────────────────────┬───────────────────┘
+               │ tmux CLI (child_process)          │ Unix domain socket
+               ▼                                   ▼
+        tmux server                           sauron CLI  ◄── hooks, master agent
+          ├─ sauron-master  → claude (home: App Support/Sauron/master)
+          ├─ sauron-<p>-<id> → claude / codex in repo or worktree
+          └─ ...
 ```
 
 Principles:
 - **tmux is the process owner.** Sauron never holds a child process for an agent. It only
   creates, attaches to, and kills tmux sessions. This is what makes restarts safe.
-- **The terminal view is a client of tmux.** SwiftTerm spawns `tmux attach -t <name>` in
-  its own PTY. Closing the view detaches; the agent keeps running.
-- **One socket, one CLI.** Everything that needs to talk to the app from outside (hooks,
-  the master agent, the user in a shell) goes through the `sauron` CLI, which speaks JSON
-  over a Unix domain socket to the app. The app is the single writer of app state.
+- **The terminal is a client of tmux.** The main process spawns `tmux attach` in a node-pty
+  pseudo-terminal and streams bytes to an xterm.js instance in the renderer over IPC.
+  Closing the tab kills only the attach client; the agent keeps running.
+- **All state lives in the main process.** The renderer is a view: it receives state
+  snapshots over IPC and sends commands. No Node access in the renderer
+  (`contextIsolation: true`, `nodeIntegration: false`).
+- **One socket, one CLI.** Everything outside the app (hooks, the master agent, the user in a
+  shell) talks to the main process through the `sauron` CLI over a Unix domain socket.
 - **Files are the integration surface for the master agent.** It writes status JSON; Sauron
-  watches the directory. No custom protocol is needed for the summary itself.
+  watches the directory.
 
-### 2.1 Targets
+### 2.1 Packages and layout
 
-| Target | Kind | Purpose |
-|---|---|---|
-| `Sauron` | macOS app | The UI and all services. |
-| `SauronCore` | Swift package (local) | Models, persistence, tmux/git wrappers, transcript parsers, socket protocol. Shared by app and CLI, unit-testable without UI. |
-| `sauron` | Command-line tool | Thin client: parses args, sends a JSON request over the socket, prints the response. Built into the app bundle at `Contents/MacOS/sauron` and symlinked to `~/Library/Application Support/Sauron/bin/sauron`. |
-| `SauronCoreTests` | Test bundle | Parser, encoder, and state-machine tests. |
+Single pnpm workspace, built with electron-vite (three Vite configs: main, preload, renderer).
 
-Dependencies (SwiftPM): SwiftTerm. Nothing else in v1. JSON via `Codable`.
+```
+package.json
+electron.vite.config.ts
+src/
+  main/           # Electron main process
+    index.ts      # app lifecycle, window, IPC registration
+    state.ts      # AppState: projects, sessions, persistence, broadcast
+    services/     # tmux, pty, git, cli-resolver, worktrees, transcripts, hooks, master
+  preload/
+    index.ts      # contextBridge: window.sauron typed API
+  shared/         # types and pure logic shared by main, preload, renderer, cli
+    types.ts      # Project, Session, ProjectStatus, IPC payloads
+    tmux-args.ts  # pure argument builders (unit-tested)
+    transcripts/  # parsers (unit-tested)
+  renderer/       # React app
+    App.tsx, components/, hooks/
+  cli/
+    index.ts      # `sauron` CLI: argument parsing, socket client
+tests/            # Vitest, mirrors src/shared and src/main/services
+scripts/
+resources/        # icon, entitlements
+```
+
+Dependencies: `electron`, `electron-vite`, `react`, `react-dom`, `@xterm/xterm`,
+`@xterm/addon-fit`, `@xterm/addon-webgl` (optional), `node-pty`, `vitest`, `typescript`,
+`electron-builder` (packaging, unsigned). node-pty is a native module and is rebuilt for
+Electron's Node ABI with `@electron/rebuild` on install.
 
 ---
 
@@ -86,39 +111,48 @@ Dependencies (SwiftPM): SwiftTerm. Nothing else in v1. JSON via `Codable`.
 
 ### 3.1 Launching a managed session
 
-1. Generate `sessionId = UUID()`.
-2. If a worktree was requested, `WorktreeService.create(repo:, branch:)` returns the path.
+1. Generate `sessionId = randomUUID()`.
+2. If a worktree was requested, `WorktreeService.create(repo, branch)` returns the path.
 3. Write a per-session settings file at
    `App Support/Sauron/sessions/<sessionId>/claude-settings.json` containing the hooks in
    §3.3 (Claude only).
 4. Build the command:
-   - Claude: `claude --session-id <sessionId> --settings <file> --name <display>`
+   - Claude: `claude --session-id <sessionId> --settings <file>`
    - Codex: `codex -C <dir> -c 'notify=["<bin>/sauron","hook","codex","--session","<sessionId>"]'`
 5. Create the tmux session:
-   `tmux new-session -d -s sauron-<slug>-<short> -c <dir> -e SAURON_SESSION_ID=<id> -e SAURON_SOCKET=<path> '<command>'`
-   The `-e` flags set environment for the shell so hooks and the agent can find the socket.
-6. Persist a `Session` record and open a terminal tab that runs `tmux attach -t <name>`.
-7. Transcript path is known immediately for Claude (§1). For Codex, `TranscriptIndexer`
+   `tmux new-session -d -s sauron-<slug>-<short> -c <dir> -e SAURON_SESSION_ID=<id> -e SAURON_SOCKET=<path> -e PATH=<resolved> '<command>'`
+   then `set-option -t =<name>: status off`, `mouse on`, `destroy-unattached off`.
+6. Persist a `Session` record, broadcast state, and the renderer opens a terminal tab.
+7. The Claude transcript path is known immediately (§1). For Codex, `TranscriptIndexer`
    finds the rollout whose `session_meta.cwd` matches and whose timestamp is after launch.
 
-Shell environment: `CLIResolver` runs `$SHELL -ilc 'echo $PATH'` once at startup to obtain
+Two lessons from the Swift prototype that carry over:
+- Never read a spawned command's stdout to EOF when it may leave a daemon behind:
+  `tmux new-session` on a fresh server inherits the pipes and the read never completes.
+  `child_process.execFile` with `stdio: ['ignore','pipe','pipe']` is fine because Node
+  resolves on process exit, but `tmux` should still be invoked with `-d` and never awaited on
+  stream close.
+- tmux target syntax: use `=<name>:` for exact session matching. Plain `=<name>` is rejected
+  by some commands in tmux 3.6.
+
+Shell environment: `CLIResolver` runs `$SHELL -lc 'echo $PATH'` once at startup to obtain
 the user's real PATH, since GUI apps get a minimal environment. That PATH is passed into
 tmux and used to locate `claude`, `codex`, `tmux`, and `git`.
 
 ### 3.2 Terminal view
 
-`SessionTerminalView` wraps SwiftTerm's `LocalProcessTerminalView` in an
-`NSViewRepresentable`. It runs `tmux attach -t <name>` with the resolved environment. On
-view teardown it sends `tmux detach-client` rather than killing anything. Font, colors, and
-scrollback are read from preferences. One terminal view instance per open tab is cached in
-`AppState` so switching tabs does not re-attach.
+Main process: `PtyService.open(sessionId)` spawns `tmux attach-session -t =<name>:` via
+node-pty with `TERM=xterm-256color` and the resolved environment. Output bytes are sent to
+the renderer on channel `pty:data:<sessionId>`; the renderer sends `pty:input` and
+`pty:resize`. Closing the tab calls `PtyService.close`, which kills the attach client only.
 
-tmux options set on each Sauron session so the embedded terminal behaves: `status off`,
-`mouse on`, `history-limit 50000`, and `set-option destroy-unattached off`.
+Renderer: one xterm.js `Terminal` per open session, kept alive in a module-level map so
+switching tabs re-mounts the same instance without re-attaching. `FitAddon` runs on
+container resize via `ResizeObserver` and sends the new size. Scrollback 50,000 lines.
 
 ### 3.3 Attention detection
 
-Claude Code hooks written into the per-session settings file:
+Unchanged from the Swift plan. Claude Code hooks in the per-session settings file:
 
 ```json
 {
@@ -132,31 +166,27 @@ Claude Code hooks written into the per-session settings file:
 }
 ```
 
-`sauron hook` reads the hook JSON from stdin, adds `SAURON_SESSION_ID` from the environment,
-and forwards it to the app. State machine per session:
+State machine per session:
 
 | Event | New state |
 |---|---|
 | SessionStart | idle |
 | UserPromptSubmit | running |
 | Notification (permission / idle prompt) | waitingForInput |
-| Stop | idle (turn finished) — post notification if not focused |
+| Stop | idle (turn finished), notify if not focused |
 | SessionEnd, or tmux session gone | stopped |
 
-Codex: `notify` fires on `agent-turn-complete` with a JSON argument; map to idle and
-notify. Codex has no permission-prompt event in the installed version, so waiting-for-input
-for Codex is inferred: no PTY output for N seconds after a line matching an approval prompt
-pattern (captured via `tmux pipe-pane` into a small ring buffer). Inferred states are
-flagged `stateSource = inferred` in the UI.
+Codex: `notify` fires on `agent-turn-complete`; map to idle and notify. Waiting-for-input for
+Codex is inferred from the pty byte stream (no output for N seconds after an approval-prompt
+pattern) and flagged `stateSource = inferred`.
 
-External sessions have no hooks. Their state is derived from transcript mtime: modified in
-the last 2 minutes means active, else idle; the last record type refines this (a trailing
-assistant message means idle, a trailing user message means running).
+External sessions: state from transcript mtime (active within 2 minutes) refined by the
+last record type.
 
 ### 3.4 Socket protocol
 
-Unix domain socket at `App Support/Sauron/sauron.sock`, created by the app with mode 0600.
-Newline-delimited JSON, one request and one response per connection.
+Unix domain socket at `App Support/Sauron/sauron.sock`, mode 0600, served by `net.createServer`
+in the main process. Newline-delimited JSON, one request and one response per connection.
 
 ```
 {"cmd":"projects.list"}
@@ -167,86 +197,78 @@ Newline-delimited JSON, one request and one response per connection.
 {"cmd":"hook","tool":"claude","event":"Stop","session":"<id>","payload":{...}}
 ```
 
-Responses: `{"ok":true,"result":...}` or `{"ok":false,"error":"..."}`. The app side uses
-`NWListener` with a `NWEndpoint.unix` (Network framework), handled on a dedicated actor.
+Responses: `{"ok":true,"result":...}` or `{"ok":false,"error":"..."}`. The `sauron` CLI is a
+small bundled Node script (`src/cli`), run with Electron's bundled Node via a shim in
+`App Support/Sauron/bin/sauron` so it works without a system Node.
 
 ### 3.5 Transcript parsing
 
-Two parsers in `SauronCore`, both streaming line-by-line and tolerant of unknown records:
+Two streaming parsers in `src/shared/transcripts`, tolerant of unknown records:
 
-- **ClaudeTranscriptParser.** Records with `type` in `user`, `assistant`, `summary`,
-  and tool-related entries. Extracts role, text blocks, tool_use name and short input
-  summary, tool_result status, timestamp, `sessionId`, `cwd`.
-- **CodexRolloutParser.** `session_meta` for cwd/session id; `response_item` and
-  `event_msg` records for messages, reasoning summaries, function calls and outputs.
+- **claude.ts.** Records with `type` in `user`, `assistant`, `summary`, and tool-related
+  entries. Extracts role, text blocks, tool_use name and short input summary, tool_result
+  status, timestamp, `sessionId`, `cwd`.
+- **codex.ts.** `session_meta` for cwd/session id; `response_item` and `event_msg` records for
+  messages, reasoning summaries, function calls and outputs.
 
-`TranscriptTailer` keeps a file offset per transcript, uses a `DispatchSource` file-system
-object source on the file (and on the directory for new files), and appends only new
-records to an in-memory model capped at a configurable number of entries with the ability
-to load older history on demand.
-
-`TranscriptIndexer` scans `~/.claude/projects/` and `~/.codex/sessions/` at startup and on
-directory change, reads only the first few records of each file to get cwd and session id,
-and maps them to Sauron projects (a transcript belongs to a project if its cwd is the repo
-root or a worktree of it, or any subdirectory).
+`TranscriptTailer` keeps a byte offset per file, uses `fs.watch` on the file and its
+directory, and appends only new records. `TranscriptIndexer` scans both roots at startup
+and on directory change, reads only the first records of each file for cwd and session id,
+and maps them to projects (repo root, its worktrees, or any subdirectory).
 
 ### 3.6 Master agent
 
-- Home: `App Support/Sauron/master/`. Sauron writes `CLAUDE.md` from a template with the
-  project table, store paths, transcript locations, the `sauron` CLI reference, and the
-  summary format. A user-editable `CLAUDE.local.md` is left untouched for custom
-  instructions (Claude Code merges both).
-- Launch: same path as a managed session, tmux name `sauron-master`, tool claude, with the
-  same hooks. Session id is persisted so the master is resumed with `--resume` when its
-  tmux session is gone but the app remembers it, and started fresh only if resume fails.
-- `RefreshScheduler`: a queue of project ids. Enqueue collapses duplicates. A 30 second
-  debounce follows each git change. Drain condition: master state is `idle`. Sending uses
-  `tmux send-keys -t sauron-master -l '<prompt>'` followed by `Enter`. If the master is
-  `stopped`, the queue is held and the UI shows "master agent not running".
-- Git change detection: `GitWatcher` watches `<repo>/.git/HEAD`, `.git/refs/heads/`, and
-  `.git/logs/HEAD` (and each worktree's `.git` file target) with `DispatchSource`. A change
-  in the resolved HEAD commit hash enqueues a refresh.
-- `StatusStore` watches `App Support/Sauron/status/` and decodes `<project-id>.json`.
+- Home: `App Support/Sauron/master/` with a generated `CLAUDE.md` (project table, store
+  paths, transcript locations, `sauron` CLI reference, summary JSON schema). A user-owned
+  `CLAUDE.local.md` is left untouched.
+- Launch: same as a managed session, tmux name `sauron-master`, pinned at the top of the
+  sidebar. Session id persisted; resumed with `--resume`, fresh start only if that fails.
+- `RefreshScheduler`: queue of project ids, duplicates collapsed, 30 s debounce after git
+  changes, drained only while the master is `idle`, delivered with
+  `tmux send-keys -t =sauron-master: -l '<prompt>'` then `Enter`.
+- `GitWatcher`: `fs.watch` on `.git/HEAD`, `.git/refs/heads/`, `.git/logs/HEAD` per project
+  and worktree; a change in the resolved HEAD hash enqueues a refresh.
+- `StatusStore`: `fs.watch` on `App Support/Sauron/status/`, decodes `<project-id>.json`.
 
 ### 3.7 Persistence
 
-`config.json` and `sessions.json` written atomically (`Data.write(.atomic)`) through a
-`Persistence` actor, debounced 250 ms after the last change. Schema carries a `version`
-field for migrations.
+`config.json` and `sessions.json` under `app.getPath('userData')`, which Electron maps to
+`~/Library/Application Support/Sauron`. Writes are atomic (write temp, rename) and config
+writes are debounced 250 ms. Each file carries a `version` field.
 
 ### 3.8 Restart and reconciliation
 
 On launch:
 1. Load `sessions.json`.
 2. `tmux list-sessions -F '#{session_name}'` filtered by `sauron-` prefix.
-3. Records with a live tmux session: state `idle` until a hook says otherwise (hooks
-   continue to fire since the settings file is still referenced).
-4. Records without: mark `stopped`, keep for resume offer (Claude: `claude --resume <id>`,
-   Codex: `codex resume <id>`).
-5. tmux sessions with the prefix but no record: show as "unknown Sauron session" with
-   attach and kill actions.
+3. Records with a live tmux session: state `idle` until a hook says otherwise.
+4. Records without: mark `stopped`, offer resume (`claude --resume <id>`, `codex resume <id>`).
+5. tmux sessions with the prefix but no record: shown as "unknown Sauron session" with
+   adopt and kill actions.
+6. A 5 s liveness poll (`tmux has-session`) marks sessions stopped when tmux loses them.
 
 ---
 
 ## 4. Error handling and logging
 
-- All service errors are typed (`enum SauronError`) and surfaced to the UI as non-modal
-  banners on the relevant project or session. Nothing is swallowed silently.
-- `os.Logger` with subsystem `com.mattolson.sauron` and one category per service.
-- External command wrapper (`Process` + pipes, async) captures stdout, stderr, and exit
-  code; a non-zero exit becomes a thrown error carrying stderr.
+- Service errors carry a `code` and message; the main process sends them to the renderer
+  as non-modal banners scoped to a project or session. Nothing is swallowed silently.
+- `electron-log` writes to `~/Library/Logs/Sauron/main.log` with one scope per service.
+- The external command wrapper (`execFile` promisified) captures stdout, stderr, and exit
+  code; a non-zero exit throws with stderr attached.
 
 ---
 
 ## 5. Testing strategy
 
-- **Unit (SauronCoreTests):** transcript parsers against fixture files copied from real
-  sessions; hook state machine; socket request/response coding; tmux and git argument
-  builders; cwd-to-project matching; refresh queue collapse and debounce.
-- **Integration (manual, scripted):** a `scripts/smoke.sh` that creates a temp git repo,
-  launches a Claude session through the `sauron` CLI, verifies the tmux session exists,
-  sends a message, and checks the hook events arrive.
-- **UI:** manual, guided by a checklist in `docs/QA.md` (to be written at milestone 7).
+- **Unit (Vitest):** transcript parsers against fixtures copied from real sessions; hook
+  state machine; socket message coding; tmux and git argument builders; cwd-to-project
+  matching; refresh queue collapse and debounce; persistence round-trip.
+- **Integration (scripted):** `scripts/smoke.sh` creates a temp git repo, launches a Claude
+  session through the `sauron` CLI, verifies the tmux session, sends a message, and checks
+  hook events arrive.
+- **UI:** driven through Chrome DevTools Protocol / the Chrome automation tools during
+  development; manual checklist in `docs/QA.md` at the end.
 
 ---
 
@@ -269,15 +291,17 @@ slice requires, and extended later.
 The thinnest possible app: a window, a project list, and persistence.
 
 Tasks
-- [x] S1.1 Xcode project, `Sauron` app target, macOS 15, SwiftUI lifecycle, sandbox off.
-- [x] S1.2 Local package `SauronCore` with a test target, linked into the app.
-- [x] S1.3 `Project` model, `Persistence` actor writing `config.json` atomically to App
-      Support with a `version` field; directory layout created on first run.
-- [x] S1.4 `ExternalCommand` async wrapper (stdout, stderr, exit code, typed error).
-- [x] S1.5 `AppState` and `NavigationSplitView` shell with an empty detail pane.
-- [x] S1.6 Add project via `NSOpenPanel` and drag-and-drop; validate with
-      `git rev-parse --show-toplevel`; reject non-repos with a message.
-- [x] S1.7 Remove project with confirmation; project detail showing name and path.
+- [ ] S1.1 electron-vite scaffold: main, preload, renderer (React), TypeScript strict,
+      Vitest, `pnpm dev` and `pnpm build`; unsigned `.app` via electron-builder.
+- [ ] S1.2 Shared types (`Project`, `AppConfig`) and typed IPC contract in `src/shared`.
+- [ ] S1.3 `Persistence`: atomic, debounced `config.json` in userData with `version`;
+      directory layout created on first run.
+- [ ] S1.4 `runCommand` wrapper (stdout, stderr, exit code, typed error).
+- [ ] S1.5 Main-process `AppState` with snapshot broadcast; renderer shell with sidebar and
+      empty detail pane.
+- [ ] S1.6 Add project via native open dialog, drag-and-drop, and `open -a Sauron <dir>`
+      (`open-file` event); validate with `git rev-parse --show-toplevel`; reject non-repos.
+- [ ] S1.7 Remove project with confirmation; project detail showing name and path.
 
 Done when
 - Dragging a git repo folder onto the window adds a row; dragging a non-git folder shows
@@ -297,11 +321,12 @@ Tasks
       `SetupView` shown when any is missing.
 - [ ] S2.2 `Session` model and `sessions.json` persistence.
 - [ ] S2.3 `TmuxService`: new-session, has-session, list-sessions, kill-session,
-      detach-client, set-option; argument builders unit-tested.
+      send-keys, set-option; argument builders unit-tested.
 - [ ] S2.4 `SessionManager.launchClaude(project:)`: generate session id, build the command
       with `--session-id` and `--name`, create the tmux session with Sauron options.
-- [ ] S2.5 SwiftTerm dependency; `SessionTerminalView` running `tmux attach`; cached per
-      session so tab switches do not re-attach.
+- [ ] S2.5 `PtyService` (node-pty) spawning `tmux attach`; IPC data/input/resize channels;
+      xterm.js `SessionTerminal` with FitAddon, instances cached per session so tab switches
+      do not re-attach.
 - [ ] S2.6 Session tabs in the detail pane; sidebar rows nested under the project with a
       tool icon; "New Claude" button.
 - [ ] S2.7 Stop (interrupt, grace period, kill) and Detach actions.
@@ -379,8 +404,8 @@ Tasks
       `stateSource` hook or inferred; Codex waiting-for-input inferred via `pipe-pane`
       ring buffer and prompt-pattern timeout.
 - [ ] S5.5 Sidebar state dot and badge on sessions; waiting count on the project row.
-- [ ] S5.6 `NotificationService` with `UNUserNotificationCenter`: request permission, post
-      on waiting or turn-finished when the session is not focused, click focuses the tab.
+- [ ] S5.6 `Notifier` using Electron `Notification`: post on waiting or turn-finished when
+      the session is not focused, click focuses the tab; dock badge count.
 - [ ] S5.7 Global mute preference.
 
 Done when
@@ -533,7 +558,7 @@ through 5 constitute a minimum daily driver; 6 through 8 complete the v1 require
 | Transcript formats change | Tolerant parsers, fixtures per known version, unknown records skipped. |
 | GUI PATH does not include CLIs | Login-shell PATH resolution at startup plus manual overrides in preferences. |
 | tmux `send-keys` delivers a prompt while the agent is mid-turn | Idle gating via hooks; refuse to send when state is `running`; the `sessions.send` command returns an error the master can act on. |
-| SwiftTerm rendering or input quirks | Pin a known-good version; keep the terminal view thin so swapping libraries is contained. |
+| node-pty native module ABI mismatch with Electron | Rebuild on install with @electron/rebuild; pin Electron and node-pty versions together. |
 | Sandbox restrictions | App is not sandboxed in v1 (local use only). Revisit if distribution is ever wanted. |
 
 ---
