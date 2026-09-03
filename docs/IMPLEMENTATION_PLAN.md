@@ -269,15 +269,15 @@ slice requires, and extended later.
 The thinnest possible app: a window, a project list, and persistence.
 
 Tasks
-- [ ] S1.1 Xcode project, `Sauron` app target, macOS 15, SwiftUI lifecycle, sandbox off.
-- [ ] S1.2 Local package `SauronCore` with a test target, linked into the app.
-- [ ] S1.3 `Project` model, `Persistence` actor writing `config.json` atomically to App
+- [x] S1.1 Xcode project, `Sauron` app target, macOS 15, SwiftUI lifecycle, sandbox off.
+- [x] S1.2 Local package `SauronCore` with a test target, linked into the app.
+- [x] S1.3 `Project` model, `Persistence` actor writing `config.json` atomically to App
       Support with a `version` field; directory layout created on first run.
-- [ ] S1.4 `ExternalCommand` async wrapper (stdout, stderr, exit code, typed error).
-- [ ] S1.5 `AppState` and `NavigationSplitView` shell with an empty detail pane.
-- [ ] S1.6 Add project via `NSOpenPanel` and drag-and-drop; validate with
+- [x] S1.4 `ExternalCommand` async wrapper (stdout, stderr, exit code, typed error).
+- [x] S1.5 `AppState` and `NavigationSplitView` shell with an empty detail pane.
+- [x] S1.6 Add project via `NSOpenPanel` and drag-and-drop; validate with
       `git rev-parse --show-toplevel`; reject non-repos with a message.
-- [ ] S1.7 Remove project with confirmation; project detail showing name and path.
+- [x] S1.7 Remove project with confirmation; project detail showing name and path.
 
 Done when
 - Dragging a git repo folder onto the window adds a row; dragging a non-git folder shows
