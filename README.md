@@ -15,8 +15,9 @@ Requires Node 22+, pnpm, and on the machine: `tmux`, `git`, `claude` (Codex opti
 ```sh
 pnpm install          # also rebuilds node-pty for Electron
 pnpm dev              # hot-reloading development run
-scripts/app.sh        # package and launch dist/mac-arm64/Sauron.app detached (correct name and icon)
-scripts/app.sh --dev  # faster: unpackaged Electron binary (Dock shows "Electron")
+scripts/app.sh             # build and launch the unpackaged dev build, detached
+scripts/app.sh --packaged  # build and launch dist/mac-arm64/Sauron.app (proper name and icon; slower)
+scripts/install-launcher.sh  # installs `sauron-dev` on PATH and ~/Desktop/Sauron.app, both of which run scripts/app.sh
 pnpm test             # Vitest
 pnpm typecheck
 pnpm package          # unsigned Sauron.app in dist/
