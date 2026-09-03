@@ -4,22 +4,48 @@ import { homedir } from 'node:os'
 import { runCommand } from './command'
 import type { ToolPaths } from '@shared/types'
 
-/** Asks the login shell for PATH. GUI apps on macOS get a minimal environment. */
+/** Directories tools commonly install into; always searched last so a bare Finder launch still finds them. */
+function commonToolDirs(): string[] {
+  const home = homedir()
+  return ['/opt/homebrew/bin', '/usr/local/bin', join(home, '.local/bin'), join(home, '.cargo/bin'), join(home, 'bin')]
+}
+
+function mergePath(...parts: string[]): string {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const part of parts) {
+    for (const dir of part.split(':')) {
+      if (dir && !seen.has(dir)) {
+        seen.add(dir)
+        out.push(dir)
+      }
+    }
+  }
+  return out.join(':')
+}
+
+/**
+ * Asks the user's shell for PATH. GUI apps on macOS get a minimal environment, and many people
+ * set PATH in .zshrc (interactive only), so this runs an interactive login shell. A marker
+ * isolates the answer from anything rc files print, and a timeout guards against rc files
+ * that block.
+ */
 export async function loginShellPath(): Promise<string> {
   const shell = process.env.SHELL || '/bin/zsh'
   const marker = 'SAURON_PATH_MARKER'
-  try {
-    // -l loads the login profile. -i is omitted: interactive rc files may print or block.
-    const result = await runCommand(shell, ['-lc', `echo ${marker}$PATH`])
-    const line = result.stdout.split('\n').reverse().find((l) => l.startsWith(marker))
-    const path = line?.slice(marker.length).trim()
-    if (path) return path
-    console.warn('login shell did not report PATH', result.stderr)
-  } catch (error) {
-    console.error('login shell failed', error)
+  let reported = ''
+  for (const flags of ['-ilc', '-lc']) {
+    try {
+      const result = await runCommand(shell, [flags, `echo ${marker}$PATH`], { timeoutMs: 8000 })
+      const line = result.stdout.split('\n').reverse().find((l) => l.startsWith(marker))
+      reported = line?.slice(marker.length).trim() ?? ''
+      if (reported) break
+      console.warn(`shell ${flags} did not report PATH (exit ${result.code})`, result.stderr.slice(0, 200))
+    } catch (error) {
+      console.error(`shell ${flags} failed`, error)
+    }
   }
-  const fallback = process.env.PATH || '/usr/bin:/bin'
-  return `${fallback}:/opt/homebrew/bin:/usr/local/bin:${join(homedir(), '.local/bin')}`
+  return mergePath(reported, process.env.PATH || '/usr/bin:/bin', ...commonToolDirs())
 }
 
 export function findExecutable(name: string, path: string): string | null {

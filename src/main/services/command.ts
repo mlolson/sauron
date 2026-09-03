@@ -10,6 +10,8 @@ export interface CommandResult {
 export interface CommandOptions {
   cwd?: string
   env?: NodeJS.ProcessEnv
+  /** Kill the process after this many milliseconds; it then resolves with exit code 124. */
+  timeoutMs?: number
 }
 
 /**
@@ -38,10 +40,17 @@ export function runCommand(file: string, args: string[], opts: CommandOptions = 
     const finish = (code: number) => {
       if (settled) return
       settled = true
+      if (timer) clearTimeout(timer)
       child.stdout.destroy()
       child.stderr.destroy()
       resolve({ stdout, stderr, code })
     }
+    const timer = opts.timeoutMs
+      ? setTimeout(() => {
+          child.kill('SIGKILL')
+          finish(124)
+        }, opts.timeoutMs)
+      : null
     child.once('exit', (code, signal) => {
       const exitCode = code ?? (signal ? 128 : 1)
       let closed = false
