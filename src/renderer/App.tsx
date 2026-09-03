@@ -24,6 +24,11 @@ export function App() {
   }, [])
   const onDragOver = useCallback((e: React.DragEvent) => e.preventDefault(), [])
 
+  // Tell the main process which session is in front, so it can suppress redundant notifications.
+  useEffect(() => {
+    window.sauron.setActiveSession(selection?.kind === 'session' ? selection.id : null)
+  }, [selection])
+
   // ⌘O adds a project.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

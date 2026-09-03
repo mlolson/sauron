@@ -2,7 +2,12 @@ import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { basename, resolve } from 'node:path'
 import { homedir } from 'node:os'
-import type { AgentTool, AppError, LaunchOptions, Project, Session, SelectionTarget, Snapshot, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
+import type { AgentTool, AppError, LaunchOptions, Preferences, Project, Session, SelectionTarget, Snapshot, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
+import { defaultPreferences } from '@shared/types'
+import { claudeHookSettings, codexNotifyConfig, looksLikeApprovalPrompt, transitionForHook, type HookEvent } from '@shared/hooks'
+import { writeJsonAtomic } from './services/persistence'
+import { join } from 'node:path'
+import { Notifier } from './services/notifier'
 import type { Worktree } from '@shared/worktrees'
 import { defaultWorktreeBranch } from '@shared/worktrees'
 import { WorktreeService } from './services/worktrees'
@@ -30,7 +35,14 @@ export class AppState extends EventEmitter<StateEvents> {
   orphanTmuxSessions: string[] = []
   toolPaths: ToolPaths | null = null
   worktrees: Record<string, Worktree[]> = {}
+  preferences: Preferences = { ...defaultPreferences }
   loaded = false
+  /** Absolute path of the installed `sauron` shim; set by main before load(). */
+  sauronBin: string | null = null
+  /** The session the user currently has in front of them, reported by the renderer. */
+  activeSessionId: string | null = null
+  windowFocused = true
+  readonly notifier = new Notifier()
 
   tmux: TmuxService | null = null
   pty: PtyService | null = null
@@ -52,6 +64,7 @@ export class AppState extends EventEmitter<StateEvents> {
       orphanTmuxSessions: this.orphanTmuxSessions,
       toolPaths: this.toolPaths,
       worktrees: this.worktrees,
+      preferences: this.preferences,
       loaded: this.loaded,
     }
   }
@@ -76,6 +89,8 @@ export class AppState extends EventEmitter<StateEvents> {
     try {
       const config = await this.persistence.loadConfig()
       this.projects = config.projects
+      this.preferences = { ...defaultPreferences, ...config.preferences }
+      this.notifier.muted = this.preferences.notificationsMuted
       this.sessions = (await this.persistence.loadSessions()).sessions
       this.loaded = true
     } catch (error) {
@@ -105,7 +120,14 @@ export class AppState extends EventEmitter<StateEvents> {
   }
 
   private persistConfig(): void {
-    this.persistence.saveConfig({ version: CONFIG_VERSION, projects: this.projects })
+    this.persistence.saveConfig({ version: CONFIG_VERSION, projects: this.projects, preferences: this.preferences })
+  }
+
+  setPreferences(prefs: Partial<Preferences>): void {
+    this.preferences = { ...this.preferences, ...prefs }
+    this.notifier.muted = this.preferences.notificationsMuted
+    this.persistConfig()
+    this.changed()
   }
 
   private persistSessions(): void {
@@ -210,12 +232,12 @@ export class AppState extends EventEmitter<StateEvents> {
       let transcriptPath: string | null
       if (tool === 'claude') {
         if (!tools.claude) throw new SauronError('executable_not_found', 'claude was not found on PATH.')
-        command = [tools.claude, '--session-id', id]
+        command = [tools.claude, '--session-id', id, ...(await this.claudeSettingsArgs(id))]
         cliSessionId = id
         transcriptPath = claudeTranscriptPath(homedir(), cwd, id)
       } else {
         if (!tools.codex) throw new SauronError('executable_not_found', 'codex was not found on PATH.')
-        command = [tools.codex, '-C', cwd]
+        command = [tools.codex, '-C', cwd, ...(this.sauronBin ? ['-c', codexNotifyConfig(this.sauronBin)] : [])]
         // Codex picks its own session id; the transcript indexer (slice 6) fills these in.
         cliSessionId = null
         transcriptPath = null
@@ -250,6 +272,14 @@ export class AppState extends EventEmitter<StateEvents> {
     }
   }
 
+  /** Writes the per-session Claude settings file carrying Sauron's hooks and returns the CLI args. */
+  private async claudeSettingsArgs(sessionId: string): Promise<string[]> {
+    if (!this.sauronBin) return []
+    const file = join(this.paths.sessionsDir, sessionId, 'claude-settings.json')
+    await writeJsonAtomic(file, claudeHookSettings(this.sauronBin))
+    return ['--settings', file]
+  }
+
   async resumeSession(id: string): Promise<void> {
     const session = this.session(id)
     if (!session || session.state !== 'stopped' || !session.cliSessionId) return
@@ -258,10 +288,10 @@ export class AppState extends EventEmitter<StateEvents> {
       let command: string[]
       if (session.tool === 'claude') {
         if (!tools.claude) throw new SauronError('executable_not_found', 'claude was not found on PATH.')
-        command = [tools.claude, '--resume', session.cliSessionId]
+        command = [tools.claude, '--resume', session.cliSessionId, ...(await this.claudeSettingsArgs(session.id))]
       } else {
         if (!tools.codex) throw new SauronError('executable_not_found', 'codex was not found on PATH.')
-        command = [tools.codex, 'resume', session.cliSessionId]
+        command = [tools.codex, ...(this.sauronBin ? ['-c', codexNotifyConfig(this.sauronBin)] : []), 'resume', session.cliSessionId]
       }
       const tmuxName = tmuxSessionName(session.displayName, randomUUID())
       await tmux.newSession({
@@ -362,6 +392,67 @@ export class AppState extends EventEmitter<StateEvents> {
     }
   }
 
+  // MARK: Attention
+
+  waitingCount(): number {
+    return this.sessions.filter((s) => s.state === 'waitingForInput').length
+  }
+
+  private isInFront(sessionId: string): boolean {
+    return this.windowFocused && this.activeSessionId === sessionId
+  }
+
+  /** Applies a hook event reported by the `sauron` CLI. */
+  handleHook(sessionId: string, event: HookEvent): void {
+    const session = this.session(sessionId)
+    if (!session) {
+      console.warn('hook for unknown session', sessionId, event.event)
+      return
+    }
+    const transition = transitionForHook(event, session.displayName)
+    console.log('hook', session.displayName, event.event, '->', transition?.state ?? '(ignored)')
+    if (!transition) return
+    const wasStopped = session.state === 'stopped'
+    this.updateSession(sessionId, (s) => {
+      s.state = transition.state
+      s.stateSource = 'hook'
+      s.lastActivityAt = new Date().toISOString()
+      if (event.tool === 'claude' && typeof event.payload.session_id === 'string') s.cliSessionId = event.payload.session_id
+      if (event.tool === 'codex') {
+        const tid = event.payload['thread-id'] ?? event.payload.thread_id ?? event.payload['session-id']
+        if (typeof tid === 'string') s.cliSessionId = tid
+      }
+    })
+    if (transition.state === 'stopped' && !wasStopped) this.pty?.close(sessionId)
+    this.notifier.setBadge(this.waitingCount())
+    if (transition.notify && !this.isInFront(sessionId)) {
+      this.notifier.post({ ...transition.notify, onClick: () => this.select({ kind: 'session', id: sessionId }) })
+    }
+  }
+
+  /** Codex has no permission hook: infer waiting-for-input from the visible screen. */
+  private async inferCodexState(session: Session): Promise<void> {
+    if (!this.tmux || !session.tmuxName || session.tool !== 'codex' || session.state === 'stopped') return
+    const screen = await this.tmux.capturePane(session.tmuxName).catch(() => null)
+    if (screen === null) return
+    const waiting = looksLikeApprovalPrompt(screen)
+    if (waiting && session.state !== 'waitingForInput') {
+      this.updateSession(session.id, (s) => {
+        s.state = 'waitingForInput'
+        s.stateSource = 'inferred'
+      })
+      this.notifier.setBadge(this.waitingCount())
+      if (!this.isInFront(session.id)) {
+        this.notifier.post({ title: `${session.displayName} is waiting`, body: 'Codex appears to be asking for approval.', onClick: () => this.select({ kind: 'session', id: session.id }) })
+      }
+    } else if (!waiting && session.state === 'waitingForInput' && session.stateSource === 'inferred') {
+      this.updateSession(session.id, (s) => {
+        s.state = 'running'
+      })
+      this.notifier.setBadge(this.waitingCount())
+    }
+  }
+
   // MARK: Orphans
 
   adoptOrphan(tmuxName: string): void {
@@ -431,6 +522,9 @@ export class AppState extends EventEmitter<StateEvents> {
       if (!(await this.tmux.hasSession(s.tmuxName))) {
         this.pty?.close(s.id)
         this.markStopped(s.id)
+        this.notifier.setBadge(this.waitingCount())
+      } else if (s.tool === 'codex') {
+        await this.inferCodexState(s)
       }
     }
   }

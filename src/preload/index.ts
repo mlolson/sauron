@@ -36,6 +36,8 @@ const api: SauronApi = {
   onPtyData: (sessionId, cb) => subscribe<string>(`pty:data:${sessionId}`, cb),
   onPtyExit: (sessionId, cb) => subscribe<void>(`pty:exit:${sessionId}`, () => cb()),
 
+  setActiveSession: (sessionId) => ipcRenderer.send('setActiveSession', sessionId),
+  setPreferences: (prefs) => ipcRenderer.invoke('setPreferences', prefs),
   revealInFinder: (path) => ipcRenderer.send('revealInFinder', path),
   copyToClipboard: (text) => ipcRenderer.send('copyToClipboard', text),
 }

@@ -61,6 +61,11 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
   on('ptyInput', (sessionId, data) => state.pty?.write(sessionId, data))
   on('ptyResize', (sessionId, cols, rows) => state.pty?.resize(sessionId, cols, rows))
 
+  on('setActiveSession', (sessionId) => {
+    state.activeSessionId = sessionId
+  })
+  handle('setPreferences', async (prefs) => state.setPreferences(prefs))
+
   on('revealInFinder', (path) => shell.showItemInFolder(path))
   on('copyToClipboard', (text) => clipboard.writeText(text))
 }

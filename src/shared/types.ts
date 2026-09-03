@@ -9,9 +9,16 @@ export interface Project {
   pinned: boolean
 }
 
+export interface Preferences {
+  notificationsMuted: boolean
+}
+
+export const defaultPreferences: Preferences = { notificationsMuted: false }
+
 export interface AppConfig {
   version: number
   projects: Project[]
+  preferences?: Preferences
 }
 
 export const CONFIG_VERSION = 1
@@ -76,6 +83,7 @@ export interface Snapshot {
   toolPaths: ToolPaths | null
   /** Worktrees per project id, refreshed on demand and after changes. */
   worktrees: Record<string, Worktree[]>
+  preferences: Preferences
   loaded: boolean
 }
 
@@ -145,6 +153,9 @@ export interface SauronApi {
 
   /** Where the renderer wants to be; the main process may steer this (e.g. after launch). */
   onSelect(cb: (item: SelectionTarget) => void): () => void
+  /** Tells the main process which session is in front of the user, for notification suppression. */
+  setActiveSession(sessionId: string | null): void
+  setPreferences(prefs: Partial<Preferences>): Promise<void>
   revealInFinder(path: string): void
   copyToClipboard(text: string): void
 }

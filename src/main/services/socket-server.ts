@@ -79,6 +79,14 @@ export class SocketServer {
     switch (req.cmd) {
       case 'ping':
         return 'pong'
+      case 'hook': {
+        const tool = req.tool
+        if (tool !== 'claude' && tool !== 'codex') throw new Error(`unknown tool ${String(tool)}`)
+        if (typeof req.session !== 'string') throw new Error('missing session id (SAURON_SESSION_ID)')
+        const payload = req.payload && typeof req.payload === 'object' ? (req.payload as Record<string, unknown>) : {}
+        state.handleHook(req.session, { tool, event: String(req.event), payload })
+        return null
+      }
       case 'projects.list':
         return state.projects.map(({ id, name, path }) => ({ id, name, path }))
       case 'projects.add': {

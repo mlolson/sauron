@@ -52,6 +52,13 @@ export function Sidebar({ snapshot, selection, onSelect }: Props) {
   return (
     <aside className="sidebar">
       <div className="sidebar-toolbar">
+        <button
+          className={`icon-button ${snapshot.preferences.notificationsMuted ? 'muted' : ''}`}
+          title={snapshot.preferences.notificationsMuted ? 'Notifications are muted. Click to unmute.' : 'Notifications are on. Click to mute.'}
+          onClick={() => void window.sauron.setPreferences({ notificationsMuted: !snapshot.preferences.notificationsMuted })}
+        >
+          {snapshot.preferences.notificationsMuted ? '🔕' : '🔔'}
+        </button>
         <button className="icon-button" title="Add a git repository (⌘O)" onClick={() => void window.sauron.addProjectDialog()}>
           +
         </button>
@@ -67,6 +74,7 @@ export function Sidebar({ snapshot, selection, onSelect }: Props) {
         {snapshot.projects.map((project) => {
           const sessions = snapshot.sessions.filter((s) => s.projectId === project.id)
           const alive = sessions.filter(isAlive).length
+          const waiting = sessions.filter((s) => s.state === 'waitingForInput').length
           return (
             <div key={project.id}>
               <Row
@@ -79,6 +87,7 @@ export function Sidebar({ snapshot, selection, onSelect }: Props) {
                   <span className="name">{project.name}</span>
                   <span className="sub">{abbreviate(project.path)}</span>
                 </span>
+                {waiting > 0 && <span className="badge waiting" title="Sessions waiting for input">{waiting}</span>}
                 {alive > 0 && <span className="badge">{alive}</span>}
               </Row>
               {sessions.map((session) => (

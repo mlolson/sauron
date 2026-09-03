@@ -393,20 +393,20 @@ Done when
 Introduces the `sauron` CLI and socket, because hooks need them.
 
 Tasks
-- [ ] S5.1 `sauron` command-line target: argument parsing, socket client, `hook`
+- [x] S5.1 `sauron` command-line target: argument parsing, socket client, `hook`
       subcommand reading stdin; bundled and symlinked to `App Support/Sauron/bin`.
-- [ ] S5.2 `HookServer` on a Unix socket via `NWListener`; 0600 perms; stale socket
+- [x] S5.2 `HookServer` on a Unix socket via `NWListener`; 0600 perms; stale socket
       cleanup; request routing with `ok`/`error` responses.
-- [ ] S5.3 Per-session Claude settings file with SessionStart, UserPromptSubmit,
+- [x] S5.3 Per-session Claude settings file with SessionStart, UserPromptSubmit,
       Notification, Stop, SessionEnd hooks; passed with `--settings`. Codex `notify` via
       `-c` pointing at `sauron hook codex`.
-- [ ] S5.4 Session state machine (idle, running, waitingForInput, stopped) with
+- [x] S5.4 Session state machine (idle, running, waitingForInput, stopped) with
       `stateSource` hook or inferred; Codex waiting-for-input inferred via `pipe-pane`
       ring buffer and prompt-pattern timeout.
-- [ ] S5.5 Sidebar state dot and badge on sessions; waiting count on the project row.
-- [ ] S5.6 `Notifier` using Electron `Notification`: post on waiting or turn-finished when
+- [x] S5.5 Sidebar state dot and badge on sessions; waiting count on the project row.
+- [x] S5.6 `Notifier` using Electron `Notification`: post on waiting or turn-finished when
       the session is not focused, click focuses the tab; dock badge count.
-- [ ] S5.7 Global mute preference.
+- [x] S5.7 Global mute preference.
 
 Done when
 - Start a Claude session and ask it to run a command that needs permission: within a

@@ -11,6 +11,9 @@
  *   sauron stop --session <id>
  *   sauron select --project <name|id> | --session <id>
  *   sauron raw '<json>'
+ *   sauron hook claude <Event>      (Claude Code hook: JSON payload on stdin)
+ *   sauron hook codex '<json>'      (Codex notify: JSON payload as the last argument)
+ * Hooks identify the session via SAURON_SESSION_ID, set by Sauron on launch.
  */
 import { connect } from 'node:net'
 import { join } from 'node:path'
@@ -57,11 +60,58 @@ function request(payload: Record<string, unknown>): Promise<{ ok: boolean; resul
   })
 }
 
+async function readStdin(): Promise<string> {
+  if (process.stdin.isTTY) return ''
+  const chunks: Buffer[] = []
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer)
+  return Buffer.concat(chunks).toString('utf8')
+}
+
+async function hookPayload(tool: string, positional: string[]): Promise<{ event: string; payload: unknown }> {
+  if (tool === 'claude') {
+    const raw = await readStdin()
+    let payload: unknown = {}
+    try {
+      payload = raw.trim() ? JSON.parse(raw) : {}
+    } catch {
+      payload = { raw }
+    }
+    const event = positional[2] ?? (payload && typeof payload === 'object' ? String((payload as { hook_event_name?: string }).hook_event_name ?? '') : '')
+    return { event, payload }
+  }
+  // Codex appends the JSON payload as the final argument.
+  const raw = positional[positional.length - 1] ?? ''
+  let payload: Record<string, unknown> = {}
+  try {
+    payload = raw.trim().startsWith('{') ? (JSON.parse(raw) as Record<string, unknown>) : {}
+  } catch {
+    payload = { raw }
+  }
+  return { event: String(payload.type ?? 'agent-turn-complete'), payload }
+}
+
 async function main(): Promise<void> {
   const { positional, flags } = parseFlags(process.argv.slice(2))
   const [command, sub] = positional
   let payload: Record<string, unknown>
   switch (command) {
+    case 'hook': {
+      const tool = sub ?? ''
+      const session = process.env.SAURON_SESSION_ID
+      if (!session) {
+        // Not launched by Sauron; nothing to report. Exit quietly so hooks never break a session.
+        return
+      }
+      const hp = await hookPayload(tool, positional)
+      try {
+        const response = await request({ cmd: 'hook', tool, event: hp.event, session, payload: hp.payload })
+        if (!response.ok) console.error('sauron hook:', response.error)
+      } catch (e) {
+        // Sauron is not running; the session continues unaffected.
+        console.error('sauron hook:', (e as Error).message)
+      }
+      return
+    }
     case 'ping':
       payload = { cmd: 'ping' }
       break

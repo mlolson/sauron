@@ -49,6 +49,11 @@ export class TmuxService {
     await this.run(['send-keys', '-t', tmuxTarget(name), 'C-c'])
   }
 
+  /** The visible screen of the session's active pane. */
+  async capturePane(name: string): Promise<string> {
+    return this.run(['capture-pane', '-p', '-t', tmuxTarget(name)])
+  }
+
   async killSession(name: string): Promise<void> {
     await this.run(['kill-session', '-t', tmuxTarget(name)])
   }

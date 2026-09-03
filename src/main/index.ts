@@ -4,6 +4,7 @@ import { AppPaths, Persistence } from './services/persistence'
 import { AppState } from './state'
 import { registerIpc } from './ipc'
 import { SocketServer } from './services/socket-server'
+import { installCliShim } from './services/cli-shim'
 
 let mainWindow: BrowserWindow | null = null
 const pendingOpens: string[] = []
@@ -42,6 +43,12 @@ function createWindow(): BrowserWindow {
   } else {
     void win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+  win.on('focus', () => {
+    state.windowFocused = true
+  })
+  win.on('blur', () => {
+    state.windowFocused = false
+  })
   win.on('closed', () => {
     mainWindow = null
   })
@@ -82,6 +89,12 @@ if (!gotLock) {
     app.setAppUserModelId('com.mattolson.sauron')
     registerIpc(state, () => mainWindow)
     mainWindow = createWindow()
+    try {
+      await paths.createLayout()
+      state.sauronBin = await installCliShim(paths.binDir, join(__dirname, 'cli.js'), process.execPath)
+    } catch (error) {
+      state.report(error)
+    }
     await state.load()
     if (pendingOpens.length) await state.addProjects(pendingOpens.splice(0))
     try {
