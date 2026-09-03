@@ -843,7 +843,9 @@ export class AppState extends EventEmitter<StateEvents> {
         if (s.kind !== 'managed' || !s.tmuxName) continue
         known.add(s.tmuxName)
         if (live.has(s.tmuxName)) {
-          if (s.state === 'stopped') s.state = 'idle'
+          // Alive after a restart: assume idle until a hook reports otherwise.
+          s.state = 'idle'
+          s.stateSource = 'inferred'
         } else if (s.state !== 'stopped') {
           s.state = 'stopped'
         }

@@ -27,6 +27,10 @@ export function transitionForHook(e: HookEvent, sessionName: string): Transition
         return { state: 'running' }
       case 'Notification': {
         const message = String(e.payload.message ?? e.payload.title ?? 'needs your attention')
+        const type = String(e.payload.notification_type ?? e.payload.type ?? '')
+        // Claude fires idle_prompt after a minute of inactivity: the agent is idle, not blocked.
+        if (type === 'idle_prompt' || /waiting for your input/i.test(message)) return { state: 'idle' }
+        if (type === 'auth_success') return null
         return { state: 'waitingForInput', notify: { title: `${sessionName} is waiting`, body: message } }
       }
       case 'Stop':

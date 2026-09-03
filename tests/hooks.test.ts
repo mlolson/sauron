@@ -10,6 +10,8 @@ describe('transitionForHook', () => {
       state: 'waitingForInput',
       notify: { title: 'Claude 2 is waiting', body: 'Claude needs permission to run Bash' },
     })
+    expect(t('Notification', { notification_type: 'idle_prompt', message: 'Claude is waiting for your input' })).toEqual({ state: 'idle' })
+    expect(t('Notification', { notification_type: 'permission_prompt', message: 'Permission needed' })?.state).toBe('waitingForInput')
     expect(t('Stop')?.state).toBe('idle')
     expect(t('Stop')?.notify?.title).toBe('Claude 2 finished')
     expect(t('SessionEnd')?.state).toBe('stopped')
