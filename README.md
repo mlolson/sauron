@@ -21,6 +21,22 @@ pnpm typecheck
 pnpm package          # unsigned Sauron.app in dist/
 ```
 
+## Using it
+
+- **⌘O** add a project, **⌘,** preferences, **⌘K** quick switcher, **⌘⇧]** / **⌘⇧[** next and
+  previous live session. Right-click projects and sessions for actions.
+- The **master agent** (pinned at the top) is a persistent Claude Code session with a generated
+  home under `~/Library/Application Support/Sauron/master`. Chat with it, ask it to start or direct
+  workers, or click **Refresh** on a project to have it rewrite the status summary. Summaries also
+  refresh automatically after commits.
+- Every Sauron-managed session runs in tmux (`sauron-<project>-<id>`), so it survives app restarts
+  and `tmux attach -t <name>` works from any terminal.
+- Sessions you start yourself from a terminal show up read-only under their project with a live
+  transcript.
+- Logs: `~/Library/Logs/Sauron/main.log` (Preferences > Reveal Logs).
+- `docs/QA.md` is the manual checklist; `scripts/smoke.sh` is the end-to-end check against a
+  running app.
+
 ## Adding projects
 
 Drag a git repository folder onto the window, press ⌘O, or:

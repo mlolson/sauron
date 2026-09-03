@@ -9,9 +9,10 @@ interface Props {
   snapshot: Snapshot
   selection: SelectionTarget | null
   onSelect: (t: SelectionTarget) => void
+  onOpenPreferences: () => void
 }
 
-export function Sidebar({ snapshot, selection, onSelect }: Props) {
+export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Props) {
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
   const openMenu = (e: React.MouseEvent, items: MenuItem[]) => {
     e.preventDefault()
@@ -61,6 +62,9 @@ export function Sidebar({ snapshot, selection, onSelect }: Props) {
         </button>
         <button className="icon-button" title="Add a git repository (⌘O)" onClick={() => void window.sauron.addProjectDialog()}>
           +
+        </button>
+        <button className="icon-button" title="Preferences (⌘,)" onClick={onOpenPreferences}>
+          ⚙
         </button>
       </div>
       <nav>

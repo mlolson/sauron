@@ -7,7 +7,7 @@ type Handler<K extends keyof SauronApi> = SauronApi[K] extends (...args: infer A
   : never
 
 /** Registers every renderer-callable method. Channel names are the method names. */
-export function registerIpc(state: AppState, getWindow: () => BrowserWindow | null): void {
+export function registerIpc(state: AppState, getWindow: () => BrowserWindow | null, logFile: string): void {
   const handle = <K extends keyof SauronApi>(name: K, fn: Handler<K>) => {
     ipcMain.handle(name, (_event, ...args: unknown[]) => (fn as (...a: unknown[]) => unknown)(...args))
   }
@@ -82,5 +82,11 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
   handle('transcriptLoadOlder', async (sessionId, beforeIndex, count) => state.transcriptLoadOlder(sessionId, beforeIndex, count))
 
   on('revealInFinder', (path) => shell.showItemInFolder(path))
+  on('revealLogs', () => shell.showItemInFolder(logFile))
+  handle('chooseDirectory', async (title) => {
+    const win = getWindow()
+    const result = await dialog.showOpenDialog(win ?? new BrowserWindow({ show: false }), { title, properties: ['openDirectory', 'createDirectory'] })
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
   on('copyToClipboard', (text) => clipboard.writeText(text))
 }

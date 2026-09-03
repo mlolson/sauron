@@ -272,3 +272,20 @@ button:disabled { opacity: 0.5; }
 .card pre.details { white-space: pre-wrap; font-family: inherit; font-size: 13px; line-height: 1.5; color: var(--fg-muted); margin: 8px 0 0; user-select: text; -webkit-user-select: text; }
 .spinner { width: 10px; height: 10px; border: 2px solid var(--fg-muted); border-top-color: transparent; border-radius: 50%; animation: spin 0.9s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Modals */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 50; display: flex; align-items: flex-start; justify-content: center; padding-top: 80px; }
+.modal { width: 640px; max-height: calc(100vh - 120px); overflow-y: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.45); padding: 16px 20px 20px; }
+.modal header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.modal h2 { margin: 0; font-size: 16px; }
+.modal h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-muted); margin: 18px 0 6px; }
+.pref-row { display: grid; grid-template-columns: 1fr 1.2fr; gap: 12px; align-items: center; padding: 6px 0; }
+.pref-row.check { grid-template-columns: auto 1fr; }
+.pref-row input[type="text"], .pref-row input[type="number"] { font: inherit; color: inherit; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; width: 100%; user-select: text; -webkit-user-select: text; }
+.pref-row .inline { display: flex; gap: 6px; }
+.switcher { width: 560px; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.45); overflow: hidden; }
+.switcher input { width: 100%; font: inherit; font-size: 16px; padding: 14px 16px; border: none; border-bottom: 1px solid var(--border); background: transparent; color: inherit; outline: none; user-select: text; -webkit-user-select: text; }
+.switcher ul { list-style: none; margin: 0; padding: 6px; max-height: 380px; overflow-y: auto; }
+.switcher li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; border-radius: 6px; }
+.switcher li.active { background: var(--accent); color: white; }
+.switcher li.active .muted { color: rgba(255,255,255,0.8); }

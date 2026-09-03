@@ -48,6 +48,8 @@ const api: SauronApi = {
   transcriptLoadOlder: (sessionId, beforeIndex, count) => ipcRenderer.invoke('transcriptLoadOlder', sessionId, beforeIndex, count),
   onTranscriptAppend: (sessionId, cb) => subscribe<TranscriptEntry[]>(`transcript:append:${sessionId}`, cb),
   revealInFinder: (path) => ipcRenderer.send('revealInFinder', path),
+  revealLogs: () => ipcRenderer.send('revealLogs'),
+  chooseDirectory: (title) => ipcRenderer.invoke('chooseDirectory', title),
   copyToClipboard: (text) => ipcRenderer.send('copyToClipboard', text),
 }
 

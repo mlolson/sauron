@@ -93,6 +93,12 @@ export class SocketServer {
         await state.addProject(String(req.path))
         return state.projects.map(({ id, name, path }) => ({ id, name, path }))
       }
+      case 'projects.remove': {
+        const project = this.findProject(req.project)
+        if (!project) throw new Error(`unknown project ${req.project}`)
+        state.removeProject(project.id)
+        return null
+      }
       case 'sessions.list': {
         const project = req.project === undefined ? null : this.findProject(req.project)
         if (req.project !== undefined && !project) throw new Error(`unknown project ${req.project}`)

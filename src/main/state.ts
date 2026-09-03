@@ -124,7 +124,7 @@ export class AppState extends EventEmitter<StateEvents> {
     try {
       const config = await this.persistence.loadConfig()
       this.projects = config.projects
-      this.preferences = { ...defaultPreferences, ...config.preferences }
+      this.preferences = { ...defaultPreferences, ...config.preferences, toolOverrides: { ...defaultPreferences.toolOverrides, ...config.preferences?.toolOverrides } }
       this.notifier.muted = this.preferences.notificationsMuted
       this.sessions = (await this.persistence.loadSessions()).sessions
       this.loaded = true
@@ -148,9 +148,10 @@ export class AppState extends EventEmitter<StateEvents> {
   }
 
   async refreshTools(): Promise<void> {
-    const tools = await resolveTools()
+    const o = this.preferences.toolOverrides
+    const tools = await resolveTools({ claude: o.claude || undefined, codex: o.codex || undefined, tmux: o.tmux || undefined, git: o.git || undefined })
     this.toolPaths = tools
-    this.worktreeService = tools.git ? new WorktreeService(tools.git, this.paths.worktreesDir) : null
+    this.worktreeService = tools.git ? new WorktreeService(tools.git, this.preferences.worktreeBase || this.paths.worktreesDir) : null
     if (tools.tmux) {
       const env = sessionEnvironment(tools.path)
       this.tmux = new TmuxService(tools.tmux, env)
@@ -168,10 +169,14 @@ export class AppState extends EventEmitter<StateEvents> {
   }
 
   setPreferences(prefs: Partial<Preferences>): void {
-    this.preferences = { ...this.preferences, ...prefs }
+    const before = this.preferences
+    this.preferences = { ...before, ...prefs, toolOverrides: { ...before.toolOverrides, ...prefs.toolOverrides } }
     this.notifier.muted = this.preferences.notificationsMuted
     this.persistConfig()
     this.changed()
+    const toolsChanged =
+      JSON.stringify(before.toolOverrides) !== JSON.stringify(this.preferences.toolOverrides) || before.worktreeBase !== this.preferences.worktreeBase
+    if (toolsChanged) void this.refreshTools().then(() => this.syncGitWatchers())
   }
 
   private persistSessions(): void {

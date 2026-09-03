@@ -69,7 +69,7 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
         </div>
       </header>
       {showTerminal ? (
-        <SessionTerminal sessionId={session.id} />
+        <SessionTerminal sessionId={session.id} fontSize={snapshot.preferences.terminalFontSize} scrollback={snapshot.preferences.terminalScrollback} />
       ) : external || (alive && view === 'transcript') ? (
         <TranscriptView sessionId={session.id} readOnly={external} />
       ) : (

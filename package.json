@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package": "electron-vite build && electron-builder --mac --dir",
+    "package": "scripts/make-icon.sh && electron-vite build && electron-builder --mac --dir",
     "postinstall": "electron-rebuild -f -w node-pty"
   },
   "build": {
@@ -51,7 +51,8 @@
         ],
         "NSSupportsAutomaticTermination": false,
         "NSSupportsSuddenTermination": false
-      }
+      },
+      "icon": "build/icon.icns"
     },
     "protocols": [
       {

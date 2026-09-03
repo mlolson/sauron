@@ -17,9 +17,23 @@ export interface Preferences {
   externalRecentHours: number
   /** Start the master agent when Sauron launches. */
   masterAutoStart: boolean
+  /** Explicit executable paths; empty means "find on PATH". */
+  toolOverrides: { claude: string; codex: string; tmux: string; git: string }
+  /** Base directory for Sauron-created worktrees; empty means the default under Application Support. */
+  worktreeBase: string
+  terminalFontSize: number
+  terminalScrollback: number
 }
 
-export const defaultPreferences: Preferences = { notificationsMuted: false, externalRecentHours: 24, masterAutoStart: true }
+export const defaultPreferences: Preferences = {
+  notificationsMuted: false,
+  externalRecentHours: 24,
+  masterAutoStart: true,
+  toolOverrides: { claude: '', codex: '', tmux: '', git: '' },
+  worktreeBase: '',
+  terminalFontSize: 13,
+  terminalScrollback: 50_000,
+}
 
 export interface AppConfig {
   version: number
@@ -176,6 +190,8 @@ export interface SauronApi {
   transcriptLoadOlder(sessionId: string, beforeIndex: number, count: number): Promise<TranscriptEntry[]>
   onTranscriptAppend(sessionId: string, cb: (entries: TranscriptEntry[]) => void): () => void
   revealInFinder(path: string): void
+  revealLogs(): void
+  chooseDirectory(title: string): Promise<string | null>
   copyToClipboard(text: string): void
 }
 

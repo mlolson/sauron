@@ -511,15 +511,15 @@ Done when
 ### Slice 9 — Daily-driver polish (≈1.5 d)
 
 Tasks
-- [ ] S9.1 `PreferencesView`: CLI path overrides, worktree base, notifications, master
+- [x] S9.1 `PreferencesView`: CLI path overrides, worktree base, notifications, master
       auto-start, terminal font and scrollback.
-- [ ] S9.2 Keyboard navigation between sessions and a ⌘K quick switcher.
-- [ ] S9.3 Error banners for service failures on the affected project or session; "reveal
+- [x] S9.2 Keyboard navigation between sessions and a ⌘K quick switcher.
+- [x] S9.3 Error banners for service failures on the affected project or session; "reveal
       logs" action.
-- [ ] S9.4 `scripts/smoke.sh`: temp repo, launch through the CLI, verify tmux session,
+- [x] S9.4 `scripts/smoke.sh`: temp repo, launch through the CLI, verify tmux session,
       send a message, check hook events arrive. `docs/QA.md` manual checklist covering the
       Done criteria of every slice.
-- [ ] S9.5 App icon and README with build instructions.
+- [x] S9.5 App icon and README with build instructions.
 
 Done when
 - Every preference takes effect without restarting the app.

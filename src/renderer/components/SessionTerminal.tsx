@@ -11,14 +11,22 @@ interface Entry {
 /** One xterm instance per session, kept across tab switches so we never re-attach. */
 const terminals = new Map<string, Entry>()
 
-function getOrCreate(sessionId: string): Entry {
+export function applyTerminalPreferences(fontSize: number, scrollback: number): void {
+  for (const { term, fit } of terminals.values()) {
+    if (term.options.fontSize !== fontSize) term.options.fontSize = fontSize
+    if (term.options.scrollback !== scrollback) term.options.scrollback = scrollback
+    fit.fit()
+  }
+}
+
+function getOrCreate(sessionId: string, fontSize: number, scrollback: number): Entry {
   const existing = terminals.get(sessionId)
   if (existing) return existing
 
   const term = new Terminal({
     fontFamily: 'Menlo, "SF Mono", Monaco, monospace',
-    fontSize: 13,
-    scrollback: 50_000,
+    fontSize,
+    scrollback,
     cursorBlink: true,
     macOptionIsMeta: true,
     allowProposedApi: true,
@@ -54,13 +62,15 @@ export function disposeTerminal(sessionId: string): void {
   terminals.get(sessionId)?.dispose()
 }
 
-export function SessionTerminal({ sessionId }: { sessionId: string }) {
+export function SessionTerminal({ sessionId, fontSize, scrollback }: { sessionId: string; fontSize: number; scrollback: number }) {
   const container = useRef<HTMLDivElement>(null)
+
+  useEffect(() => applyTerminalPreferences(fontSize, scrollback), [fontSize, scrollback])
 
   useEffect(() => {
     const el = container.current
     if (!el) return
-    const entry = getOrCreate(sessionId)
+    const entry = getOrCreate(sessionId, fontSize, scrollback)
     const { term, fit } = entry
     if (!term.element) term.open(el)
     else el.appendChild(term.element)
@@ -76,7 +86,7 @@ export function SessionTerminal({ sessionId }: { sessionId: string }) {
       // Keep the terminal alive for the next mount; the pty stays open until detach/stop.
       if (term.element && term.element.parentElement === el) el.removeChild(term.element)
     }
-  }, [sessionId])
+  }, [sessionId]) // eslint-disable-line react-hooks/exhaustive-deps -- font changes are applied in place
 
   return <div className="terminal" ref={container} />
 }

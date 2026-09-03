@@ -5,7 +5,10 @@ import { AppState } from './state'
 import { registerIpc } from './ipc'
 import { SocketServer } from './services/socket-server'
 import { installCliShim } from './services/cli-shim'
+import { installFileLogging } from './services/logging'
+import { existsSync } from 'node:fs'
 
+const logFile = installFileLogging(join(app.getPath('logs'), 'main.log'))
 let mainWindow: BrowserWindow | null = null
 const pendingOpens: string[] = []
 
@@ -87,7 +90,9 @@ if (!gotLock) {
 } else {
   app.whenReady().then(async () => {
     app.setAppUserModelId('com.mattolson.sauron')
-    registerIpc(state, () => mainWindow)
+    registerIpc(state, () => mainWindow, logFile)
+    const devIcon = join(__dirname, '../../build/icon.png')
+    if (!app.isPackaged && existsSync(devIcon)) app.dock?.setIcon(devIcon)
     mainWindow = createWindow()
     try {
       await paths.createLayout()
