@@ -204,4 +204,20 @@ button.icon-button { width: 26px; height: 26px; padding: 0; font-size: 16px; lin
 .context-menu .item:hover { background: var(--accent); color: white; }
 .context-menu .item.destructive { color: var(--danger); }
 .context-menu .item.destructive:hover { background: var(--danger); color: white; }
+.context-menu .item.disabled { color: var(--fg-muted); }
+.context-menu .item.disabled:hover { background: transparent; color: var(--fg-muted); }
+.launch-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+.launch-bar input {
+  flex: 1;
+  font: inherit;
+  color: inherit;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.launch-bar input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+button:disabled { opacity: 0.5; }
 .context-menu .separator { height: 1px; background: var(--border); margin: 4px 6px; }

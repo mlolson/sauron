@@ -109,7 +109,7 @@ export interface SauronApi {
   removeProject(id: string): Promise<void>
   resolveTools(): Promise<void>
 
-  launchClaude(projectId: string, prompt?: string): Promise<void>
+  launchSession(projectId: string, tool: AgentTool, prompt?: string): Promise<void>
   stopSession(id: string): Promise<void>
   detachSession(id: string): Promise<void>
   resumeSession(id: string): Promise<void>

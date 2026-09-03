@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { basename, resolve } from 'node:path'
 import { homedir } from 'node:os'
-import type { AppError, Project, Session, SelectionTarget, Snapshot, ToolPaths } from '@shared/types'
+import type { AgentTool, AppError, Project, Session, SelectionTarget, Snapshot, ToolPaths } from '@shared/types'
 import { CONFIG_VERSION, SESSIONS_VERSION, SauronError, isAlive } from '@shared/types'
 import { tmuxSessionName } from '@shared/tmux-args'
 import { claudeTranscriptPath } from '@shared/transcripts'
@@ -170,7 +170,7 @@ export class AppState extends EventEmitter<StateEvents> {
     }
   }
 
-  private nextDisplayName(tool: 'claude' | 'codex', projectId: string | null): string {
+  private nextDisplayName(tool: AgentTool, projectId: string | null): string {
     const label = tool === 'claude' ? 'Claude' : 'Codex'
     const count = this.sessionsFor(projectId).filter((s) => s.tool === tool).length
     return count === 0 ? label : `${label} ${count + 1}`
@@ -178,7 +178,7 @@ export class AppState extends EventEmitter<StateEvents> {
 
   // MARK: Session lifecycle
 
-  async launchClaude(projectId: string, initialPrompt?: string): Promise<Session | null> {
+  async launchSession(projectId: string, tool: AgentTool, initialPrompt?: string): Promise<Session | null> {
     const project = this.project(projectId)
     if (!project) {
       this.report(new SauronError('invalid_state', `Unknown project ${projectId}`))
@@ -186,22 +186,36 @@ export class AppState extends EventEmitter<StateEvents> {
     }
     try {
       const { tools, tmux } = this.requireTools()
-      if (!tools.claude) throw new SauronError('executable_not_found', 'claude was not found on PATH.')
       const id = randomUUID()
       const tmuxName = tmuxSessionName(project.name, id)
-      const command = [tools.claude, '--session-id', id]
-      if (initialPrompt) command.push(initialPrompt)
+      const prompt = initialPrompt?.trim()
+      let command: string[]
+      let cliSessionId: string | null
+      let transcriptPath: string | null
+      if (tool === 'claude') {
+        if (!tools.claude) throw new SauronError('executable_not_found', 'claude was not found on PATH.')
+        command = [tools.claude, '--session-id', id]
+        cliSessionId = id
+        transcriptPath = claudeTranscriptPath(homedir(), project.path, id)
+      } else {
+        if (!tools.codex) throw new SauronError('executable_not_found', 'codex was not found on PATH.')
+        command = [tools.codex, '-C', project.path]
+        // Codex picks its own session id; the transcript indexer (slice 6) fills these in.
+        cliSessionId = null
+        transcriptPath = null
+      }
+      if (prompt) command.push(prompt)
       await tmux.newSession({ name: tmuxName, workingDir: project.path, environment: this.launchEnvironment(id, tools), command })
       const now = new Date().toISOString()
       const session: Session = {
         id,
         projectId: project.id,
-        tool: 'claude',
+        tool,
         kind: 'managed',
-        displayName: this.nextDisplayName('claude', project.id),
+        displayName: this.nextDisplayName(tool, project.id),
         tmuxName,
-        cliSessionId: id,
-        transcriptPath: claudeTranscriptPath(homedir(), project.path, id),
+        cliSessionId,
+        transcriptPath,
         workingDir: project.path,
         worktreePath: null,
         createdAt: now,

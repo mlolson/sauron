@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-export type MenuItem = { separator: true } | { separator?: false; label: string; destructive?: boolean; action: () => void }
+export type MenuItem = { separator: true } | { separator?: false; label: string; destructive?: boolean; disabled?: boolean; action: () => void }
 
 export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; items: MenuItem[]; onClose: () => void }) {
   useEffect(() => {
@@ -23,8 +23,9 @@ export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; it
         ) : (
           <div
             key={i}
-            className={`item ${item.destructive ? 'destructive' : ''}`}
+            className={`item ${item.destructive ? 'destructive' : ''} ${item.disabled ? 'disabled' : ''}`}
             onClick={() => {
+              if (item.disabled) return
               onClose()
               item.action()
             }}

@@ -18,8 +18,10 @@ export function Sidebar({ snapshot, selection, onSelect }: Props) {
     setMenu({ x: e.clientX, y: e.clientY, items })
   }
 
+  const codexAvailable = Boolean(snapshot.toolPaths?.codex)
   const projectMenu = (project: Project): MenuItem[] => [
-    { label: 'New Claude Session', action: () => void window.sauron.launchClaude(project.id) },
+    { label: 'New Claude Session', action: () => void window.sauron.launchSession(project.id, 'claude') },
+    { label: 'New Codex Session', disabled: !codexAvailable, action: () => void window.sauron.launchSession(project.id, 'codex') },
     { separator: true },
     { label: 'Reveal in Finder', action: () => window.sauron.revealInFinder(project.path) },
     { separator: true },

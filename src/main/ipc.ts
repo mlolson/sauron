@@ -31,8 +31,8 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
   handle('removeProject', async (id) => state.removeProject(id))
   handle('resolveTools', () => state.refreshTools())
 
-  handle('launchClaude', async (projectId, prompt) => {
-    await state.launchClaude(projectId, prompt)
+  handle('launchSession', async (projectId, tool, prompt) => {
+    await state.launchSession(projectId, tool, prompt)
   })
   handle('stopSession', (id) => state.stopSession(id))
   handle('detachSession', async (id) => state.detachSession(id))

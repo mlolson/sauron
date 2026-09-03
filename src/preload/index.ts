@@ -18,7 +18,7 @@ const api: SauronApi = {
   removeProject: (id) => ipcRenderer.invoke('removeProject', id),
   resolveTools: () => ipcRenderer.invoke('resolveTools'),
 
-  launchClaude: (projectId, prompt) => ipcRenderer.invoke('launchClaude', projectId, prompt),
+  launchSession: (projectId, tool, prompt) => ipcRenderer.invoke('launchSession', projectId, tool, prompt),
   stopSession: (id) => ipcRenderer.invoke('stopSession', id),
   detachSession: (id) => ipcRenderer.invoke('detachSession', id),
   resumeSession: (id) => ipcRenderer.invoke('resumeSession', id),

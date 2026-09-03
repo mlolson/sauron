@@ -1,4 +1,5 @@
-import type { Project, SelectionTarget, Session } from '@shared/types'
+import { useState } from 'react'
+import type { Project, SelectionTarget, Session, ToolPaths } from '@shared/types'
 import { StateDot } from './StateDot'
 import { abbreviate } from './Sidebar'
 import { relativeTime } from '../time'
@@ -6,11 +7,20 @@ import { relativeTime } from '../time'
 interface Props {
   project: Project
   sessions: Session[]
+  toolPaths: ToolPaths | null
   onSelect: (t: SelectionTarget) => void
 }
 
-export function ProjectDetail({ project, sessions, onSelect }: Props) {
+export function ProjectDetail({ project, sessions, toolPaths, onSelect }: Props) {
+  const [prompt, setPrompt] = useState('')
   const mine = sessions.filter((s) => s.projectId === project.id)
+  const codexAvailable = Boolean(toolPaths?.codex)
+
+  const launch = (tool: 'claude' | 'codex') => {
+    void window.sauron.launchSession(project.id, tool, prompt.trim() || undefined)
+    setPrompt('')
+  }
+
   return (
     <div className="page">
       <header className="page-header">
@@ -23,12 +33,29 @@ export function ProjectDetail({ project, sessions, onSelect }: Props) {
             </button>
           </div>
         </div>
-        <div className="actions">
-          <button className="primary" onClick={() => void window.sauron.launchClaude(project.id)}>
-            New Claude
-          </button>
-        </div>
       </header>
+
+      <div className="launch-bar">
+        <input
+          type="text"
+          placeholder="Optional initial prompt for the new session…"
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) launch('claude')
+          }}
+        />
+        <button className="primary" onClick={() => launch('claude')}>
+          New Claude
+        </button>
+        <button
+          disabled={!codexAvailable}
+          title={codexAvailable ? 'Start a Codex session in this project' : 'codex was not found on PATH'}
+          onClick={() => launch('codex')}
+        >
+          New Codex
+        </button>
+      </div>
 
       <section className="card">
         <h2>Status</h2>
@@ -38,7 +65,7 @@ export function ProjectDetail({ project, sessions, onSelect }: Props) {
       <section className="card">
         <h2>Sessions</h2>
         {mine.length === 0 ? (
-          <p className="muted">No sessions yet. Use New Claude to start one.</p>
+          <p className="muted">No sessions yet. Use New Claude or New Codex to start one.</p>
         ) : (
           <ul className="session-list">
             {mine.map((s) => (

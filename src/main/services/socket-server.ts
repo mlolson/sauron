@@ -95,8 +95,9 @@ export class SocketServer {
       case 'sessions.launch': {
         const project = this.findProject(req.project)
         if (!project) throw new Error(`unknown project ${req.project}`)
-        if (req.tool !== undefined && req.tool !== 'claude') throw new Error(`unsupported tool ${req.tool}`)
-        const session = await state.launchClaude(project.id, typeof req.prompt === 'string' ? req.prompt : undefined)
+        const tool = req.tool ?? 'claude'
+        if (tool !== 'claude' && tool !== 'codex') throw new Error(`unsupported tool ${String(req.tool)}`)
+        const session = await state.launchSession(project.id, tool, typeof req.prompt === 'string' ? req.prompt : undefined)
         if (!session) throw new Error('launch failed')
         return { id: session.id, tmuxName: session.tmuxName }
       }

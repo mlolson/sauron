@@ -350,11 +350,11 @@ Done when
 ### Slice 3 — Launch Codex too (≈1 d)
 
 Tasks
-- [ ] S3.1 `CLIResolver` locates `codex`; missing Codex disables the button, not the app.
-- [ ] S3.2 `SessionManager.launchCodex(project:)` with `-C <dir>`; tool shown in sidebar.
-- [ ] S3.3 Resume with `codex resume <id>` once the id is known (see Slice 6 for id
+- [x] S3.1 `CLIResolver` locates `codex`; missing Codex disables the button, not the app.
+- [x] S3.2 `SessionManager.launchCodex(project:)` with `-C <dir>`; tool shown in sidebar.
+- [x] S3.3 Resume with `codex resume <id>` once the id is known (see Slice 6 for id
       discovery; until then resume is offered only when the id is recorded).
-- [ ] S3.4 Optional initial prompt field on the launch control for both tools.
+- [x] S3.4 Optional initial prompt field on the launch control for both tools.
 
 Done when
 - "New Codex" opens a working Codex terminal in the repo directory.

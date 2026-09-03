@@ -36,9 +36,19 @@ export function findExecutable(name: string, path: string): string | null {
   return null
 }
 
-export async function resolveTools(overrides: Partial<Record<'claude' | 'codex' | 'tmux' | 'git', string>> = {}): Promise<ToolPaths> {
+type ToolName = 'claude' | 'codex' | 'tmux' | 'git'
+
+/**
+ * Locates the tools. Precedence: explicit override, `SAURON_TOOL_<NAME>` environment variable
+ * (the value "none" forces "not found", handy for testing the setup screen), then PATH.
+ */
+export async function resolveTools(overrides: Partial<Record<ToolName, string>> = {}): Promise<ToolPaths> {
   const path = await loginShellPath()
-  const locate = (name: 'claude' | 'codex' | 'tmux' | 'git') => overrides[name] || findExecutable(name, path)
+  const locate = (name: ToolName): string | null => {
+    const override = overrides[name] || process.env[`SAURON_TOOL_${name.toUpperCase()}`]
+    if (override === 'none') return null
+    return override || findExecutable(name, path)
+  }
   const tools: ToolPaths = {
     claude: locate('claude'),
     codex: locate('codex'),

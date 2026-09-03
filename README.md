@@ -44,5 +44,8 @@ scripts/sauron resume --session <id>
 scripts/sauron select --project <name|id> | --session <id>
 ```
 
+Set `SAURON_TOOL_CLAUDE`, `SAURON_TOOL_CODEX`, `SAURON_TOOL_TMUX`, or `SAURON_TOOL_GIT` to override
+a tool's path; the value `none` simulates a missing tool.
+
 Every Sauron-managed session is a tmux session named `sauron-<project>-<id>`; `tmux attach -t <name>`
 works from any terminal.
