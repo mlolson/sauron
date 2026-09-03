@@ -299,17 +299,21 @@ export class AppState extends EventEmitter<StateEvents> {
     return count === 0 ? label : `${label} ${count + 1}`
   }
 
+  /** Agents run unattended inside Sauron, so they always start with permission prompts bypassed. */
+  private static readonly CLAUDE_BYPASS = ['--dangerously-skip-permissions']
+  private static readonly CODEX_BYPASS = ['--dangerously-bypass-approvals-and-sandbox']
+
   /** The command line that starts an agent inside a session's shell, or null for a plain shell. */
   private async agentCommand(tool: AgentTool, sessionId: string, prompt: string | undefined, tools: ToolPaths): Promise<string[] | null> {
     if (tool === 'claude') {
       if (!tools.claude) throw new SauronError('executable_not_found', 'claude was not found on PATH.')
-      const cmd = [tools.claude, '--session-id', sessionId, ...(await this.claudeSettingsArgs(sessionId))]
+      const cmd = [tools.claude, ...AppState.CLAUDE_BYPASS, '--session-id', sessionId, ...(await this.claudeSettingsArgs(sessionId))]
       if (prompt) cmd.push(prompt)
       return cmd
     }
     if (tool === 'codex') {
       if (!tools.codex) throw new SauronError('executable_not_found', 'codex was not found on PATH.')
-      const cmd = [tools.codex, ...(this.sauronBin ? ['-c', codexNotifyConfig(this.sauronBin)] : [])]
+      const cmd = [tools.codex, ...AppState.CODEX_BYPASS, ...(this.sauronBin ? ['-c', codexNotifyConfig(this.sauronBin)] : [])]
       if (prompt) cmd.push(prompt)
       return cmd
     }
@@ -422,10 +426,10 @@ export class AppState extends EventEmitter<StateEvents> {
       let command: string[] | null = null
       if (session.cliSessionId && session.tool === 'claude') {
         if (!tools.claude) throw new SauronError('executable_not_found', 'claude was not found on PATH.')
-        command = [tools.claude, '--resume', session.cliSessionId, ...(await this.claudeSettingsArgs(session.id))]
+        command = [tools.claude, ...AppState.CLAUDE_BYPASS, '--resume', session.cliSessionId, ...(await this.claudeSettingsArgs(session.id))]
       } else if (session.cliSessionId && session.tool === 'codex') {
         if (!tools.codex) throw new SauronError('executable_not_found', 'codex was not found on PATH.')
-        command = [tools.codex, ...(this.sauronBin ? ['-c', codexNotifyConfig(this.sauronBin)] : []), 'resume', session.cliSessionId]
+        command = [tools.codex, ...AppState.CODEX_BYPASS, ...(this.sauronBin ? ['-c', codexNotifyConfig(this.sauronBin)] : []), 'resume', session.cliSessionId]
       }
       const tmuxName = tmuxSessionName(session.displayName, session.id)
       const shell = process.env.SHELL || '/bin/zsh'
@@ -796,8 +800,8 @@ export class AppState extends EventEmitter<StateEvents> {
       const tryStart = async (cliSessionId: string, resume: boolean): Promise<string> => {
         const tmuxName = tmuxSessionName('supervisor', randomUUID())
         const command = resume
-          ? [tools.claude!, '--resume', cliSessionId, ...settings, ...addDirs]
-          : [tools.claude!, '--session-id', cliSessionId, ...settings, ...addDirs]
+          ? [tools.claude!, ...AppState.CLAUDE_BYPASS, '--resume', cliSessionId, ...settings, ...addDirs]
+          : [tools.claude!, ...AppState.CLAUDE_BYPASS, '--session-id', cliSessionId, ...settings, ...addDirs]
         await tmux.newSession({ name: tmuxName, workingDir: this.masterHome.dir, environment: this.launchEnvironment(MASTER_SESSION_ID, tools), command })
         return tmuxName
       }

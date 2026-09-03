@@ -102,6 +102,10 @@ for user input (see 4.6).
 
 ### 4.2 Sauron-managed sessions
 
+**SES-0 (Must)** Claude and Codex are always started with permission prompts bypassed
+(`--dangerously-skip-permissions`, `--dangerously-bypass-approvals-and-sandbox`), including
+resumes and the supervisor agent. Sauron is a personal tool on the user's own machine.
+
 **SES-1 (Must)** From a project, the user can start a new terminal with one click: a tmux
 session running the login shell in the project directory (or a worktree, see 4.3). A dropdown
 on the same button offers "running Claude" and "running Codex", which type the agent command
