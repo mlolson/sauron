@@ -1,0 +1,3 @@
+#!/bin/sh
+# Development shim for the `sauron` CLI. Runs the built CLI with the system Node.
+exec node "$(dirname "$0")/../out/main/cli.js" "$@"

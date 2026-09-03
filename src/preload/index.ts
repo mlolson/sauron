@@ -1,0 +1,40 @@
+import { contextBridge, ipcRenderer } from 'electron'
+import type { AppError, SauronApi, SelectionTarget, Snapshot } from '@shared/types'
+
+function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
+  const listener = (_event: Electron.IpcRendererEvent, payload: T) => cb(payload)
+  ipcRenderer.on(channel, listener)
+  return () => ipcRenderer.removeListener(channel, listener)
+}
+
+const api: SauronApi = {
+  getSnapshot: () => ipcRenderer.invoke('getSnapshot'),
+  onSnapshot: (cb) => subscribe<Snapshot>('snapshot', cb),
+  onError: (cb) => subscribe<AppError>('error', cb),
+  onSelect: (cb) => subscribe<SelectionTarget>('select', cb),
+
+  addProjectDialog: () => ipcRenderer.invoke('addProjectDialog'),
+  addProjects: (paths) => ipcRenderer.invoke('addProjects', paths),
+  removeProject: (id) => ipcRenderer.invoke('removeProject', id),
+  resolveTools: () => ipcRenderer.invoke('resolveTools'),
+
+  launchClaude: (projectId, prompt) => ipcRenderer.invoke('launchClaude', projectId, prompt),
+  stopSession: (id) => ipcRenderer.invoke('stopSession', id),
+  detachSession: (id) => ipcRenderer.invoke('detachSession', id),
+  resumeSession: (id) => ipcRenderer.invoke('resumeSession', id),
+  forgetSession: (id) => ipcRenderer.invoke('forgetSession', id),
+  adoptOrphan: (name) => ipcRenderer.invoke('adoptOrphan', name),
+  killOrphan: (name) => ipcRenderer.invoke('killOrphan', name),
+
+  ptyOpen: (sessionId, cols, rows) => ipcRenderer.invoke('ptyOpen', sessionId, cols, rows),
+  ptyClose: (sessionId) => ipcRenderer.invoke('ptyClose', sessionId),
+  ptyInput: (sessionId, data) => ipcRenderer.send('ptyInput', sessionId, data),
+  ptyResize: (sessionId, cols, rows) => ipcRenderer.send('ptyResize', sessionId, cols, rows),
+  onPtyData: (sessionId, cb) => subscribe<string>(`pty:data:${sessionId}`, cb),
+  onPtyExit: (sessionId, cb) => subscribe<void>(`pty:exit:${sessionId}`, () => cb()),
+
+  revealInFinder: (path) => ipcRenderer.send('revealInFinder', path),
+  copyToClipboard: (text) => ipcRenderer.send('copyToClipboard', text),
+}
+
+contextBridge.exposeInMainWorld('sauron', api)

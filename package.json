@@ -1,0 +1,83 @@
+{
+  "name": "sauron",
+  "version": "0.1.0",
+  "description": "Oversee Claude Code and Codex sessions across your projects",
+  "main": "./out/main/index.js",
+  "author": "Matt Olson",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "start": "electron-vite build && electron .",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "package": "electron-vite build && electron-builder --mac --dir",
+    "postinstall": "electron-rebuild -f -w node-pty"
+  },
+  "build": {
+    "appId": "com.mattolson.sauron",
+    "productName": "Sauron",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/node-pty/**"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "identity": null,
+      "target": [
+        "dir"
+      ],
+      "minimumSystemVersion": "15.0",
+      "extendInfo": {
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "Folder",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "None",
+            "LSItemContentTypes": [
+              "public.folder"
+            ]
+          }
+        ],
+        "NSSupportsAutomaticTermination": false,
+        "NSSupportsSuddenTermination": false
+      }
+    },
+    "protocols": [
+      {
+        "name": "Sauron",
+        "schemes": [
+          "sauron"
+        ]
+      }
+    ]
+  },
+  "dependencies": {
+    "@electron/rebuild": "^4.2.0",
+    "@types/node": "^26.4.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.1",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "electron": "^44.1.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "node-pty": "^1.1.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  }
+}

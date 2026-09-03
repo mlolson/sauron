@@ -291,17 +291,17 @@ slice requires, and extended later.
 The thinnest possible app: a window, a project list, and persistence.
 
 Tasks
-- [ ] S1.1 electron-vite scaffold: main, preload, renderer (React), TypeScript strict,
+- [x] S1.1 electron-vite scaffold: main, preload, renderer (React), TypeScript strict,
       Vitest, `pnpm dev` and `pnpm build`; unsigned `.app` via electron-builder.
-- [ ] S1.2 Shared types (`Project`, `AppConfig`) and typed IPC contract in `src/shared`.
-- [ ] S1.3 `Persistence`: atomic, debounced `config.json` in userData with `version`;
+- [x] S1.2 Shared types (`Project`, `AppConfig`) and typed IPC contract in `src/shared`.
+- [x] S1.3 `Persistence`: atomic, debounced `config.json` in userData with `version`;
       directory layout created on first run.
-- [ ] S1.4 `runCommand` wrapper (stdout, stderr, exit code, typed error).
-- [ ] S1.5 Main-process `AppState` with snapshot broadcast; renderer shell with sidebar and
+- [x] S1.4 `runCommand` wrapper (stdout, stderr, exit code, typed error).
+- [x] S1.5 Main-process `AppState` with snapshot broadcast; renderer shell with sidebar and
       empty detail pane.
-- [ ] S1.6 Add project via native open dialog, drag-and-drop, and `open -a Sauron <dir>`
+- [x] S1.6 Add project via native open dialog, drag-and-drop, and `open -a Sauron <dir>`
       (`open-file` event); validate with `git rev-parse --show-toplevel`; reject non-repos.
-- [ ] S1.7 Remove project with confirmation; project detail showing name and path.
+- [x] S1.7 Remove project with confirmation; project detail showing name and path.
 
 Done when
 - Dragging a git repo folder onto the window adds a row; dragging a non-git folder shows
@@ -317,22 +317,22 @@ Done when
 Everything needed to start one agent and type into it. Claude only; Codex is a later slice.
 
 Tasks
-- [ ] S2.1 `CLIResolver`: login-shell PATH resolution; locate `claude`, `tmux`, `git`;
+- [x] S2.1 `CLIResolver`: login-shell PATH resolution; locate `claude`, `tmux`, `git`;
       `SetupView` shown when any is missing.
-- [ ] S2.2 `Session` model and `sessions.json` persistence.
-- [ ] S2.3 `TmuxService`: new-session, has-session, list-sessions, kill-session,
+- [x] S2.2 `Session` model and `sessions.json` persistence.
+- [x] S2.3 `TmuxService`: new-session, has-session, list-sessions, kill-session,
       send-keys, set-option; argument builders unit-tested.
-- [ ] S2.4 `SessionManager.launchClaude(project:)`: generate session id, build the command
+- [x] S2.4 `SessionManager.launchClaude(project:)`: generate session id, build the command
       with `--session-id` and `--name`, create the tmux session with Sauron options.
-- [ ] S2.5 `PtyService` (node-pty) spawning `tmux attach`; IPC data/input/resize channels;
+- [x] S2.5 `PtyService` (node-pty) spawning `tmux attach`; IPC data/input/resize channels;
       xterm.js `SessionTerminal` with FitAddon, instances cached per session so tab switches
       do not re-attach.
-- [ ] S2.6 Session tabs in the detail pane; sidebar rows nested under the project with a
+- [x] S2.6 Session tabs in the detail pane; sidebar rows nested under the project with a
       tool icon; "New Claude" button.
-- [ ] S2.7 Stop (interrupt, grace period, kill) and Detach actions.
-- [ ] S2.8 Startup reconciliation: match `sessions.json` to live `sauron-*` tmux sessions,
+- [x] S2.7 Stop (interrupt, grace period, kill) and Detach actions.
+- [x] S2.8 Startup reconciliation: match `sessions.json` to live `sauron-*` tmux sessions,
       mark missing ones stopped, list orphaned tmux sessions with attach and kill.
-- [ ] S2.9 Resume a stopped session with `claude --resume <id>`.
+- [x] S2.9 Resume a stopped session with `claude --resume <id>`.
 
 Done when
 - Clicking "New Claude" on a project opens a terminal tab with Claude Code running in the
