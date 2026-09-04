@@ -111,9 +111,15 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
           const enabled = snapshot.preferences.supervisorEnabled
           const running = Boolean(master && isAlive(master))
           // The old menu offered Rename/Fork/Close, none of which the supervisor supports.
+          // Summaries after a commit are the only refresh Sauron starts on its own; asking for
+          // one by hand still works while paused.
+          const summaries = snapshot.preferences.supervisorProjectSummaryAfterCommit
           const menu: MenuItem[] = enabled
             ? [
                 { label: 'Restart', action: () => void window.sauron.restartMaster() },
+                summaries
+                  ? { label: 'Pause summaries', action: () => void window.sauron.setPreferences({ supervisorProjectSummaryAfterCommit: false }) }
+                  : { label: 'Resume summaries', action: () => void window.sauron.setPreferences({ supervisorProjectSummaryAfterCommit: true }) },
                 {
                   label: 'Disable',
                   destructive: true,
@@ -136,7 +142,10 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
               </span>
               <span className={`label ${enabled ? '' : 'muted'}`}>
                 <span className="name">Supervisor Agent</span>
-                <span className="sub">{!enabled ? 'disabled' : running ? (snapshot.refresh.inProgress ? 'refreshing a summary' : 'ready') : 'not running'}</span>
+                <span className="sub">
+                  {!enabled ? 'disabled' : running ? (snapshot.refresh.inProgress ? 'refreshing a summary' : 'ready') : 'not running'}
+                  {enabled && !summaries && ' · summaries paused'}
+                </span>
               </span>
               {enabled && master && <StateDot state={master.state} />}
             </Row>
