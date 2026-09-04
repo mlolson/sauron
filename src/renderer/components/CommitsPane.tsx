@@ -15,6 +15,7 @@ export function CommitsPane({ session, projectId, onClose }: { session: Session;
   const [scope, setScope] = useState<Scope>('session')
   // '' means every branch, which is what git log --all walks.
   const [branch, setBranch] = useState('')
+  const [branchDraft, setBranchDraft] = useState('')
   const [branches, setBranches] = useState<string[]>([])
   const [commits, setCommits] = useState<RecentCommit[] | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
@@ -64,6 +65,12 @@ export function CommitsPane({ session, projectId, onClose }: { session: Session;
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  /** Typing narrows the datalist; the list reloads only once the text names a real branch. */
+  const applyBranch = (value: string) => {
+    setBranchDraft(value)
+    if (value === '' || branches.includes(value)) setBranch(value)
+  }
+
   const current = commits?.find((c) => c.hash === selected)
 
   return (
@@ -82,19 +89,33 @@ export function CommitsPane({ session, projectId, onClose }: { session: Session;
           <span className="subtitle">{scope === 'session' ? session.displayName : 'Everything in this project, newest first'}</span>
         </div>
         <div className="actions">
-          <select
-            className="branch-filter"
-            title="Show only commits on this branch"
-            value={branch}
-            onChange={(e) => setBranch(e.target.value)}
-          >
-            <option value="">All branches</option>
-            {branches.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          <span className="branch-filter-wrap">
+            <input
+              className="branch-filter"
+              list="commit-branch-list"
+              placeholder="All branches"
+              title="Type to filter; pick a branch to show only its commits"
+              value={branchDraft}
+              onChange={(e) => applyBranch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return
+                // Enter accepts the only branch the text could mean, so a filter can be set
+                // without typing a long name in full.
+                const matches = branches.filter((name) => name.toLowerCase().startsWith(branchDraft.toLowerCase()))
+                if (matches.length === 1) applyBranch(matches[0]!)
+              }}
+            />
+            <datalist id="commit-branch-list">
+              {branches.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
+            {branchDraft && (
+              <button className="link branch-clear" title="Show every branch" onClick={() => applyBranch('')}>
+                ×
+              </button>
+            )}
+          </span>
           {current && <CopyHashButton hash={current.hash} label="Copy commit hash" />}
           <button title="Back to the session (Esc)" onClick={onClose}>
             Close
