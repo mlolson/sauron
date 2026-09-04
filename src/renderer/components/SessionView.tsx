@@ -17,6 +17,7 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
   const siblings = snapshot.sessions.filter((s) => s.projectId === session.projectId && s.kind === 'managed' && (isAlive(s) || s.id === session.id))
   const alive = isAlive(session)
   const external = session.kind === 'external'
+  const forkable = Boolean(snapshot.preferences.agents.find((agent) => agent.id === session.tool)?.forkCommand?.length && session.cliSessionId)
   const [view, setView] = useState<'terminal' | 'transcript'>(external ? 'transcript' : 'terminal')
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(session.displayName)
@@ -106,6 +107,11 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
               }}
             >
               Close
+            </button>
+          )}
+          {external && forkable && (
+            <button title="Start a managed session continuing a copy of this conversation. The original keeps running in your terminal." onClick={() => void window.sauron.forkSession(session.id)}>
+              Fork to Sauron
             </button>
           )}
           {external && (

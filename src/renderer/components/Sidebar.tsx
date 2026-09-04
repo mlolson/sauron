@@ -57,7 +57,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
   const sessionMenu = (session: Session): MenuItem[] => {
     const profile = snapshot.preferences.agents.find((agent) => agent.id === session.tool)
     const forkable = Boolean(profile?.forkCommand?.length && session.cliSessionId)
-    const fork: MenuItem[] = forkable ? [{ label: 'Fork', action: () => void window.sauron.forkSession(session.id) }] : []
+    const fork: MenuItem[] = forkable ? [{ label: session.kind === 'external' ? 'Fork to Sauron' : 'Fork', action: () => void window.sauron.forkSession(session.id) }] : []
     const handoff = handoffItems(snapshot.preferences.agents, snapshot.toolPaths?.agents ?? {}, session)
     if (session.kind === 'external') return [...fork, ...handoff, { label: 'Hide', action: () => void window.sauron.hideSession(session.id) }]
     if (isAlive(session)) {
@@ -211,7 +211,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                     }}
                   >
                     <span className="glyph">{externalOpen ? '▾' : '▸'}</span>
-                    <span className="label muted"><span className="name">External</span></span>
+                    <span className="label muted"><span className="name">External sessions</span></span>
                     <span className="badge">{externals.length + olderExternal}</span>
                   </div>
                   {externalOpen && externals.map((session) => (
