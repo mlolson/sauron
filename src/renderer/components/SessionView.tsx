@@ -3,7 +3,6 @@ import type { SelectionTarget, Session, Snapshot } from '@shared/types'
 import { isAlive } from '@shared/types'
 import { SessionTerminal } from './SessionTerminal'
 import { TranscriptView } from './TranscriptView'
-import { StateDot } from './StateDot'
 import { ToolIcon } from './ToolIcon'
 import { importExternalSession } from './Sidebar'
 
@@ -15,7 +14,11 @@ interface Props {
 
 export function SessionView({ session, snapshot, onSelect }: Props) {
   const project = session.projectId ? snapshot.projects.find((p) => p.id === session.projectId) : undefined
-  const siblings = snapshot.sessions.filter((s) => s.projectId === session.projectId && s.kind === 'managed' && (isAlive(s) || s.id === session.id))
+  // Where this session actually runs, and the checkout that directory belongs to.
+  const cwd = session.worktreePath ?? session.workingDir
+  const worktree = session.projectId ? snapshot.worktrees[session.projectId]?.find((w) => w.path === cwd) : undefined
+  const branch = worktree?.branch ?? null
+  const worktreeLabel = worktree?.isMain ? 'main checkout' : cwd.split('/').pop() ?? cwd
   const alive = isAlive(session)
   const external = session.kind === 'external'
   const forkable = Boolean(snapshot.preferences.agents.find((agent) => agent.id === session.tool)?.forkCommand?.length && session.cliSessionId)
@@ -66,22 +69,26 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
             </span>
           )}
           <span className="subtitle">
-            {project?.name ?? 'Unassigned'}
+            {project ? (
+              <button className="link" onClick={() => onSelect({ kind: 'project', id: project.id })}>
+                {project.name}
+              </button>
+            ) : (
+              'Unassigned'
+            )}
             {external && ' · external'}
           </span>
         </div>
-        {!external && (
-          <div className="tabs">
-            {siblings.map((s) => (
-              <button key={s.id} className={`tab ${s.id === session.id ? 'active' : ''}`} onClick={() => onSelect({ kind: 'session', id: s.id })}>
-                <StateDot state={s.state} />
-                <ToolIcon tool={s.tool} />
-                {s.displayName}
-              </button>
-            ))}
-          </div>
-        )}
-        {external && <div className="tabs" />}
+        <div className="session-meta">
+          <span className="chip" title={branch ? `Branch ${branch}` : 'This checkout is not on a branch'}>
+            <span className="k">branch</span>
+            <span className="v">{branch ?? 'detached'}</span>
+          </span>
+          <span className="chip" title={cwd}>
+            <span className="k">worktree</span>
+            <span className="v">{worktreeLabel}</span>
+          </span>
+        </div>
         <div className="actions">
           {!external && alive && session.transcriptPath && (
             <div className="segmented">
