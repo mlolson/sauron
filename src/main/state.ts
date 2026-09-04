@@ -362,14 +362,26 @@ export class AppState extends EventEmitter<StateEvents> {
     })
   }
 
-  recordCommit(sessionId: string, cwd: string, hash: string): void {
+  async recordCommit(sessionId: string, cwd: string, hash: string): Promise<void> {
     if (!/^[0-9a-f]{40}$/i.test(hash) || !this.session(sessionId)) return
-    const worktreePaths = Object.fromEntries(Object.entries(this.worktrees).map(([id, worktrees]) => [id, worktrees.map((worktree) => worktree.path)]))
-    const projectId = projectForCwd(cwd, this.projects, worktreePaths)
-    if (!projectId) return
+    let projectId = this.projectForDirectory(cwd)
+    if (!projectId) {
+      // A miss is the signal that the worktree list may be stale: an agent's very first commit
+      // in a worktree made outside Sauron arrives before that worktree has been seen. Refresh
+      // once and look again, so the commit is recorded rather than silently dropped.
+      await Promise.all(this.projects.map((project) => this.refreshWorktrees(project.id, false)))
+      projectId = this.projectForDirectory(cwd)
+      if (!projectId) return
+    }
     this.attributionStore.set(projectId, hash, sessionId)
     this.maybeCommitSummaryRefresh(projectId)
     this.changed()
+  }
+
+  /** The project owning a directory, whether it is the checkout or one of its worktrees. */
+  private projectForDirectory(cwd: string): string | null {
+    const worktreePaths = Object.fromEntries(Object.entries(this.worktrees).map(([id, worktrees]) => [id, worktrees.map((worktree) => worktree.path)]))
+    return projectForCwd(cwd, this.projects, worktreePaths)
   }
 
   /** The latest commit each session in this project made, for the session list. */
