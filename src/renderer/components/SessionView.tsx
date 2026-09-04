@@ -5,6 +5,7 @@ import { SessionTerminal } from './SessionTerminal'
 import { TranscriptView } from './TranscriptView'
 import { StateDot } from './StateDot'
 import { ToolIcon } from './ToolIcon'
+import { importExternalSession } from './Sidebar'
 
 interface Props {
   session: Session
@@ -110,8 +111,8 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
             </button>
           )}
           {external && forkable && (
-            <button title="Start a managed session continuing a copy of this conversation. The original keeps running in your terminal." onClick={() => void window.sauron.forkSession(session.id)}>
-              Fork to Sauron
+            <button title="Bring this session under Sauron: a managed session continues a copy of the conversation. The original keeps running in your terminal." onClick={() => void importExternalSession(session)}>
+              Import to Sauron
             </button>
           )}
           {external && (

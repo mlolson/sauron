@@ -727,7 +727,7 @@ export class AppState extends EventEmitter<StateEvents> {
         ? await this.claudeSettingsArgs(newId)
         : source.tool === 'codex' && this.sauronBin ? ['-c', codexNotifyConfig(this.sauronBin)] : []
       const command = [executable, ...integrationArgs, ...profileArgs, ...forkArgs]
-      const title = `${source.displayName} (fork)`
+      const title = source.kind === 'external' ? source.displayName : `${source.displayName} (fork)`
       const tmuxName = tmuxSessionName(title, newId)
       const shell = process.env.SHELL || '/bin/zsh'
       await tmux.newSession({ name: tmuxName, workingDir: cwd, environment: this.launchEnvironment(newId, tools), command: [shell, '-l'] })

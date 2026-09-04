@@ -57,7 +57,9 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
   const sessionMenu = (session: Session): MenuItem[] => {
     const profile = snapshot.preferences.agents.find((agent) => agent.id === session.tool)
     const forkable = Boolean(profile?.forkCommand?.length && session.cliSessionId)
-    const fork: MenuItem[] = forkable ? [{ label: session.kind === 'external' ? 'Fork to Sauron' : 'Fork', action: () => void window.sauron.forkSession(session.id) }] : []
+    const fork: MenuItem[] = forkable
+      ? [session.kind === 'external' ? { label: 'Import to Sauron', action: () => void importExternalSession(session) } : { label: 'Fork', action: () => void window.sauron.forkSession(session.id) }]
+      : []
     const handoff = handoffItems(snapshot.preferences.agents, snapshot.toolPaths?.agents ?? {}, session)
     if (session.kind === 'external') return [...fork, ...handoff, { label: 'Hide', action: () => void window.sauron.hideSession(session.id) }]
     if (isAlive(session)) {
@@ -311,6 +313,21 @@ function Row({
     <div className={`row ${selected ? 'selected' : ''} ${nested ? 'nested' : ''} ${deep ? 'deep' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
       {children}
     </div>
+  )
+}
+
+/**
+ * Brings an external session under Sauron by forking it, then says what that means: the new
+ * session is a copy, the original is untouched, and the two will drift apart from here.
+ */
+export async function importExternalSession(session: Session): Promise<void> {
+  const created = await window.sauron.forkSession(session.id)
+  if (!created) return
+  alert(
+    `${created.displayName} has been imported into Sauron.\n\n` +
+    'A managed session is now continuing a copy of the conversation, with Sauron\'s hooks and commit attribution. ' +
+    'The original session was not changed and is still running in your terminal; from here the two conversations are independent.\n\n' +
+    'You can hide the original from the External sessions group when you no longer need it.',
   )
 }
 

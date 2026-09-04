@@ -37,7 +37,7 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
   })
   handle('renameSession', (id, title) => state.renameSession(id, title))
   handle('forkSession', async (id) => {
-    await state.forkSession(id)
+    return state.forkSession(id)
   })
   handle('refreshWorktrees', (projectId) => state.refreshWorktrees(projectId))
   handle('recentCommits', (projectId) => state.recentCommits(projectId))

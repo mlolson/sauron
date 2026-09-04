@@ -237,7 +237,8 @@ export interface SauronApi {
   launchSession(projectId: string, tool: AgentTool, options?: LaunchOptions): Promise<void>
   renameSession(id: string, title: string): Promise<void>
   /** Claude/Codex only: new terminal continuing a copy of the conversation as a new session. */
-  forkSession(id: string): Promise<void>
+  /** Resolves to the new session, or null when the fork failed (the error is reported as a banner). */
+  forkSession(id: string): Promise<Session | null>
   refreshWorktrees(projectId: string): Promise<void>
   recentCommits(projectId: string): Promise<RecentCommit[]>
   commitDiff(projectId: string, hash: string): Promise<string>
