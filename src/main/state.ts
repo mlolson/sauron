@@ -26,10 +26,11 @@ import { CONFIG_VERSION, SESSIONS_VERSION, SauronError, isAlive } from '@shared/
 import { tmuxSessionName, shellCommandLine, TMUX_OPTION_PROJECT, TMUX_OPTION_SESSION, TMUX_OPTION_TITLE, TMUX_OPTION_TOOL } from '@shared/tmux-args'
 import { claudeTranscriptPath } from '@shared/transcripts'
 import { Persistence } from './services/persistence'
-import { gitToplevel } from './services/git'
+import { gitCommitDiff, gitToplevel, recentGitCommits } from './services/git'
 import { resolveTools, sessionEnvironment } from './services/cli-resolver'
 import { TmuxService } from './services/tmux'
 import { PtyService } from './services/pty'
+import { AttributionStore } from './services/attribution-store'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -68,6 +69,7 @@ export class AppState extends EventEmitter<StateEvents> {
   private gitWatchers = new Map<string, GitWatcher>()
   readonly masterHome: MasterHome
   readonly refresh: RefreshScheduler
+  readonly attributionStore: AttributionStore
 
   tmux: TmuxService | null = null
   pty: PtyService | null = null
@@ -81,6 +83,7 @@ export class AppState extends EventEmitter<StateEvents> {
       this.changed()
     })
     this.masterHome = new MasterHome(persistence.paths.masterDir, persistence.paths.statusDir)
+    this.attributionStore = new AttributionStore(persistence.paths.attributionDatabase)
     this.refresh = new RefreshScheduler({
       isMasterIdle: () => this.masterSession()?.state === 'idle',
       send: (projectId) => this.sendRefreshPrompt(projectId),
@@ -131,6 +134,8 @@ export class AppState extends EventEmitter<StateEvents> {
 
   async load(): Promise<void> {
     try {
+      await this.persistence.paths.createLayout()
+      this.attributionStore.open()
       const config = await this.persistence.loadConfig()
       this.projects = config.projects
       this.preferences = { ...defaultPreferences, ...config.preferences, toolOverrides: { ...defaultPreferences.toolOverrides, ...config.preferences?.toolOverrides } }
@@ -208,6 +213,32 @@ export class AppState extends EventEmitter<StateEvents> {
 
   project(id: string): Project | undefined {
     return this.projects.find((p) => p.id === id)
+  }
+
+  async recentCommits(projectId: string) {
+    const project = this.project(projectId)
+    if (!project || !this.toolPaths?.git) return []
+    const commits = await recentGitCommits(this.toolPaths.git, project.path, 20)
+    return commits.map((commit) => {
+      const sessionId = this.attributionStore.get(projectId, commit.hash)
+      const session = sessionId ? this.session(sessionId) : undefined
+      return { ...commit, sessionId, sessionName: session?.displayName ?? null, agentTool: session?.tool ?? null }
+    })
+  }
+
+  recordCommit(sessionId: string, cwd: string, hash: string): void {
+    if (!/^[0-9a-f]{40}$/i.test(hash) || !this.session(sessionId)) return
+    const worktreePaths = Object.fromEntries(Object.entries(this.worktrees).map(([id, worktrees]) => [id, worktrees.map((worktree) => worktree.path)]))
+    const projectId = projectForCwd(cwd, this.projects, worktreePaths)
+    if (!projectId) return
+    this.attributionStore.set(projectId, hash, sessionId)
+    this.changed()
+  }
+
+  async commitDiff(projectId: string, hash: string): Promise<string> {
+    const project = this.project(projectId)
+    if (!project || !this.toolPaths?.git) throw new SauronError('invalid_state', 'Project or git is unavailable.')
+    return gitCommitDiff(this.toolPaths.git, project.path, hash)
   }
 
   session(id: string): Session | undefined {
@@ -299,11 +330,12 @@ export class AppState extends EventEmitter<StateEvents> {
 
   private launchEnvironment(sessionId: string, tools: ToolPaths): Record<string, string> {
     return {
-      PATH: tools.path,
+      PATH: `${this.paths.binDir}:${tools.path}`,
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
       SAURON_SESSION_ID: sessionId,
       SAURON_SOCKET: this.paths.socketFile,
+      SAURON_REAL_GIT: tools.git ?? 'git',
     }
   }
 
@@ -1138,6 +1170,7 @@ export class AppState extends EventEmitter<StateEvents> {
     for (const w of this.gitWatchers.values()) w.stop()
     for (const id of [...this.tailers.keys()]) this.transcriptClose(id)
     this.pty?.closeAll()
+    this.attributionStore.close()
     await this.persistence.flush()
   }
 }

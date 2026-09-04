@@ -106,6 +106,11 @@ export class SocketServer {
           .filter((s) => !project || s.projectId === project.id)
           .map(({ id, projectId, tool, kind, displayName, tmuxName, state: st, workingDir }) => ({ id, projectId, tool, kind, displayName, tmuxName, state: st, workingDir }))
       }
+      case 'commits.record': {
+        if (typeof req.session !== 'string' || typeof req.cwd !== 'string' || typeof req.hash !== 'string') throw new Error('session, cwd, and hash are required')
+        state.recordCommit(req.session, req.cwd, req.hash)
+        return null
+      }
       case 'sessions.launch': {
         const project = this.findProject(req.project)
         if (!project) throw new Error(`unknown project ${req.project}`)
