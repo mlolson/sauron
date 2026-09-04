@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { overrideKeySequence } from '@shared/terminal-keys'
 
 interface Entry {
   term: Terminal
@@ -34,6 +35,16 @@ function getOrCreate(sessionId: string, fontSize: number, scrollback: number): E
   })
   const fit = new FitAddon()
   term.loadAddon(fit)
+
+  term.attachCustomKeyEventHandler((event) => {
+    const sequence = overrideKeySequence(event)
+    if (sequence === null) return true
+    // Handled here, so xterm must not also encode the key, and the helper textarea must not
+    // swallow it as ordinary text input.
+    event.preventDefault()
+    window.sauron.ptyInput(sessionId, sequence)
+    return false
+  })
 
   const offData = window.sauron.onPtyData(sessionId, (data) => term.write(data))
   const offExit = window.sauron.onPtyExit(sessionId, () => {
