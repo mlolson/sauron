@@ -52,15 +52,20 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
   handle('adoptOrphan', async (name) => state.adoptOrphan(name))
   handle('killOrphan', (name) => state.killOrphan(name))
 
+  // Looked up per send, not captured at open: a pty outlives the window it was opened for
+  // whenever the window closes first, and sending to a destroyed window throws.
+  const sendToWindow = (channel: string, ...args: unknown[]) => {
+    const win = getWindow()
+    if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
+  }
   handle('ptyOpen', async (sessionId, cols, rows) => {
     const session = state.session(sessionId)
     const pty = state.pty
     if (!session?.tmuxName || !pty) return
-    const win = getWindow()
     pty.open(sessionId, session.tmuxName, session.worktreePath ?? session.workingDir, cols, rows, {
-      onData: (data) => win?.webContents.send(`pty:data:${sessionId}`, data),
+      onData: (data) => sendToWindow(`pty:data:${sessionId}`, data),
       onExit: () => {
-        win?.webContents.send(`pty:exit:${sessionId}`)
+        sendToWindow(`pty:exit:${sessionId}`)
         void state.checkLiveness()
       },
     })

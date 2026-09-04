@@ -55,6 +55,9 @@ function createWindow(): BrowserWindow {
   })
   win.on('closed', () => {
     mainWindow = null
+    // The app keeps running without a window; the attached tmux clients would otherwise
+    // stream into a renderer that no longer exists.
+    state.pty?.closeAll()
   })
   return win
 }

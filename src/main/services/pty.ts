@@ -8,7 +8,7 @@ export interface PtyHandlers {
 
 /** One `tmux attach` client per open terminal tab. Closing kills only the client. */
 export class PtyService {
-  private ptys = new Map<string, pty.IPty>()
+  private ptys = new Map<string, { proc: pty.IPty; listeners: pty.IDisposable[] }>()
 
   constructor(private readonly tmuxPath: string, private readonly environment: Record<string, string>) {}
 
@@ -25,28 +25,33 @@ export class PtyService {
       cwd,
       env: this.environment,
     })
-    this.ptys.set(sessionId, proc)
-    proc.onData(handlers.onData)
-    proc.onExit(() => {
-      this.ptys.delete(sessionId)
-      handlers.onExit()
-    })
+    const listeners = [
+      proc.onData(handlers.onData),
+      proc.onExit(() => {
+        this.ptys.delete(sessionId)
+        handlers.onExit()
+      }),
+    ]
+    this.ptys.set(sessionId, { proc, listeners })
   }
 
   write(sessionId: string, data: string): void {
-    this.ptys.get(sessionId)?.write(data)
+    this.ptys.get(sessionId)?.proc.write(data)
   }
 
   resize(sessionId: string, cols: number, rows: number): void {
     if (cols < 2 || rows < 2) return
-    this.ptys.get(sessionId)?.resize(cols, rows)
+    this.ptys.get(sessionId)?.proc.resize(cols, rows)
   }
 
   close(sessionId: string): void {
-    const proc = this.ptys.get(sessionId)
-    if (!proc) return
+    const entry = this.ptys.get(sessionId)
+    if (!entry) return
     this.ptys.delete(sessionId)
-    proc.kill()
+    // Killing tmux's client makes it print a detach message, and node-pty flushes whatever is
+    // buffered; with the listeners gone that output has nowhere to go and nothing to throw at.
+    for (const listener of entry.listeners) listener.dispose()
+    entry.proc.kill()
   }
 
   closeAll(): void {
