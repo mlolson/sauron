@@ -50,18 +50,31 @@ describe('branch filtering', () => {
   })
 })
 
-describe('branch names on commits', () => {
-  it('labels commits from both listing paths', async () => {
+describe('branch labels on commits', () => {
+  it('labels only the commits a branch actually points at', async () => {
     const dir = await repo()
     const { commitsByHash } = await import('../src/main/services/git')
     const all = await recentGitCommits(GIT, dir, 20)
     expect(all.find((c) => c.title === 'on feature')?.branch).toBe('feature')
     expect(all.find((c) => c.title === 'on main')?.branch).toBe('main')
+    // 'base' is an ancestor of both branches, so no single branch owns it. Labelling it with
+    // either one is the bug this replaced: git name-rev would have picked one arbitrarily.
+    expect(all.find((c) => c.title === 'base')?.branch).toBe('')
 
-    // The by-hash path feeds the session list and must label them too.
+    // The by-hash path feeds the session list and must label them the same way.
     const byHash = await commitsByHash(GIT, dir, all.map((c) => c.hash))
     expect(byHash.find((c) => c.title === 'on feature')?.branch).toBe('feature')
-    expect(byHash.find((c) => c.title === 'on main')?.branch).toBe('main')
+    expect(byHash.find((c) => c.title === 'base')?.branch).toBe('')
     expect(await commitsByHash(GIT, dir, [])).toEqual([])
+  })
+
+  it('lists every branch pointing at one commit, and ignores tags', async () => {
+    const dir = await repo()
+    const git = (...a: string[]) => execFileSync(GIT, ['-C', dir, ...a], { encoding: 'utf8' })
+    git('branch', 'also-here', 'main')
+    git('tag', 'v1', 'main')
+    const head = (await recentGitCommits(GIT, dir, 20, 'main'))[0]!
+    expect(head.branch.split(', ').sort()).toEqual(['also-here', 'main'])
+    expect(head.branch).not.toContain('v1')
   })
 })

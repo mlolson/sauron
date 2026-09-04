@@ -15,6 +15,7 @@ export function CommitsPane({ session, projectId, onClose }: { session: Session;
   const [scope, setScope] = useState<Scope>('session')
   // '' means every branch, which is what git log --all walks.
   const [branch, setBranch] = useState('')
+  const [branchDraft, setBranchDraft] = useState('')
   const [branches, setBranches] = useState<string[]>([])
   const [commits, setCommits] = useState<RecentCommit[] | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
@@ -82,14 +83,39 @@ export function CommitsPane({ session, projectId, onClose }: { session: Session;
           <span className="subtitle">{scope === 'session' ? session.displayName : 'Everything in this project, newest first'}</span>
         </div>
         <div className="actions">
-          <select className="branch-filter" title="Show only commits on this branch" value={branch} onChange={(e) => setBranch(e.target.value)}>
-            <option value="">All branches</option>
-            {branches.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          <span className="branch-filter-wrap">
+            <input
+              className="branch-filter"
+              list="commit-branch-list"
+              placeholder="All branches"
+              title="Show only commits on this branch"
+              value={branchDraft}
+              onChange={(e) => {
+                const value = e.target.value
+                setBranchDraft(value)
+                // Apply only a real branch, or the empty value meaning every branch, so that
+                // typing part of a name does not blank the list on the way.
+                if (value === '' || branches.includes(value)) setBranch(value)
+              }}
+            />
+            <datalist id="commit-branch-list">
+              {branches.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
+            {branchDraft && (
+              <button
+                className="link branch-clear"
+                title="Show every branch"
+                onClick={() => {
+                  setBranchDraft('')
+                  setBranch('')
+                }}
+              >
+                ×
+              </button>
+            )}
+          </span>
           {current && <CopyHashButton hash={current.hash} label="Copy commit hash" />}
           <button title="Back to the session (Esc)" onClick={onClose}>
             Close
@@ -117,7 +143,7 @@ export function CommitsPane({ session, projectId, onClose }: { session: Session;
             >
               <span className="commit-row-title">{commit.title || '(no message)'}</span>
               <span className="commit-row-meta">
-                {commit.branch && <span className="commit-branch-tag" title={`On ${commit.branch}`}>{commit.branch}</span>}
+                {!branch && commit.branch && <span className="commit-branch-tag" title={`${commit.branch} points here`}>{commit.branch}</span>}
                 {scope === 'all' && commit.agentTool && <ToolIcon tool={commit.agentTool} />}
                 <span className="who">{scope === 'all' ? commit.sessionName ?? commit.author : commit.author}</span>
                 <span className="when">{relativeTime(commit.authoredAt)}</span>

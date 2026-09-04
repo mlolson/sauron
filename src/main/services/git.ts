@@ -12,7 +12,9 @@ export async function gitToplevel(git: string, dir: string): Promise<string> {
 }
 
 /** One record per commit, unit separators between fields and a record separator between commits. */
-const COMMIT_FORMAT = '--format=%H%x1f%h%x1f%s%x1f%b%x1f%an%x1f%aI%x1e'
+const COMMIT_FORMAT = '--format=%H%x1f%h%x1f%s%x1f%b%x1f%an%x1f%aI%x1f%D%x1e'
+/** Decorate with local branches only, so %D never mentions tags or remotes. */
+const DECORATE_LOCAL = '--decorate-refs=refs/heads/*'
 
 function parseCommitRows(stdout: string): RecentCommit[] {
   return stdout
@@ -20,13 +22,19 @@ function parseCommitRows(stdout: string): RecentCommit[] {
     .map((row) => row.trim())
     .filter(Boolean)
     .map((row) => {
-      const [hash = '', shortHash = '', title = '', body = '', author = '', authoredAt = ''] = row.split('\x1f')
+      const [hash = '', shortHash = '', title = '', body = '', author = '', authoredAt = '', refs = ''] = row.split('\x1f')
       return {
         hash,
         shortHash,
         title: title.trim(),
         message: body.trim(),
-        branch: '',
+        // Only refs pointing at this very commit. A commit shared by several branches has no
+        // single owning branch, and naming one (as git name-rev does) misleads.
+        branch: refs
+          .split(',')
+          .map((ref) => ref.trim().replace(/^HEAD -> /, ''))
+          .filter(Boolean)
+          .join(', '),
         author: author.trim(),
         authoredAt: authoredAt.trim(),
         sessionId: null,
@@ -57,43 +65,20 @@ export async function hashesOnBranch(git: string, dir: string, branch: string): 
   return new Set(result.stdout.split('\n').map((h) => h.trim()).filter(Boolean))
 }
 
-/**
- * The nearest local branch containing each commit. name-rev takes every hash in one call and
- * answers in order, which beats a call per commit when a list is long.
- */
-async function branchNames(git: string, dir: string, hashes: string[]): Promise<Map<string, string>> {
-  const names = new Map<string, string>()
-  if (hashes.length === 0) return names
-  const result = await runCommand(git, ['name-rev', '--name-only', '--refs=refs/heads/*', ...hashes], { cwd: dir }).catch(() => null)
-  if (!result || result.code !== 0) return names
-  const lines = result.stdout.split('\n').map((l) => l.trim()).filter(Boolean)
-  if (lines.length !== hashes.length) return names
-  hashes.forEach((hash, i) => {
-    // "main~3" means an ancestor of main; the branch is what matters here.
-    const name = lines[i]!.replace(/[~^].*$/, '')
-    if (name && name !== 'undefined') names.set(hash, name)
-  })
-  return names
-}
-
 /** Most recent commits, newest first: across local branches, or on one branch when named. */
 export async function recentGitCommits(git: string, dir: string, limit = 20, branch?: string): Promise<RecentCommit[]> {
-  const result = await runCommand(git, ['log', branch || '--all', `-${limit}`, '--date-order', COMMIT_FORMAT], { cwd: dir })
+  const result = await runCommand(git, ['log', branch || '--all', `-${limit}`, '--date-order', DECORATE_LOCAL, COMMIT_FORMAT], { cwd: dir })
   if (result.code !== 0) throw new SauronError('command_failed', `git log: ${result.stderr.trim()}`)
-  const commits = parseCommitRows(result.stdout)
-  const names = await branchNames(git, dir, commits.map((c) => c.hash))
-  return commits.map((commit) => ({ ...commit, branch: names.get(commit.hash) ?? '' }))
+  return parseCommitRows(result.stdout)
 }
 
 /** Named commits, in one call. Hashes that no longer resolve are absent from the result. */
 export async function commitsByHash(git: string, dir: string, hashes: string[]): Promise<RecentCommit[]> {
   const wanted = hashes.filter((hash) => /^[0-9a-f]{40}$/i.test(hash))
   if (wanted.length === 0) return []
-  const result = await runCommand(git, ['log', '--no-walk', '--ignore-missing', COMMIT_FORMAT, ...wanted], { cwd: dir })
+  const result = await runCommand(git, ['log', '--no-walk', '--ignore-missing', DECORATE_LOCAL, COMMIT_FORMAT, ...wanted], { cwd: dir })
   if (result.code !== 0) return []
-  const commits = parseCommitRows(result.stdout)
-  const names = await branchNames(git, dir, commits.map((c) => c.hash))
-  return commits.map((commit) => ({ ...commit, branch: names.get(commit.hash) ?? '' }))
+  return parseCommitRows(result.stdout)
 }
 
 export async function gitCommitDiff(git: string, dir: string, hash: string): Promise<string> {
