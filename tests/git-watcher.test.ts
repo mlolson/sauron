@@ -23,10 +23,36 @@ describe('GitWatcher', () => {
       }
       await new Promise((r) => setTimeout(r, 700))
       expect(reports.length).toBe(1)
-      expect(reports[0]).toMatch(/^main [0-9a-f]{40}$/)
+      expect(reports[0]).toMatch(/^main [0-9a-f]{40}\n/)
 
       // Touching a file without committing must not report.
       await writeFile(join(repo, 'scratch.txt'), 'x')
+      await watcher.check()
+      expect(reports.length).toBe(1)
+      watcher.stop()
+    } finally {
+      await rm(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('reports a branch switch, which moves HEAD without changing any ref', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'sauron-gw-'))
+    try {
+      await git(repo, 'init', '-q', '-b', 'main')
+      await git(repo, 'commit', '-q', '--allow-empty', '-m', 'init')
+      await git(repo, 'branch', 'other')
+      const reports: string[] = []
+      const watcher = new GitWatcher('/usr/bin/git', repo, (fp) => reports.push(fp), 50)
+      await watcher.start()
+
+      // No new ref and no new commit: only the checked-out branch changes.
+      await git(repo, 'checkout', '-q', 'other')
+      await watcher.check()
+      expect(reports.length).toBe(1)
+      expect(reports[0]).toContain('branch refs/heads/other')
+
+      // Checking out the same branch again changes nothing, so nothing is reported.
+      await git(repo, 'checkout', '-q', 'other')
       await watcher.check()
       expect(reports.length).toBe(1)
       watcher.stop()

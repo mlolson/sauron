@@ -3,8 +3,8 @@ import { join } from 'node:path'
 import { runCommand } from './command'
 
 /**
- * Watches a repository's refs and reports when any branch tip changes (a commit in the main
- * checkout or any worktree). Rapid changes are debounced into one report.
+ * Watches a repository and reports when its shape changes: a commit, a branch switch, or a
+ * worktree added or removed. Rapid changes are debounced into one report.
  */
 export class GitWatcher {
   private watchers: FSWatcher[] = []
@@ -15,14 +15,22 @@ export class GitWatcher {
     private readonly git: string,
     readonly repoPath: string,
     private readonly onCommit: (fingerprint: string) => void,
-    private readonly debounceMs = 30_000,
+    private readonly debounceMs = 2_000,
   ) {}
 
-  /** Hash-like summary of every local branch tip. */
+  /**
+   * Summary of every branch tip and of what each worktree has checked out. Tips alone miss a
+   * branch switch, which moves HEAD without touching a ref, and would leave the branch a
+   * session is on looking stale until something else refreshed it.
+   */
   async fingerprint(): Promise<string | null> {
-    const r = await runCommand(this.git, ['for-each-ref', '--format=%(refname:short) %(objectname)', 'refs/heads'], { cwd: this.repoPath }).catch(() => null)
-    if (!r || r.code !== 0) return null
-    return r.stdout.trim()
+    const [refs, worktrees] = await Promise.all([
+      runCommand(this.git, ['for-each-ref', '--format=%(refname:short) %(objectname)', 'refs/heads'], { cwd: this.repoPath }).catch(() => null),
+      runCommand(this.git, ['worktree', 'list', '--porcelain'], { cwd: this.repoPath }).catch(() => null),
+    ])
+    if (!refs || refs.code !== 0) return null
+    const checkouts = worktrees?.code === 0 ? worktrees.stdout.trim() : ''
+    return `${refs.stdout.trim()}\n${checkouts}`
   }
 
   async headCommit(): Promise<string | null> {
