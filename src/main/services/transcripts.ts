@@ -16,13 +16,89 @@ export interface TranscriptFile {
   sizeBytes: number
 }
 
-/** Parses a whole transcript once. For handoffs, which need the conversation, not a live tail. */
-export async function readTranscriptEntries(path: string, tool: TranscriptTool): Promise<TranscriptEntry[]> {
+/**
+ * Parses a whole transcript once, for handoffs, which need the conversation rather than a live
+ * tail. A Codex fork's rollout holds only what was said after the fork; the inherited history
+ * stays in the parent rollout, named by `forked_from_id` in the fork's session_meta. Ordinals
+ * run in one sequence across the chain, so an ancestor contributes its records below the
+ * child's `forked_from_ordinal_exclusive`, and its own parent is followed the same way.
+ */
+export async function readTranscriptEntries(path: string, tool: TranscriptTool, codexRoot = join(homedir(), '.codex', 'sessions')): Promise<TranscriptEntry[]> {
   const parser = parserFor(tool)
   const entries: TranscriptEntry[] = []
-  const rl = createInterface({ input: createReadStream(path, { encoding: 'utf8' }), crlfDelay: Infinity })
-  for await (const line of rl) entries.push(...parser.parseLine(line))
+  const files = tool === 'codex' ? await codexRolloutChain(path, codexRoot) : [{ path, below: Infinity }]
+  // Oldest ancestor first, through one parser so indices stay monotonic.
+  for (const file of files) {
+    const rl = createInterface({ input: createReadStream(file.path, { encoding: 'utf8' }), crlfDelay: Infinity })
+    for await (const line of rl) {
+      if (file.below !== Infinity && !ordinalBelow(line, file.below)) continue
+      entries.push(...parser.parseLine(line))
+    }
+  }
   return entries
+}
+
+/** The rollout and its ancestors, oldest first, each with the ordinal bound its descendant imposes. */
+async function codexRolloutChain(path: string, codexRoot: string): Promise<{ path: string; below: number }[]> {
+  const chain: { path: string; below: number }[] = [{ path, below: Infinity }]
+  const seen = new Set([path])
+  let current = path
+  // Bounded so a corrupt session_meta cannot send this walking forever.
+  for (let depth = 0; depth < 16; depth++) {
+    const meta = await codexForkMeta(current)
+    if (!meta) break
+    const parent = await findCodexRollout(codexRoot, meta.parentId)
+    if (!parent || seen.has(parent)) break
+    seen.add(parent)
+    chain.unshift({ path: parent, below: meta.below })
+    current = parent
+  }
+  return chain
+}
+
+/** Reads a rollout's session_meta; null when it was not forked from another session. */
+async function codexForkMeta(path: string): Promise<{ parentId: string; below: number } | null> {
+  const rl = createInterface({ input: createReadStream(path, { encoding: 'utf8' }), crlfDelay: Infinity })
+  try {
+    for await (const line of rl) {
+      if (!line.trim()) continue
+      const record = JSON.parse(line) as { type?: unknown; payload?: { forked_from_id?: unknown; forked_from_ordinal_exclusive?: unknown } }
+      if (record.type !== 'session_meta') return null
+      const { forked_from_id: parentId, forked_from_ordinal_exclusive: below } = record.payload ?? {}
+      return typeof parentId === 'string' && typeof below === 'number' ? { parentId, below } : null
+    }
+  } finally {
+    rl.close()
+  }
+  return null
+}
+
+/** Rollout files are named `rollout-<timestamp>-<session id>.jsonl`, so the id is the file's suffix. */
+async function findCodexRollout(root: string, sessionId: string): Promise<string | null> {
+  const suffix = `-${sessionId}.jsonl`
+  const walk = async (dir: string, depth: number): Promise<string | null> => {
+    if (depth > 6 || !existsSync(dir)) return null
+    for (const e of await readdir(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name)
+      if (e.isDirectory()) {
+        const found = await walk(p, depth + 1)
+        if (found) return found
+      } else if (e.isFile() && e.name.endsWith(suffix)) {
+        return p
+      }
+    }
+    return null
+  }
+  return walk(root, 0)
+}
+
+function ordinalBelow(line: string, bound: number): boolean {
+  try {
+    const ordinal = (JSON.parse(line) as { ordinal?: unknown }).ordinal
+    return typeof ordinal === 'number' && ordinal < bound
+  } catch {
+    return false
+  }
 }
 
 /** Reads only the first records of a transcript to learn its cwd and session id. */
