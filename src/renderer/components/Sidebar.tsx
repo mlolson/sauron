@@ -3,9 +3,11 @@ import type { AgentDefinition, Project, SelectionTarget, Session, Snapshot } fro
 import { isAlive } from '@shared/types'
 import { sameTarget } from '../store'
 import { compactTime } from '@shared/time'
+import { compareSessions, moveBefore } from '@shared/session-order'
 import { StateDot } from './StateDot'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { RenameDialog } from './RenameDialog'
+import { WorktreeDialog } from './WorktreeDialog'
 import { ToolIcon } from './ToolIcon'
 
 interface Props {
@@ -18,11 +20,15 @@ interface Props {
 export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Props) {
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
   const [renaming, setRenaming] = useState<Session | null>(null)
+  const [forkingToWorktree, setForkingToWorktree] = useState<Session | null>({ id: 'x', displayName: 'Opus', tool: 'claude' } as Session) // TEMP
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => new Set())
   const [archivedCollapsed, setArchivedCollapsed] = useState(true)
   // External sessions are background noise most of the time, so their group starts closed.
   const [expandedExternal, setExpandedExternal] = useState<Set<string>>(() => new Set())
   const [collapsed, setCollapsed] = useState(false)
+  // Only the id being dragged and the row it is hovering; the order itself lives in the snapshot.
+  const [dragging, setDragging] = useState<string | null>(null)
+  const [dropBefore, setDropBefore] = useState<string | null>(null)
   const openMenu = (e: React.MouseEvent, items: MenuItem[]) => {
     e.preventDefault()
     setMenu({ x: e.clientX, y: e.clientY, items })
@@ -60,13 +66,19 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
     const profile = snapshot.preferences.agents.find((agent) => agent.id === session.tool)
     const forkable = Boolean(profile?.forkCommand?.length && session.cliSessionId)
     const fork: MenuItem[] = forkable
-      ? [session.kind === 'external' ? { label: 'Import', action: () => void importExternalSession(session) } : { label: 'Fork', action: () => void window.sauron.forkSession(session.id) }]
+      ? session.kind === 'external'
+        ? [{ label: 'Import', action: () => void importExternalSession(session) }]
+        : [
+            { label: 'Fork', action: () => void window.sauron.forkSession(session.id) },
+            { label: 'Fork to worktree…', action: () => setForkingToWorktree(session) },
+          ]
       : []
     const handoff = handoffItems(snapshot.preferences.agents, snapshot.toolPaths?.agents ?? {}, session)
     if (session.kind === 'external') return [...fork, ...handoff, { label: 'Hide', action: () => void window.sauron.hideSession(session.id) }]
     if (isAlive(session)) {
       return [
         { label: 'Rename…', action: () => setRenaming(session) },
+        ...(session.tmuxName ? [{ label: 'Copy attach cmd', action: () => window.sauron.copyToClipboard(`tmux attach -t ${session.tmuxName}`) } satisfies MenuItem] : []),
         ...fork,
         ...handoff,
         {
@@ -163,7 +175,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
           const collapsed = collapsedProjects.has(project.id)
           const all = snapshot.sessions.filter((s) => s.projectId === project.id)
           // Closed (resumable) sessions live on the project page, not in the sidebar.
-          const managed = all.filter((s) => s.kind === 'managed' && isAlive(s))
+          const managed = all.filter((s) => s.kind === 'managed' && isAlive(s)).sort(compareSessions)
           // Every external session, newest first; the group is collapsed, so length costs nothing.
           const externals = all.filter((s) => s.kind === 'external').sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
           const externalOpen = expandedExternal.has(project.id)
@@ -207,6 +219,42 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   key={session.id}
                   nested
                   selected={sameTarget(selection, { kind: 'session', id: session.id })}
+                  className={[
+                    'draggable',
+                    dragging === session.id ? 'dragging' : '',
+                    dropBefore === session.id ? 'drop-before' : '',
+                    dragging && dropBefore === null && session.id === managed.at(-1)?.id ? 'drop-last' : '',
+                  ].filter(Boolean).join(' ')}
+                  draggable
+                  onDragStart={(e) => {
+                    setDragging(session.id)
+                    e.dataTransfer.effectAllowed = 'move'
+                    // Some form of data is required for a drag to start at all in Chromium.
+                    e.dataTransfer.setData('text/plain', session.id)
+                  }}
+                  onDragOver={(e) => {
+                    if (!dragging || dragging === session.id) return
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    // Past the halfway mark the row being dragged belongs after this one.
+                    const box = e.currentTarget.getBoundingClientRect()
+                    const after = e.clientY > box.top + box.height / 2
+                    const index = managed.findIndex((s) => s.id === session.id)
+                    setDropBefore(after ? managed[index + 1]?.id ?? null : session.id)
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    if (dragging) {
+                      const order = moveBefore(managed.map((s) => s.id), dragging, dropBefore)
+                      if (order.join() !== managed.map((s) => s.id).join()) void window.sauron.reorderSessions(project.id, order)
+                    }
+                    setDragging(null)
+                    setDropBefore(null)
+                  }}
+                  onDragEnd={() => {
+                    setDragging(null)
+                    setDropBefore(null)
+                  }}
                   onClick={() => onSelect({ kind: 'session', id: session.id })}
                   onContextMenu={(e) => openMenu(e, sessionMenu(session))}
                 >
@@ -328,6 +376,14 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
       </nav>
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
       {renaming && <RenameDialog initial={renaming.displayName} onSubmit={(t) => void window.sauron.renameSession(renaming.id, t)} onClose={() => setRenaming(null)} />}
+      {forkingToWorktree && (
+        <WorktreeDialog
+          title={`Fork ${forkingToWorktree.displayName} to a worktree`}
+          action="Fork"
+          onSubmit={(branch) => void window.sauron.forkSession(forkingToWorktree.id, { worktreeBranch: branch })}
+          onClose={() => setForkingToWorktree(null)}
+        />
+      )}
     </aside>
   )
 }
@@ -337,18 +393,26 @@ function Row({
   selected,
   nested,
   deep,
+  className = '',
   onClick,
   onContextMenu,
+  ...drag
 }: {
   children: React.ReactNode
   selected: boolean
   nested?: boolean
   deep?: boolean
+  className?: string
   onClick: () => void
   onContextMenu?: (e: React.MouseEvent) => void
-}) {
+} & React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={`row ${selected ? 'selected' : ''} ${nested ? 'nested' : ''} ${deep ? 'deep' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
+    <div
+      className={`row ${selected ? 'selected' : ''} ${nested ? 'nested' : ''} ${deep ? 'deep' : ''} ${className}`}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      {...drag}
+    >
       {children}
     </div>
   )

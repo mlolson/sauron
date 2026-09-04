@@ -7,7 +7,7 @@
  *   sauron sessions [--project <name|id>]
  *   sauron launch --project <name|id> [--tool shell|claude|codex] [--title <text>] [--prompt <text>] [--worktree [<branch>]]
  *   sauron rename --session <id> --title <text>
- *   sauron fork --session <id>       (Claude/Codex: new terminal continuing a copy of the conversation)
+ *   sauron fork --session <id> [--worktree [<branch>]]   (Claude/Codex: new terminal continuing a copy of the conversation)
  *   sauron handoff --session <id> --tool <agent>   (a different agent takes over from a briefing)
  *   sauron worktrees --project <name|id>
  *   sauron worktrees remove --project <name|id> --path <dir> [--force]
@@ -172,7 +172,12 @@ async function main(): Promise<void> {
       payload = { cmd: 'sessions.resume', session: flags.session }
       break
     case 'fork':
-      payload = { cmd: 'sessions.fork', session: flags.session }
+      payload = {
+        cmd: 'sessions.fork',
+        session: flags.session,
+        // --worktree alone means "new worktree, default branch"; --worktree <branch> names it.
+        worktree: flags.worktree === undefined ? undefined : flags.worktree === 'true' ? '' : flags.worktree,
+      }
       break
     case 'handoff':
       payload = { cmd: 'sessions.handoff', session: flags.session, tool: flags.tool }

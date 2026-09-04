@@ -187,7 +187,9 @@ export class SocketServer {
         return { id: session.id, tmuxName: session.tmuxName }
       }
       case 'sessions.fork': {
-        const session = await state.forkSession(String(req.session))
+        const session = await state.forkSession(String(req.session), {
+          worktreeBranch: req.worktree === undefined ? undefined : typeof req.worktree === 'string' ? req.worktree : '',
+        })
         if (!session) throw new Error('fork failed')
         return { id: session.id, tmuxName: session.tmuxName }
       }

@@ -125,6 +125,8 @@ export interface Session {
   lastActivityAt: string
   state: SessionState
   stateSource: StateSource
+  /** Manual position among a project's sessions. Absent until the user drags one. */
+  sortIndex?: number
 }
 
 export interface SessionsFile {
@@ -238,9 +240,15 @@ export interface SauronApi {
 
   launchSession(projectId: string, tool: AgentTool, options?: LaunchOptions): Promise<void>
   renameSession(id: string, title: string): Promise<void>
+  /** Records the order of a project's managed sessions, as listed. */
+  reorderSessions(projectId: string, orderedIds: string[]): Promise<void>
   /** Claude/Codex only: new terminal continuing a copy of the conversation as a new session. */
-  /** Resolves to the new session, or null when the fork failed (the error is reported as a banner). */
-  forkSession(id: string): Promise<Session | null>
+  /**
+   * Resolves to the new session, or null when the fork failed (the error is reported as a
+   * banner). With `worktreeBranch` the fork runs in a new git worktree on that branch; an
+   * empty string picks the default `sauron/<id>` name.
+   */
+  forkSession(id: string, options?: { worktreeBranch?: string }): Promise<Session | null>
   refreshWorktrees(projectId: string): Promise<void>
   recentCommits(projectId: string, limit?: number, branch?: string): Promise<RecentCommit[]>
   /** Commits attributed to one session, newest first, optionally only those on a branch. */

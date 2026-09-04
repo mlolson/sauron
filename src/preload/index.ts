@@ -22,7 +22,8 @@ const api: SauronApi = {
 
   launchSession: (projectId, tool, options) => ipcRenderer.invoke('launchSession', projectId, tool, options),
   renameSession: (id, title) => ipcRenderer.invoke('renameSession', id, title),
-  forkSession: (id) => ipcRenderer.invoke('forkSession', id),
+  reorderSessions: (projectId, orderedIds) => ipcRenderer.invoke('reorderSessions', projectId, orderedIds),
+  forkSession: (id, options) => ipcRenderer.invoke('forkSession', id, options),
   refreshWorktrees: (projectId) => ipcRenderer.invoke('refreshWorktrees', projectId),
   recentCommits: (projectId, limit, branch) => ipcRenderer.invoke('recentCommits', projectId, limit, branch),
   sessionCommits: (sessionId, branch) => ipcRenderer.invoke('sessionCommits', sessionId, branch),

@@ -5,11 +5,13 @@ import type { Worktree } from '@shared/worktrees'
 import type { ProjectStatus, RefreshState } from '@shared/status'
 import { StateDot } from './StateDot'
 import { abbreviate, handoffItems, importExternalSession } from './Sidebar'
+import { compareSessions } from '@shared/session-order'
 import { relativeTime } from '@shared/time'
 import { NewSessionBar } from './NewSessionBar'
 import { ToolIcon } from './ToolIcon'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { RenameDialog } from './RenameDialog'
+import { WorktreeDialog } from './WorktreeDialog'
 import { CopyHashButton, DiffBody } from './CommitUI'
 
 interface Props {
@@ -35,8 +37,9 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
   const [diff, setDiff] = useState<{ commit: RecentCommit; content: string | null } | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
   const [renaming, setRenaming] = useState<Session | null>(null)
+  const [forkingToWorktree, setForkingToWorktree] = useState<Session | null>(null)
   const managed = sessions.filter((s) => s.projectId === project.id && s.kind === 'managed')
-  const mine = managed.filter(isAlive)
+  const mine = managed.filter(isAlive).sort(compareSessions)
   const resumable = managed.filter((s) => !isAlive(s))
   const external = sessions
     .filter((s) => s.projectId === project.id && s.kind === 'external')
@@ -76,11 +79,17 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
     const forkable = Boolean(profile?.forkCommand?.length && session.cliSessionId)
     const common: MenuItem[] = [
       { label: 'Rename…', action: () => setRenaming(session) },
-      ...(forkable ? [{ label: 'Fork', action: () => void window.sauron.forkSession(session.id) } satisfies MenuItem] : []),
+      ...(forkable
+        ? [
+            { label: 'Fork', action: () => void window.sauron.forkSession(session.id) } satisfies MenuItem,
+            { label: 'Fork to worktree…', action: () => setForkingToWorktree(session) } satisfies MenuItem,
+          ]
+        : []),
       ...handoffItems(preferences.agents, toolPaths?.agents ?? {}, session),
     ]
     if (!isAlive(session)) return [...common, { label: 'Resume', action: () => void window.sauron.resumeSession(session.id) }, { label: 'Forget', destructive: true, action: () => void window.sauron.forgetSession(session.id) }]
-    return [...common, {
+    const attach: MenuItem[] = session.tmuxName ? [{ label: 'Copy attach cmd', action: () => window.sauron.copyToClipboard(`tmux attach -t ${session.tmuxName}`) }] : []
+    return [...common, ...attach, {
       label: 'Close',
       destructive: true,
       action: () => {
@@ -348,6 +357,14 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
       {diff && <DiffViewer commit={diff.commit} content={diff.content} onClose={() => setDiff(null)} onGoToSession={(sessionId) => { setDiff(null); onSelect({ kind: 'session', id: sessionId }) }} />}
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
       {renaming && <RenameDialog initial={renaming.displayName} onSubmit={(title) => void window.sauron.renameSession(renaming.id, title)} onClose={() => setRenaming(null)} />}
+      {forkingToWorktree && (
+        <WorktreeDialog
+          title={`Fork ${forkingToWorktree.displayName} to a worktree`}
+          action="Fork"
+          onSubmit={(branch) => void window.sauron.forkSession(forkingToWorktree.id, { worktreeBranch: branch })}
+          onClose={() => setForkingToWorktree(null)}
+        />
+      )}
     </div>
   )
 }

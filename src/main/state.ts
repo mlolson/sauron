@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import type { AgentDefinition, AgentTool, AppError, LaunchOptions, Preferences, Project, RecentCommit, Session, SelectionTarget, SessionCommit, Snapshot, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
 import { defaultPreferences } from '@shared/types'
+import { compareSessions } from '@shared/session-order'
 import { claudeHookSettings, codexNotifyConfig, looksLikeApprovalPrompt, transitionForHook, type HookEvent } from '@shared/hooks'
 import { writeJsonAtomic } from './services/persistence'
 import { join } from 'node:path'
@@ -360,6 +361,22 @@ export class AppState extends EventEmitter<StateEvents> {
       const commit = found.get(hash)
       return commit ? [{ ...commit, sessionId, sessionName: session.displayName, agentTool: session.tool }] : []
     })
+  }
+
+  /** Stores a manual order for a project's managed sessions; unlisted ones keep their place. */
+  reorderSessions(projectId: string, orderedIds: string[]): void {
+    const positions = new Map(orderedIds.map((id, index) => [id, index]))
+    let changed = false
+    for (const session of this.sessions) {
+      if (session.projectId !== projectId) continue
+      const next = positions.get(session.id)
+      if (next === undefined || session.sortIndex === next) continue
+      session.sortIndex = next
+      changed = true
+    }
+    if (!changed) return
+    this.persistSessions()
+    this.changed()
   }
 
   async recordCommit(sessionId: string, cwd: string, hash: string): Promise<void> {
@@ -752,7 +769,7 @@ export class AppState extends EventEmitter<StateEvents> {
    * Forks an agent conversation into a new managed session: a fresh terminal running
    * `claude --resume <id> --fork-session` or `codex fork <id>`. Works for external sessions too.
    */
-  async forkSession(id: string): Promise<Session | null> {
+  async forkSession(id: string, options: { worktreeBranch?: string } = {}): Promise<Session | null> {
     const source = this.session(id)
     const definition = source ? this.agentDefinition(source.tool) : undefined
     if (!source?.cliSessionId || !definition?.forkCommand?.length) {
@@ -764,7 +781,20 @@ export class AppState extends EventEmitter<StateEvents> {
       const newId = randomUUID()
       const executable = tools.agents[source.tool]
       if (!executable) throw new SauronError('executable_not_found', `${definition.name} executable was not found.`)
-      const cwd = source.worktreePath ?? source.workingDir
+      // A fork into a worktree starts from the same conversation but its own checkout, so the
+      // two can diverge without stepping on each other's files.
+      let worktreePath: string | null = source.kind === 'external' ? null : source.worktreePath
+      let workingDir = source.kind === 'external' ? (source.worktreePath ?? source.workingDir) : source.workingDir
+      if (options.worktreeBranch !== undefined) {
+        const project = source.projectId ? this.project(source.projectId) : undefined
+        if (!project) throw new SauronError('invalid_state', 'A worktree needs a project; this session has none.')
+        if (!this.worktreeService) throw new SauronError('executable_not_found', 'git was not found on PATH.')
+        const branch = options.worktreeBranch.trim() || defaultWorktreeBranch(newId)
+        worktreePath = await this.worktreeService.create(project.path, project.name, branch)
+        workingDir = project.path
+        await this.refreshWorktrees(project.id, false)
+      }
+      const cwd = worktreePath ?? workingDir
       const profileArgs = this.expandAgentArgs(definition.args, { cwd, sessionId: newId, sourceSessionId: source.cliSessionId, sauronBin: this.sauronBin ?? undefined }).args
       const forkArgs = this.expandAgentArgs(definition.forkCommand, { cwd, sessionId: newId, sourceSessionId: source.cliSessionId, sauronBin: this.sauronBin ?? undefined }).args
       const integrationArgs = source.tool === 'claude'
@@ -787,8 +817,8 @@ export class AppState extends EventEmitter<StateEvents> {
         // transcript indexer (Codex) fills it in.
         cliSessionId: null,
         transcriptPath: null,
-        workingDir: source.kind === 'external' ? cwd : source.workingDir,
-        worktreePath: source.kind === 'external' ? null : source.worktreePath,
+        workingDir,
+        worktreePath,
         createdAt: now,
         lastActivityAt: now,
         state: 'running',
