@@ -242,9 +242,11 @@ export interface SauronApi {
   /** Resolves to the new session, or null when the fork failed (the error is reported as a banner). */
   forkSession(id: string): Promise<Session | null>
   refreshWorktrees(projectId: string): Promise<void>
-  recentCommits(projectId: string, limit?: number): Promise<RecentCommit[]>
-  /** Commits attributed to one session, newest first. */
-  sessionCommits(sessionId: string): Promise<RecentCommit[]>
+  recentCommits(projectId: string, limit?: number, branch?: string): Promise<RecentCommit[]>
+  /** Commits attributed to one session, newest first, optionally only those on a branch. */
+  sessionCommits(sessionId: string, branch?: string): Promise<RecentCommit[]>
+  /** Local branch names for a project, current first. */
+  projectBranches(projectId: string): Promise<string[]>
   commitDiff(projectId: string, hash: string): Promise<string>
   checkWorktreeRemoval(projectId: string, path: string): Promise<WorktreeRemovalCheck>
   removeWorktree(projectId: string, path: string, force: boolean): Promise<void>

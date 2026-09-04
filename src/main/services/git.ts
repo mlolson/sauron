@@ -36,9 +36,30 @@ function parseCommitRows(stdout: string): RecentCommit[] {
     })
 }
 
-/** Most recent commits across local branches, newest first. */
-export async function recentGitCommits(git: string, dir: string, limit = 20): Promise<RecentCommit[]> {
-  const result = await runCommand(git, ['log', '--all', `-${limit}`, '--date-order', COMMIT_FORMAT], { cwd: dir })
+/** Local branch names, current first, then alphabetical. */
+export async function listBranches(git: string, dir: string): Promise<string[]> {
+  const result = await runCommand(git, ['branch', '--format=%(refname:short)'], { cwd: dir })
+  if (result.code !== 0) return []
+  const branches = result.stdout.split('\n').map((b) => b.trim()).filter(Boolean).sort((a, b) => a.localeCompare(b))
+  const head = await runCommand(git, ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir })
+  const current = head.code === 0 ? head.stdout.trim() : ''
+  return current && branches.includes(current) ? [current, ...branches.filter((b) => b !== current)] : branches
+}
+
+/**
+ * Every commit reachable from a branch. One call and an exact answer, which beats asking
+ * `git branch --contains` per candidate; the cap keeps a very old repository from being read
+ * into memory whole.
+ */
+export async function hashesOnBranch(git: string, dir: string, branch: string): Promise<Set<string>> {
+  const result = await runCommand(git, ['rev-list', '--max-count=50000', branch], { cwd: dir })
+  if (result.code !== 0) return new Set()
+  return new Set(result.stdout.split('\n').map((h) => h.trim()).filter(Boolean))
+}
+
+/** Most recent commits, newest first: across local branches, or on one branch when named. */
+export async function recentGitCommits(git: string, dir: string, limit = 20, branch?: string): Promise<RecentCommit[]> {
+  const result = await runCommand(git, ['log', branch || '--all', `-${limit}`, '--date-order', COMMIT_FORMAT], { cwd: dir })
   if (result.code !== 0) throw new SauronError('command_failed', `git log: ${result.stderr.trim()}`)
   return Promise.all(parseCommitRows(result.stdout).map(async (commit) => {
     const named = await runCommand(git, ['name-rev', '--name-only', '--refs=refs/heads/*', commit.hash], { cwd: dir }).catch(() => null)

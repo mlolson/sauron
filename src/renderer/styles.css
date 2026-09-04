@@ -156,6 +156,7 @@ button.icon-button { width: 26px; height: 26px; padding: 0; font-size: 16px; lin
 /* Commits pane: covers the session area, leaving the sidebar reachable. */
 .commits-pane { position: absolute; inset: 0; z-index: 30; background: var(--bg); display: flex; flex-direction: column; }
 .commits-pane .commits-title { flex: 1; min-width: 0; margin-left: 4px; }
+.branch-filter { max-width: 200px; background: var(--bg-hover); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 12px; }
 .commits-split { flex: 1; display: flex; min-height: 0; }
 .commits-list { width: 320px; flex: none; overflow-y: auto; border-right: 1px solid var(--border); }
 .commits-list .pad { padding: 16px; }

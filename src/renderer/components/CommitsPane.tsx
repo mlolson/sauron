@@ -13,6 +13,9 @@ type Scope = 'session' | 'all'
  */
 export function CommitsPane({ session, projectId, onClose }: { session: Session; projectId: string; onClose: () => void }) {
   const [scope, setScope] = useState<Scope>('session')
+  // '' means every branch, which is what git log --all walks.
+  const [branch, setBranch] = useState('')
+  const [branches, setBranches] = useState<string[]>([])
   const [commits, setCommits] = useState<RecentCommit[] | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [diff, setDiff] = useState<{ hash: string; content: string | null } | null>(null)
@@ -23,7 +26,7 @@ export function CommitsPane({ session, projectId, onClose }: { session: Session;
     setCommits(null)
     setSelected(null)
     setError(null)
-    const load = scope === 'session' ? window.sauron.sessionCommits(session.id) : window.sauron.recentCommits(projectId, 100)
+    const load = scope === 'session' ? window.sauron.sessionCommits(session.id, branch || undefined) : window.sauron.recentCommits(projectId, 100, branch || undefined)
     void load
       .then((list) => {
         if (!current) return
@@ -34,7 +37,11 @@ export function CommitsPane({ session, projectId, onClose }: { session: Session;
     return () => {
       current = false
     }
-  }, [scope, session.id, projectId])
+  }, [scope, branch, session.id, projectId])
+
+  useEffect(() => {
+    void window.sauron.projectBranches(projectId).then(setBranches)
+  }, [projectId])
 
   useEffect(() => {
     if (!selected) {
@@ -75,6 +82,14 @@ export function CommitsPane({ session, projectId, onClose }: { session: Session;
           <span className="subtitle">{scope === 'session' ? session.displayName : 'Everything in this project, newest first'}</span>
         </div>
         <div className="actions">
+          <select className="branch-filter" title="Show only commits on this branch" value={branch} onChange={(e) => setBranch(e.target.value)}>
+            <option value="">All branches</option>
+            {branches.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
           {current && <CopyHashButton hash={current.hash} label="Copy commit hash" />}
           <button title="Back to the session (Esc)" onClick={onClose}>
             Close
@@ -87,9 +102,11 @@ export function CommitsPane({ session, projectId, onClose }: { session: Session;
           {!error && commits === null && <p className="muted pad">Loading…</p>}
           {!error && commits?.length === 0 && (
             <p className="muted pad">
-              {scope === 'session'
-                ? 'This session has not made any commits yet. Commits are recorded when an agent commits from inside the session.'
-                : 'No commits found in this project.'}
+              {branch
+                ? `No commits on ${branch}${scope === 'session' ? ' from this session' : ''}.`
+                : scope === 'session'
+                  ? 'This session has not made any commits yet. Commits are recorded when an agent commits from inside the session.'
+                  : 'No commits found in this project.'}
             </p>
           )}
           {commits?.map((commit) => (

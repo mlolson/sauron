@@ -27,7 +27,7 @@ import { CONFIG_VERSION, SESSIONS_VERSION, SauronError, isAlive } from '@shared/
 import { tmuxSessionName, shellCommandLine, TMUX_OPTION_PROJECT, TMUX_OPTION_SESSION, TMUX_OPTION_TITLE, TMUX_OPTION_TOOL } from '@shared/tmux-args'
 import { claudeTranscriptPath } from '@shared/transcripts'
 import { Persistence } from './services/persistence'
-import { commitPath, commitSummaries, commitsByHash, gitCommitDiff, gitToplevel, recentGitCommits } from './services/git'
+import { commitPath, commitSummaries, commitsByHash, gitCommitDiff, gitToplevel, hashesOnBranch, listBranches, recentGitCommits } from './services/git'
 import { readTranscriptEntries } from './services/transcripts'
 import { renderHandoff } from '@shared/handoff'
 import { installPostCommitHook, removePostCommitHook } from './services/git-hooks'
@@ -325,10 +325,17 @@ export class AppState extends EventEmitter<StateEvents> {
     return this.projects.find((p) => p.id === id)
   }
 
-  async recentCommits(projectId: string, limit = 20) {
+  /** Local branch names, for the commit list's filter. */
+  async projectBranches(projectId: string): Promise<string[]> {
     const project = this.project(projectId)
     if (!project || !this.toolPaths?.git) return []
-    const commits = await recentGitCommits(this.toolPaths.git, project.path, limit)
+    return listBranches(this.toolPaths.git, project.path)
+  }
+
+  async recentCommits(projectId: string, limit = 20, branch?: string) {
+    const project = this.project(projectId)
+    if (!project || !this.toolPaths?.git) return []
+    const commits = await recentGitCommits(this.toolPaths.git, project.path, limit, branch)
     return commits.map((commit) => {
       const sessionId = this.attributionStore.get(projectId, commit.hash)
       const session = sessionId ? this.session(sessionId) : undefined
@@ -337,12 +344,16 @@ export class AppState extends EventEmitter<StateEvents> {
   }
 
   /** Commits this session made, newest first, whether or not they are recent in the project. */
-  async sessionCommits(sessionId: string, limit = 200): Promise<RecentCommit[]> {
+  async sessionCommits(sessionId: string, branch?: string, limit = 200): Promise<RecentCommit[]> {
     const session = this.session(sessionId)
     if (!session?.projectId || !this.toolPaths?.git) return []
     const project = this.project(session.projectId)
     if (!project) return []
-    const hashes = this.attributionStore.commitsForSession(sessionId, limit)
+    let hashes = this.attributionStore.commitsForSession(sessionId, limit)
+    if (branch) {
+      const onBranch = await hashesOnBranch(this.toolPaths.git, project.path, branch)
+      hashes = hashes.filter((hash) => onBranch.has(hash))
+    }
     const found = new Map((await commitsByHash(this.toolPaths.git, project.path, hashes)).map((c) => [c.hash, c]))
     // The store's order is the order the session made them; git's own ordering is by date.
     return hashes.flatMap((hash) => {
