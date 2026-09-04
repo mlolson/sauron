@@ -151,7 +151,27 @@ button.icon-button { width: 26px; height: 26px; padding: 0; font-size: 16px; lin
 .last-commit-when { flex: none; opacity: 0.8; }
 
 /* Session view */
-.session-view { display: flex; flex-direction: column; height: 100%; }
+.session-view { display: flex; flex-direction: column; height: 100%; position: relative; }
+
+/* Commits pane: covers the session area, leaving the sidebar reachable. */
+.commits-pane { position: absolute; inset: 0; z-index: 30; background: var(--bg); display: flex; flex-direction: column; }
+.commits-pane .commits-title { flex: 1; min-width: 0; margin-left: 4px; }
+.commits-split { flex: 1; display: flex; min-height: 0; }
+.commits-list { width: 320px; flex: none; overflow-y: auto; border-right: 1px solid var(--border); }
+.commits-list .pad { padding: 16px; }
+.commit-row { display: flex; flex-direction: column; gap: 3px; padding: 9px 12px; border-bottom: 1px solid var(--border); cursor: default; }
+.commit-row:hover { background: var(--bg-hover); }
+.commit-row.selected { background: var(--bg-selected); }
+.commit-row-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.commit-row-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--fg-muted); }
+.commit-row-meta .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.commit-row-meta .when { flex: none; }
+.commit-row-meta code { flex: none; margin-left: auto; }
+.commit-row-meta .tool-icon { width: 12px; height: 12px; }
+.commits-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.commit-detail-head { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.commit-detail-head p { margin: 4px 0; white-space: pre-wrap; }
+.commits-detail .diff-content { flex: 1; overflow: auto; padding: 12px 18px; }
 .session-header {
   display: flex;
   align-items: center;

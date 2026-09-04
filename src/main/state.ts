@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
-import type { AgentDefinition, AgentTool, AppError, LaunchOptions, Preferences, Project, Session, SelectionTarget, SessionCommit, Snapshot, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
+import type { AgentDefinition, AgentTool, AppError, LaunchOptions, Preferences, Project, RecentCommit, Session, SelectionTarget, SessionCommit, Snapshot, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
 import { defaultPreferences } from '@shared/types'
 import { claudeHookSettings, codexNotifyConfig, looksLikeApprovalPrompt, transitionForHook, type HookEvent } from '@shared/hooks'
 import { writeJsonAtomic } from './services/persistence'
@@ -27,7 +27,7 @@ import { CONFIG_VERSION, SESSIONS_VERSION, SauronError, isAlive } from '@shared/
 import { tmuxSessionName, shellCommandLine, TMUX_OPTION_PROJECT, TMUX_OPTION_SESSION, TMUX_OPTION_TITLE, TMUX_OPTION_TOOL } from '@shared/tmux-args'
 import { claudeTranscriptPath } from '@shared/transcripts'
 import { Persistence } from './services/persistence'
-import { commitPath, commitSummaries, gitCommitDiff, gitToplevel, recentGitCommits } from './services/git'
+import { commitPath, commitSummaries, commitsByHash, gitCommitDiff, gitToplevel, recentGitCommits } from './services/git'
 import { readTranscriptEntries } from './services/transcripts'
 import { renderHandoff } from '@shared/handoff'
 import { installPostCommitHook, removePostCommitHook } from './services/git-hooks'
@@ -325,14 +325,29 @@ export class AppState extends EventEmitter<StateEvents> {
     return this.projects.find((p) => p.id === id)
   }
 
-  async recentCommits(projectId: string) {
+  async recentCommits(projectId: string, limit = 20) {
     const project = this.project(projectId)
     if (!project || !this.toolPaths?.git) return []
-    const commits = await recentGitCommits(this.toolPaths.git, project.path, 20)
+    const commits = await recentGitCommits(this.toolPaths.git, project.path, limit)
     return commits.map((commit) => {
       const sessionId = this.attributionStore.get(projectId, commit.hash)
       const session = sessionId ? this.session(sessionId) : undefined
       return { ...commit, sessionId, sessionName: session?.displayName ?? null, agentTool: session?.tool ?? null }
+    })
+  }
+
+  /** Commits this session made, newest first, whether or not they are recent in the project. */
+  async sessionCommits(sessionId: string, limit = 200): Promise<RecentCommit[]> {
+    const session = this.session(sessionId)
+    if (!session?.projectId || !this.toolPaths?.git) return []
+    const project = this.project(session.projectId)
+    if (!project) return []
+    const hashes = this.attributionStore.commitsForSession(sessionId, limit)
+    const found = new Map((await commitsByHash(this.toolPaths.git, project.path, hashes)).map((c) => [c.hash, c]))
+    // The store's order is the order the session made them; git's own ordering is by date.
+    return hashes.flatMap((hash) => {
+      const commit = found.get(hash)
+      return commit ? [{ ...commit, sessionId, sessionName: session.displayName, agentTool: session.tool }] : []
     })
   }
 

@@ -10,6 +10,7 @@ import { NewSessionBar } from './NewSessionBar'
 import { ToolIcon } from './ToolIcon'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { RenameDialog } from './RenameDialog'
+import { CopyHashButton, DiffBody } from './CommitUI'
 
 interface Props {
   project: Project
@@ -384,33 +385,10 @@ function DiffViewer({ commit, content, onClose, onGoToSession }: { commit: Recen
           </div>
         </header>
         <div className="diff-content">
-          {content === null ? <p className="muted">Loading diff…</p> : content ? content.split('\n').map((line, index) => <div key={index} className={`diff-line ${diffLineKind(line)}`}>{line || ' '}</div>) : <p className="muted">This commit has no textual diff.</p>}
+          <DiffBody content={content} />
         </div>
       </div>
     </div>
   )
 }
 
-function diffLineKind(line: string): string {
-  if (line.startsWith('diff --git')) return 'file'
-  if (line.startsWith('@@')) return 'hunk'
-  if (line.startsWith('+') && !line.startsWith('+++')) return 'addition'
-  if (line.startsWith('-') && !line.startsWith('---')) return 'deletion'
-  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('index ')) return 'meta'
-  return ''
-}
-
-function CopyHashButton({ hash }: { hash: string }) {
-  const [copied, setCopied] = useState(false)
-  const copy = () => {
-    window.sauron.copyToClipboard(hash)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1400)
-  }
-  return (
-    <span className="copy-hash-wrap">
-      <button onClick={copy}>Copy hash to clipboard</button>
-      {copied && <span className="copy-tooltip" role="status">Copied</span>}
-    </span>
-  )
-}

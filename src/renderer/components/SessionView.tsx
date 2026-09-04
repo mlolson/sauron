@@ -3,6 +3,7 @@ import type { SelectionTarget, Session, Snapshot } from '@shared/types'
 import { isAlive } from '@shared/types'
 import { SessionTerminal } from './SessionTerminal'
 import { TranscriptView } from './TranscriptView'
+import { CommitsPane } from './CommitsPane'
 import { ToolIcon } from './ToolIcon'
 import { importExternalSession } from './Sidebar'
 
@@ -23,6 +24,7 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
   const external = session.kind === 'external'
   const forkable = Boolean(snapshot.preferences.agents.find((agent) => agent.id === session.tool)?.forkCommand?.length && session.cliSessionId)
   const [view, setView] = useState<'terminal' | 'transcript'>(external ? 'transcript' : 'terminal')
+  const [showCommits, setShowCommits] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(session.displayName)
   const titleInput = useRef<HTMLInputElement>(null)
@@ -90,15 +92,10 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
           </span>
         </div>
         <div className="actions">
-          {!external && alive && session.transcriptPath && (
-            <div className="segmented">
-              <button className={view === 'terminal' ? 'active' : ''} onClick={() => setView('terminal')}>
-                Terminal
-              </button>
-              <button className={view === 'transcript' ? 'active' : ''} onClick={() => setView('transcript')}>
-                Transcript
-              </button>
-            </div>
+          {session.projectId && (
+            <button title="Commits made by this session, and the rest of the project's history" onClick={() => setShowCommits(true)}>
+              Commits
+            </button>
           )}
           {!external && alive && session.tmuxName && (
             <button title={`Copy: tmux attach -t ${session.tmuxName}`} onClick={() => window.sauron.copyToClipboard(`tmux attach -t ${session.tmuxName}`)}>
@@ -129,6 +126,9 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
           )}
         </div>
       </header>
+      {showCommits && session.projectId && (
+        <CommitsPane session={session} projectId={session.projectId} onClose={() => setShowCommits(false)} />
+      )}
       {showTerminal ? (
         <SessionTerminal sessionId={session.id} fontSize={snapshot.preferences.terminalFontSize} scrollback={snapshot.preferences.terminalScrollback} />
       ) : external || (alive && view === 'transcript') ? (

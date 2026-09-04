@@ -11,28 +11,52 @@ export async function gitToplevel(git: string, dir: string): Promise<string> {
   return realpath(result.stdout.trim())
 }
 
+/** One record per commit, unit separators between fields and a record separator between commits. */
+const COMMIT_FORMAT = '--format=%H%x1f%h%x1f%s%x1f%b%x1f%an%x1f%aI%x1e'
+
+function parseCommitRows(stdout: string): RecentCommit[] {
+  return stdout
+    .split('\x1e')
+    .map((row) => row.trim())
+    .filter(Boolean)
+    .map((row) => {
+      const [hash = '', shortHash = '', title = '', body = '', author = '', authoredAt = ''] = row.split('\x1f')
+      return {
+        hash,
+        shortHash,
+        title: title.trim(),
+        message: body.trim(),
+        branch: '',
+        author: author.trim(),
+        authoredAt: authoredAt.trim(),
+        sessionId: null,
+        sessionName: null,
+        agentTool: null,
+      }
+    })
+}
+
 /** Most recent commits across local branches, newest first. */
 export async function recentGitCommits(git: string, dir: string, limit = 20): Promise<RecentCommit[]> {
-  const result = await runCommand(git, ['log', '--all', `-${limit}`, '--date-order', '--format=%H%x1f%h%x1f%s%x1f%b%x1f%an%x1f%aI%x1e'], { cwd: dir })
+  const result = await runCommand(git, ['log', '--all', `-${limit}`, '--date-order', COMMIT_FORMAT], { cwd: dir })
   if (result.code !== 0) throw new SauronError('command_failed', `git log: ${result.stderr.trim()}`)
-  const rows = result.stdout.split('\x1e').map((row) => row.trim()).filter(Boolean)
-  return Promise.all(rows.map(async (row) => {
-    const [hash = '', shortHash = '', title = '', body = '', author = '', authoredAt = ''] = row.split('\x1f')
-    const named = await runCommand(git, ['name-rev', '--name-only', '--refs=refs/heads/*', hash], { cwd: dir }).catch(() => null)
+  return Promise.all(parseCommitRows(result.stdout).map(async (commit) => {
+    const named = await runCommand(git, ['name-rev', '--name-only', '--refs=refs/heads/*', commit.hash], { cwd: dir }).catch(() => null)
     const branch = named?.code === 0 ? named.stdout.trim().replace(/[~^].*$/, '') : ''
-    return {
-      hash,
-      shortHash,
-      title: title.trim(),
-      message: body.trim().replace(/\s+/g, ' '),
-      branch: branch === 'undefined' ? '' : branch,
-      author: author.trim(),
-      authoredAt: authoredAt.trim(),
-      sessionId: null,
-      sessionName: null,
-      agentTool: null,
-    }
+    return { ...commit, branch: branch === 'undefined' ? '' : branch }
   }))
+}
+
+/**
+ * Named commits, in one call. Hashes that no longer resolve are absent from the result, and
+ * branch is left empty: naming a branch costs a git call each and the caller lists by session.
+ */
+export async function commitsByHash(git: string, dir: string, hashes: string[]): Promise<RecentCommit[]> {
+  const wanted = hashes.filter((hash) => /^[0-9a-f]{40}$/i.test(hash))
+  if (wanted.length === 0) return []
+  const result = await runCommand(git, ['log', '--no-walk', '--ignore-missing', COMMIT_FORMAT, ...wanted], { cwd: dir })
+  if (result.code !== 0) return []
+  return parseCommitRows(result.stdout)
 }
 
 export async function gitCommitDiff(git: string, dir: string, hash: string): Promise<string> {
