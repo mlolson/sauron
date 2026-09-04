@@ -124,16 +124,14 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
         {snapshot.projects.filter((project) => !project.archived).length === 0 && <div className="hint">Drop a git repository here or press ⌘O.</div>}
         {snapshot.projects.filter((project) => !project.archived).map((project) => {
           const collapsed = collapsedProjects.has(project.id)
-          const cutoff = Date.now() - snapshot.preferences.externalRecentHours * 3600_000
           const all = snapshot.sessions.filter((s) => s.projectId === project.id)
           // Closed (resumable) sessions live on the project page, not in the sidebar.
-          const sessions = all.filter((s) => (s.kind === 'managed' ? isAlive(s) : new Date(s.lastActivityAt).getTime() >= cutoff))
-          const managed = sessions.filter((s) => s.kind === 'managed')
-          const externals = sessions.filter((s) => s.kind === 'external')
-          const olderExternal = all.filter((s) => s.kind === 'external').length - externals.length
+          const managed = all.filter((s) => s.kind === 'managed' && isAlive(s))
+          // Every external session, newest first; the group is collapsed, so length costs nothing.
+          const externals = all.filter((s) => s.kind === 'external').sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
           const externalOpen = expandedExternal.has(project.id)
-          const alive = sessions.filter((s) => s.kind === 'managed' && isAlive(s)).length
-          const waiting = sessions.filter((s) => s.state === 'waitingForInput').length
+          const alive = managed.length
+          const waiting = [...managed, ...externals].filter((s) => s.state === 'waitingForInput').length
           return (
             <div key={project.id}>
               <Row
@@ -185,7 +183,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   <StateDot state={session.state} />
                 </Row>
               ))}
-              {!collapsed && (externals.length > 0 || olderExternal > 0) && (
+              {!collapsed && externals.length > 0 && (
                 <>
                   <div
                     className="row nested external-group"
@@ -212,7 +210,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   >
                     <span className="glyph">{externalOpen ? '▾' : '▸'}</span>
                     <span className="label muted"><span className="name">External sessions</span></span>
-                    <span className="badge">{externals.length + olderExternal}</span>
+                    <span className="badge">{externals.length}</span>
                   </div>
                   {externalOpen && externals.map((session) => (
                     <Row
@@ -230,12 +228,6 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                       <StateDot state={session.state} />
                     </Row>
                   ))}
-                  {externalOpen && olderExternal > 0 && (
-                    <div className="row nested deep hint-row" title="Older external sessions are listed in the project view">
-                      <span className="glyph">…</span>
-                      <span className="label muted">{olderExternal} older external</span>
-                    </div>
-                  )}
                 </>
               )}
             </div>

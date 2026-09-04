@@ -121,7 +121,6 @@ export function PreferencesView({ preferences, toolPaths, onClose }: Props) {
               <label className="pref-row"><span>Post-commit summary cooldown (minutes)</span><input type="number" readOnly value={preferences.supervisorProjectSummaryAfterCommitCooldownMinutes} /></label>
               <label className="pref-row"><span>Project summary prompt file</span><input readOnly value={preferences.supervisorProjectSummaryPromptFile} /></label>
               <label className="pref-row check"><input type="checkbox" disabled checked={preferences.masterAutoStart} /><span>Start the supervisor agent when Sauron launches</span></label>
-              <label className="pref-row"><span>External session cutoff (hours)</span><input type="number" readOnly value={preferences.externalRecentHours} /></label>
             </section>
             <section><h3>Terminal</h3><label className="pref-row"><span>Font size</span><input type="number" readOnly value={preferences.terminalFontSize} /></label><label className="pref-row"><span>Scrollback lines</span><input type="number" readOnly value={preferences.terminalScrollback} /></label></section>
             <section><h3>Diagnostics</h3><button onClick={() => window.sauron.revealLogs()}>Reveal Logs</button></section>

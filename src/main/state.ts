@@ -153,9 +153,11 @@ export class AppState extends EventEmitter<StateEvents> {
         supervisorAutoSummariesAfterCommit?: boolean
         supervisorSummaryCooldownMinutes?: number
         supervisorProjectSummaryPrompt?: string
+        externalRecentHours?: number
       }
       const {
         supervisorAutoSummariesActiveProjects: _removedActiveSummary,
+        externalRecentHours: _removedExternalCutoff,
         supervisorAutoSummariesAfterCommit: legacySummaryAfterCommit,
         supervisorSummaryCooldownMinutes: legacySummaryCooldown,
         supervisorProjectSummaryPrompt: legacySummaryPrompt,

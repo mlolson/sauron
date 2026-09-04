@@ -39,7 +39,6 @@ export interface RecentCommit {
 export interface Preferences {
   notificationsMuted: boolean
   /** External sessions idle longer than this are listed under "recent" instead of the sidebar. */
-  externalRecentHours: number
   /** Start the supervisor agent when Sauron launches. */
   masterAutoStart: boolean
   /** Explicit executable paths; empty means "find on PATH". */
@@ -66,7 +65,6 @@ export interface Preferences {
 
 export const defaultPreferences: Preferences = {
   notificationsMuted: false,
-  externalRecentHours: 24,
   masterAutoStart: true,
   toolOverrides: { claude: '', codex: '', tmux: '', git: '' },
   agents: [
