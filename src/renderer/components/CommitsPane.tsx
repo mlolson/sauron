@@ -143,7 +143,6 @@ export function CommitsPane({ session, projectId, onClose }: { session: Session;
             >
               <span className="commit-row-title">{commit.title || '(no message)'}</span>
               <span className="commit-row-meta">
-                {!branch && commit.branch && <span className="commit-branch-tag" title={`${commit.branch} points here`}>{commit.branch}</span>}
                 {scope === 'all' && commit.agentTool && <ToolIcon tool={commit.agentTool} />}
                 <span className="who">{scope === 'all' ? commit.sessionName ?? commit.author : commit.author}</span>
                 <span className="when">{relativeTime(commit.authoredAt)}</span>
