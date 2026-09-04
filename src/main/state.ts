@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import { homedir } from 'node:os'
-import type { AgentDefinition, AgentTool, AppError, LaunchOptions, Preferences, Project, Session, SelectionTarget, Snapshot, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
+import type { AgentDefinition, AgentTool, AppError, LaunchOptions, Preferences, Project, Session, SelectionTarget, SessionCommit, Snapshot, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
 import { defaultPreferences } from '@shared/types'
 import { claudeHookSettings, codexNotifyConfig, looksLikeApprovalPrompt, transitionForHook, type HookEvent } from '@shared/hooks'
 import { writeJsonAtomic } from './services/persistence'
@@ -27,7 +27,7 @@ import { CONFIG_VERSION, SESSIONS_VERSION, SauronError, isAlive } from '@shared/
 import { tmuxSessionName, shellCommandLine, TMUX_OPTION_PROJECT, TMUX_OPTION_SESSION, TMUX_OPTION_TITLE, TMUX_OPTION_TOOL } from '@shared/tmux-args'
 import { claudeTranscriptPath } from '@shared/transcripts'
 import { Persistence } from './services/persistence'
-import { gitCommitDiff, gitToplevel, recentGitCommits } from './services/git'
+import { commitSummaries, gitCommitDiff, gitToplevel, recentGitCommits } from './services/git'
 import { installPostCommitHook, removePostCommitHook } from './services/git-hooks'
 import { resolveTools, sessionEnvironment } from './services/cli-resolver'
 import { TmuxService } from './services/tmux'
@@ -334,6 +334,21 @@ export class AppState extends EventEmitter<StateEvents> {
     this.attributionStore.set(projectId, hash, sessionId)
     this.maybeCommitSummaryRefresh(projectId)
     this.changed()
+  }
+
+  /** The latest commit each session in this project made, for the session list. */
+  async lastCommitBySession(projectId: string): Promise<Record<string, SessionCommit>> {
+    const project = this.project(projectId)
+    if (!project || !this.toolPaths?.git) return {}
+    const latest = this.attributionStore.latestPerSession(projectId)
+    if (latest.size === 0) return {}
+    const summaries = await commitSummaries(this.toolPaths.git, project.path, [...new Set(latest.values())])
+    const bySession: Record<string, SessionCommit> = {}
+    for (const [sessionId, hash] of latest) {
+      const summary = summaries.get(hash)
+      if (summary) bySession[sessionId] = summary
+    }
+    return bySession
   }
 
   /**

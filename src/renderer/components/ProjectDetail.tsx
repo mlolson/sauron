@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { KeyDocument, Preferences, Project, RecentCommit, SelectionTarget, Session, ToolPaths } from '@shared/types'
+import type { KeyDocument, Preferences, Project, RecentCommit, SelectionTarget, Session, SessionCommit, ToolPaths } from '@shared/types'
 import { isAlive } from '@shared/types'
 import type { Worktree } from '@shared/worktrees'
 import type { ProjectStatus, RefreshState } from '@shared/status'
@@ -30,6 +30,7 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
   const queued = refresh.queued.includes(project.id)
   const [showHidden, setShowHidden] = useState(false)
   const [commits, setCommits] = useState<RecentCommit[] | null>(null)
+  const [sessionCommits, setSessionCommits] = useState<Record<string, SessionCommit>>({})
   const [diff, setDiff] = useState<{ commit: RecentCommit; content: string | null } | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
   const [renaming, setRenaming] = useState<Session | null>(null)
@@ -45,6 +46,8 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
     void window.sauron.refreshDocuments(project.id)
     setCommits(null)
     void window.sauron.recentCommits(project.id).then(setCommits)
+    setSessionCommits({})
+    void window.sauron.lastCommitBySession(project.id).then(setSessionCommits)
   }, [project.id])
 
   const remove = async (wt: Worktree) => {
@@ -198,8 +201,11 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
               <li key={s.id} onClick={() => onSelect({ kind: 'session', id: s.id })} onContextMenu={(event) => openSessionMenu(event, s)}>
                 <span className="glyph"><ToolIcon tool={s.tool} /></span>
                 <span className="name">
-                  {s.displayName}
-                  {s.worktreePath && <span className="tag accent" style={{ marginLeft: 8 }}>{worktrees.find((w) => w.path === s.worktreePath)?.branch ?? 'worktree'}</span>}
+                  <span className="name-title">
+                    {s.displayName}
+                    {s.worktreePath && <span className="tag accent" style={{ marginLeft: 8 }}>{worktrees.find((w) => w.path === s.worktreePath)?.branch ?? 'worktree'}</span>}
+                  </span>
+                  <LastCommitLine commit={sessionCommits[s.id]} />
                 </span>
                 <StateDot state={s.state} />
                 <span className="muted small">{relativeTime(s.createdAt)}</span>
@@ -324,6 +330,26 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
       {renaming && <RenameDialog initial={renaming.displayName} onSubmit={(title) => void window.sauron.renameSession(renaming.id, title)} onClose={() => setRenaming(null)} />}
     </div>
   )
+}
+
+/** The session's most recent commit, shown under its name. Absent until it makes one. */
+function LastCommitLine({ commit }: { commit: SessionCommit | undefined }) {
+  if (!commit) return null
+  return (
+    <span className="muted small last-commit" title={`${commit.shortHash} · ${new Date(commit.authoredAt).toLocaleString()}`}>
+      <span className="last-commit-title">{commit.title}</span>
+      <span className="last-commit-when">{commitTimestamp(commit.authoredAt)}</span>
+    </span>
+  )
+}
+
+/** Time of day for something committed today, otherwise the date as well. */
+function commitTimestamp(iso: string): string {
+  const at = new Date(iso)
+  const time = at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const today = new Date()
+  const sameDay = at.toDateString() === today.toDateString()
+  return sameDay ? time : `${at.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`
 }
 
 function DiffViewer({ commit, content, onClose, onGoToSession }: { commit: RecentCommit; content: string | null; onClose: () => void; onGoToSession: (sessionId: string) => void }) {

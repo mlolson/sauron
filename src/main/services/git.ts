@@ -1,6 +1,6 @@
 import { realpath } from 'node:fs/promises'
 import { runCommand } from './command'
-import { SauronError, type RecentCommit } from '@shared/types'
+import { SauronError, type RecentCommit, type SessionCommit } from '@shared/types'
 
 /** Returns the repository root containing `dir`, or throws `not_a_git_repository`. */
 export async function gitToplevel(git: string, dir: string): Promise<string> {
@@ -40,4 +40,21 @@ export async function gitCommitDiff(git: string, dir: string, hash: string): Pro
   const result = await runCommand(git, ['show', '--format=', '--no-ext-diff', '--find-renames', '--find-copies', '--unified=3', hash], { cwd: dir })
   if (result.code !== 0) throw new SauronError('command_failed', `git show: ${result.stderr.trim()}`)
   return result.stdout
+}
+
+/**
+ * Titles and dates for specific commits, in one git call. Hashes that no longer resolve — a
+ * branch was reset, a commit was amended away — are simply absent from the result.
+ */
+export async function commitSummaries(git: string, dir: string, hashes: string[]): Promise<Map<string, SessionCommit>> {
+  const wanted = hashes.filter((hash) => /^[0-9a-f]{40}$/i.test(hash))
+  const summaries = new Map<string, SessionCommit>()
+  if (wanted.length === 0) return summaries
+  const result = await runCommand(git, ['log', '--no-walk', '--ignore-missing', '--format=%H%x1f%h%x1f%s%x1f%aI%x1e', ...wanted], { cwd: dir })
+  if (result.code !== 0) return summaries
+  for (const row of result.stdout.split('\x1e').map((r) => r.trim()).filter(Boolean)) {
+    const [hash = '', shortHash = '', title = '', authoredAt = ''] = row.split('\x1f')
+    if (hash) summaries.set(hash, { hash, shortHash, title: title.trim(), authoredAt: authoredAt.trim() })
+  }
+  return summaries
 }

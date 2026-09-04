@@ -191,6 +191,14 @@ export interface WorktreeRemovalCheck {
   inUseBy: string[]
 }
 
+/** The most recent commit a session made, for the session list. */
+export interface SessionCommit {
+  hash: string
+  shortHash: string
+  title: string
+  authoredAt: string
+}
+
 export interface AppError {
   message: string
   /** Optional scope so the renderer can attach the banner to a project or session. */
@@ -276,6 +284,8 @@ export interface SauronApi {
   transcriptClose(sessionId: string): Promise<void>
   transcriptLoadOlder(sessionId: string, beforeIndex: number, count: number): Promise<TranscriptEntry[]>
   onTranscriptAppend(sessionId: string, cb: (entries: TranscriptEntry[]) => void): () => void
+  /** The latest commit each session in this project made, keyed by session id. */
+  lastCommitBySession(projectId: string): Promise<Record<string, SessionCommit>>
   revealInFinder(path: string): void
   /** Opens a file or directory in VS Code. Rejects if VS Code is not installed. */
   openInVsCode(path: string): Promise<void>

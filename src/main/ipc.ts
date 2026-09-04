@@ -109,6 +109,7 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
   handle('transcriptClose', async (sessionId) => state.transcriptClose(sessionId))
   handle('transcriptLoadOlder', async (sessionId, beforeIndex, count) => state.transcriptLoadOlder(sessionId, beforeIndex, count))
 
+  handle('lastCommitBySession', (projectId) => state.lastCommitBySession(projectId))
   on('revealInFinder', (path) => shell.showItemInFolder(path))
   handle('openInVsCode', async (path) => {
     // VS Code registers this scheme when it is installed; openExternal rejects when nothing handles it.

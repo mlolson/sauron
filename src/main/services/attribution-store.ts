@@ -40,6 +40,17 @@ export class AttributionStore {
     return row?.session_id ?? null
   }
 
+  /** The most recently recorded commit for each session in a project. */
+  latestPerSession(projectId: string): Map<string, string> {
+    const rows = this.requireDb().prepare(
+      // rowid breaks ties: two commits recorded in the same millisecond are entirely possible.
+      'SELECT session_id, commit_hash FROM commit_attributions WHERE project_id = ? ORDER BY created_at DESC, rowid DESC',
+    ).all(projectId) as { session_id: string; commit_hash: string }[]
+    const latest = new Map<string, string>()
+    for (const row of rows) if (!latest.has(row.session_id)) latest.set(row.session_id, row.commit_hash)
+    return latest
+  }
+
   close(): void {
     this.db?.close()
     this.db = null
