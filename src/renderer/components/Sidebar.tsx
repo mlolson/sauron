@@ -22,6 +22,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
   const [archivedCollapsed, setArchivedCollapsed] = useState(true)
   // External sessions are background noise most of the time, so their group starts closed.
   const [expandedExternal, setExpandedExternal] = useState<Set<string>>(() => new Set())
+  const [collapsed, setCollapsed] = useState(false)
   const openMenu = (e: React.MouseEvent, items: MenuItem[]) => {
     e.preventDefault()
     setMenu({ x: e.clientX, y: e.clientY, items })
@@ -89,23 +90,26 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
 
   const unassigned = snapshot.sessions.filter((s) => s.projectId === null && s.id !== 'master')
 
+  // Rendered in the toolbar when open and in a vertical rail when collapsed: the toolbar row
+  // is where macOS draws the traffic lights, which would sit on top of a narrow strip's buttons.
+  const toolbarButtons = (
+    <>
+      <button className="icon-button" title={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'} aria-expanded={!collapsed} onClick={() => setCollapsed((v) => !v)}>
+        {collapsed ? '»' : '«'}
+      </button>
+      <button className="icon-button" title="Add a git repository (⌘O)" onClick={() => void window.sauron.addProjectDialog()}>
+        +
+      </button>
+      <button className="icon-button" title="Preferences (⌘,)" onClick={onOpenPreferences}>
+        ⚙
+      </button>
+    </>
+  )
+
   return (
-    <aside className="sidebar">
-      <div className="sidebar-toolbar">
-        <button
-          className={`icon-button ${snapshot.preferences.notificationsMuted ? 'muted' : ''}`}
-          title={snapshot.preferences.notificationsMuted ? 'Notifications are muted. Click to unmute.' : 'Notifications are on. Click to mute.'}
-          onClick={() => void window.sauron.setPreferences({ notificationsMuted: !snapshot.preferences.notificationsMuted })}
-        >
-          {snapshot.preferences.notificationsMuted ? '🔕' : '🔔'}
-        </button>
-        <button className="icon-button" title="Add a git repository (⌘O)" onClick={() => void window.sauron.addProjectDialog()}>
-          +
-        </button>
-        <button className="icon-button" title="Preferences (⌘,)" onClick={onOpenPreferences}>
-          ⚙
-        </button>
-      </div>
+    <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+      <div className="sidebar-toolbar">{!collapsed && toolbarButtons}</div>
+      {collapsed && <div className="sidebar-rail">{toolbarButtons}</div>}
       <nav>
         {(() => {
           const master = snapshot.sessions.find((s) => s.id === 'master')
