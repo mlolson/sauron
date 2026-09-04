@@ -14,13 +14,13 @@ afterEach(() => rm(root, { recursive: true, force: true }))
 
 describe('Persistence', () => {
   it('returns an empty config and creates the layout when nothing exists', async () => {
-    const p = new Persistence(new AppPaths(root))
+    const p = new Persistence(new AppPaths(root, root))
     expect(await p.loadConfig()).toEqual({ version: CONFIG_VERSION, projects: [] })
     expect(existsSync(join(root, 'status'))).toBe(true)
   })
 
   it('round-trips config', async () => {
-    const p = new Persistence(new AppPaths(root), 10)
+    const p = new Persistence(new AppPaths(root, root), 10)
     const config = {
       version: CONFIG_VERSION,
       projects: [{ id: 'a', name: 'sauron', path: '/code/sauron', addedAt: '2026-09-03T00:00:00.000Z', pinned: true }],
@@ -31,7 +31,7 @@ describe('Persistence', () => {
   })
 
   it('collapses debounced writes', async () => {
-    const p = new Persistence(new AppPaths(root), 30)
+    const p = new Persistence(new AppPaths(root, root), 30)
     p.saveConfig({ version: CONFIG_VERSION, projects: [{ id: 'a', name: 'a', path: '/a', addedAt: '', pinned: false }] })
     p.saveConfig({ version: CONFIG_VERSION, projects: [{ id: 'b', name: 'b', path: '/b', addedAt: '', pinned: false }] })
     await new Promise((r) => setTimeout(r, 100))
@@ -39,7 +39,7 @@ describe('Persistence', () => {
   })
 
   it('rejects a newer version', async () => {
-    const paths = new AppPaths(root)
+    const paths = new AppPaths(root, root)
     await paths.createLayout()
     await writeJsonAtomic(paths.configFile, { version: CONFIG_VERSION + 1, projects: [] })
     await expect(new Persistence(paths).loadConfig()).rejects.toThrow(/newer/)
@@ -51,5 +51,14 @@ describe('Persistence', () => {
     expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ a: 1 })
     const { readdir } = await import('node:fs/promises')
     expect((await readdir(root)).filter((n) => n.endsWith('.tmp'))).toEqual([])
+  })
+})
+
+describe('AppPaths', () => {
+  it('keeps the shim directory out of paths containing spaces', () => {
+    // A PATH entry with a space is dropped by shells that rebuild PATH unquoted, which would
+    // silently disable the git shim and with it commit attribution.
+    const paths = new AppPaths('/Users/x/Library/Application Support/Sauron')
+    expect(paths.binDir).not.toMatch(/ /)
   })
 })

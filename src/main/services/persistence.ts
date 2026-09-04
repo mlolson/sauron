@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { CONFIG_VERSION, SESSIONS_VERSION, SauronError } from '@shared/types'
@@ -7,7 +8,16 @@ import type { AppConfig, SessionsFile } from '@shared/types'
 
 /** On-disk layout under the app's userData directory. */
 export class AppPaths {
-  constructor(public readonly root: string) {}
+  /**
+   * `binRoot` is deliberately separate from `root`: on macOS the userData directory lives under
+   * "Application Support", and a PATH entry containing a space is dropped by tools that rebuild
+   * PATH through an unquoted shell assignment (Claude Code's shell snapshot is one). The shims
+   * would then never shadow the real `git`, and commit attribution would silently stop working.
+   */
+  constructor(
+    public readonly root: string,
+    private readonly binRoot: string = join(homedir(), '.sauron'),
+  ) {}
 
   get configFile() { return join(this.root, 'config.json') }
   get sessionsFile() { return join(this.root, 'sessions.json') }
@@ -15,8 +25,10 @@ export class AppPaths {
   get masterDir() { return join(this.root, 'master') }
   get sessionsDir() { return join(this.root, 'sessions') }
   get worktreesDir() { return join(this.root, 'worktrees') }
-  get binDir() { return join(this.root, 'bin') }
+  get binDir() { return join(this.binRoot, 'bin') }
   get socketFile() { return join(this.root, 'sauron.sock') }
+  get attributionDatabase() { return join(this.root, 'attributions.sqlite') }
+  get summaryPromptFile() { return join(this.root, 'summary-prompt.md') }
 
   async createLayout(): Promise<void> {
     for (const dir of [this.root, this.statusDir, this.masterDir, this.sessionsDir, this.worktreesDir, this.binDir]) {

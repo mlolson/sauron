@@ -7,6 +7,7 @@
  *   sauron sessions [--project <name|id>]
  *   sauron launch --project <name|id> [--tool shell|claude|codex] [--title <text>] [--prompt <text>] [--worktree [<branch>]]
  *   sauron rename --session <id> --title <text>
+ *   sauron fork --session <id>       (Claude/Codex: new terminal continuing a copy of the conversation)
  *   sauron worktrees --project <name|id>
  *   sauron worktrees remove --project <name|id> --path <dir> [--force]
  *   sauron close --session <id>      (kill; agents stay resumable, plain terminals are forgotten)
@@ -25,6 +26,9 @@
 import { connect } from 'node:net'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { spawnSync } from 'node:child_process'
+import { resolve } from 'node:path'
+import { gitSubcommand } from '@shared/git-args'
 
 const socketPath = process.env.SAURON_SOCKET || join(homedir(), 'Library/Application Support/Sauron/sauron.sock')
 
@@ -102,6 +106,34 @@ async function hookPayload(tool: string, positional: string[]): Promise<{ event:
 }
 
 async function main(): Promise<void> {
+  if (process.argv[2] === 'git-proxy') {
+    const args = process.argv.slice(3)
+    const git = process.env.SAURON_REAL_GIT
+    if (!git) throw new Error('SAURON_REAL_GIT is not set')
+    const session = process.env.SAURON_SESSION_ID
+    // `-C` is repeatable and relative to the previous one, exactly as git resolves it.
+    let cwd = process.cwd()
+    for (let i = 0; i < args.length - 1; i++) if (args[i] === '-C') cwd = resolve(cwd, args[i + 1]!)
+    const head = (): string | null => {
+      const r = spawnSync(git, ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8', env: process.env })
+      return r.status === 0 && r.stdout.trim() ? r.stdout.trim() : null
+    }
+    // Comparing HEAD before and after is what makes this exact: it ignores --dry-run, a commit
+    // an aborted hook rejected, and `commit` appearing somewhere that is not the subcommand,
+    // and it still catches --amend, which replaces HEAD with a new hash.
+    const committing = Boolean(session) && gitSubcommand(args) === 'commit'
+    const before = committing ? head() : null
+    const result = spawnSync(git, args, { stdio: 'inherit', env: process.env })
+    const code = result.status ?? 1
+    if (code === 0 && committing && session) {
+      const after = head()
+      if (after && after !== before) {
+        await request({ cmd: 'commits.record', session, cwd, hash: after }).catch(() => undefined)
+      }
+    }
+    process.exitCode = code
+    return
+  }
   const { positional, flags, lists } = parseFlags(process.argv.slice(2))
   const [command, sub] = positional
   let payload: Record<string, unknown>
@@ -160,6 +192,9 @@ async function main(): Promise<void> {
       break
     case 'resume':
       payload = { cmd: 'sessions.resume', session: flags.session }
+      break
+    case 'fork':
+      payload = { cmd: 'sessions.fork', session: flags.session }
       break
     case 'rename':
       payload = { cmd: 'sessions.rename', session: flags.session, title: flags.title }
