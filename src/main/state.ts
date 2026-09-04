@@ -28,6 +28,7 @@ import { tmuxSessionName, shellCommandLine, TMUX_OPTION_PROJECT, TMUX_OPTION_SES
 import { claudeTranscriptPath } from '@shared/transcripts'
 import { Persistence } from './services/persistence'
 import { gitCommitDiff, gitToplevel, recentGitCommits } from './services/git'
+import { installPostCommitHook, removePostCommitHook } from './services/git-hooks'
 import { resolveTools, sessionEnvironment } from './services/cli-resolver'
 import { TmuxService } from './services/tmux'
 import { PtyService } from './services/pty'
@@ -207,6 +208,7 @@ export class AppState extends EventEmitter<StateEvents> {
     this.transcriptTimer = setInterval(() => void this.rescanTranscripts(), 30_000)
     await this.statusStore.start()
     await this.syncGitWatchers()
+    await this.syncCommitHooks()
     await this.regenerateMasterHome()
     if (this.preferences.masterAutoStart && !(this.masterSession() && isAlive(this.masterSession()!))) {
       await this.startMaster()
@@ -334,6 +336,36 @@ export class AppState extends EventEmitter<StateEvents> {
     this.changed()
   }
 
+  /**
+   * Keeps every project's post-commit hook current. Runs on load and whenever a project is
+   * added, so a Sauron upgrade or a moved CLI repairs the hooks without the user doing anything.
+   */
+  async syncCommitHooks(): Promise<void> {
+    const git = this.toolPaths?.git
+    if (!git || !this.sauronBin) return
+    await Promise.all(this.projects.map((project) => this.installCommitHook(project)))
+  }
+
+  private async installCommitHook(project: Project): Promise<void> {
+    const git = this.toolPaths?.git
+    if (!git || !this.sauronBin) return
+    try {
+      await installPostCommitHook(git, project.path, this.sauronBin)
+    } catch (error) {
+      this.report(error, { projectId: project.id })
+    }
+  }
+
+  private async uninstallCommitHook(project: Project): Promise<void> {
+    const git = this.toolPaths?.git
+    if (!git) return
+    try {
+      await removePostCommitHook(git, project.path)
+    } catch (error) {
+      this.report(error, { projectId: project.id })
+    }
+  }
+
   async commitDiff(projectId: string, hash: string): Promise<string> {
     const project = this.project(projectId)
     if (!project || !this.toolPaths?.git) throw new SauronError('invalid_state', 'Project or git is unavailable.')
@@ -361,6 +393,7 @@ export class AppState extends EventEmitter<StateEvents> {
       this.changed()
       this.select({ kind: 'project', id: project.id })
       await this.regenerateMasterHome()
+      await this.installCommitHook(project)
       await this.refreshWorktrees(project.id)
       await this.refreshDocuments(project.id)
       await this.syncGitWatchers()
@@ -375,6 +408,8 @@ export class AppState extends EventEmitter<StateEvents> {
   }
 
   removeProject(id: string): void {
+    const project = this.project(id)
+    if (project) void this.uninstallCommitHook(project)
     this.projects = this.projects.filter((p) => p.id !== id)
     this.refresh.remove(id)
     this.persistConfig()
@@ -398,7 +433,7 @@ export class AppState extends EventEmitter<StateEvents> {
     this.select({ kind: 'project', id })
   }
 
-  /** Watches refs for worktree metadata only; commit summary triggers come from the git proxy. */
+  /** Watches refs for worktree metadata only; commit summary triggers come from the post-commit hook. */
   async syncGitWatchers(): Promise<void> {
     const git = this.toolPaths?.git
     if (!git) return
@@ -454,7 +489,6 @@ export class AppState extends EventEmitter<StateEvents> {
       COLORTERM: 'truecolor',
       SAURON_SESSION_ID: sessionId,
       SAURON_SOCKET: this.paths.socketFile,
-      SAURON_REAL_GIT: tools.git ?? 'git',
     }
   }
 
