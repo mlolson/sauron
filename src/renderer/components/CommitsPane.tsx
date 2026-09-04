@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { RecentCommit, Session } from '@shared/types'
-import { relativeTime } from '../time'
+import { relativeTime } from '@shared/time'
 import { CopyHashButton, DiffBody } from './CommitUI'
 import { ToolIcon } from './ToolIcon'
 

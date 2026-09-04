@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import type { KeyDocument, Project, SelectionTarget } from '@shared/types'
-import { relativeTime } from '../time'
+import { relativeTime } from '@shared/time'
 
 interface Props {
   project: Project

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { AgentDefinition, Project, SelectionTarget, Session, Snapshot } from '@shared/types'
 import { isAlive } from '@shared/types'
 import { sameTarget } from '../store'
+import { compactTime } from '@shared/time'
 import { StateDot } from './StateDot'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { RenameDialog } from './RenameDialog'
@@ -212,6 +213,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                     <span className="name">{session.displayName}</span>
                     {session.worktreePath && <span className="sub">{branchOf(snapshot, session)}</span>}
                   </span>
+                  <span className="when" title={`Last active ${new Date(session.lastActivityAt).toLocaleString()}`}>{compactTime(session.lastActivityAt)}</span>
                   <StateDot state={session.state} />
                 </Row>
               ))}
@@ -257,6 +259,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                       <span className="label muted">
                         <span className="name">{session.displayName}</span>
                       </span>
+                      <span className="when" title={`Last active ${new Date(session.lastActivityAt).toLocaleString()}`}>{compactTime(session.lastActivityAt)}</span>
                       <StateDot state={session.state} />
                     </Row>
                   ))}
@@ -300,6 +303,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   <ToolIcon tool={session.tool} />
                 </span>
                 <span className="label">{session.displayName}</span>
+                <span className="when" title={`Last active ${new Date(session.lastActivityAt).toLocaleString()}`}>{compactTime(session.lastActivityAt)}</span>
                 <StateDot state={session.state} />
               </Row>
             ))}
