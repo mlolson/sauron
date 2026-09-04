@@ -12,11 +12,26 @@ interface Entry {
 /** One xterm instance per session, kept across tab switches so we never re-attach. */
 const terminals = new Map<string, Entry>()
 
+/**
+ * Resizes only when the grid would actually change.
+ *
+ * fit() writes the terminal's size, which resizes the element the ResizeObserver watches,
+ * which fits again: if a rounding difference makes the two disagree the pair oscillates and
+ * the terminal visibly bounces. Comparing the proposal with the current size first breaks
+ * that cycle, since a settled terminal proposes what it already has.
+ */
+function fitIfNeeded(term: Terminal, fit: FitAddon): void {
+  const dims = fit.proposeDimensions()
+  if (!dims || !Number.isFinite(dims.cols) || !Number.isFinite(dims.rows) || dims.cols < 2 || dims.rows < 2) return
+  if (dims.cols === term.cols && dims.rows === term.rows) return
+  fit.fit()
+}
+
 export function applyTerminalPreferences(fontSize: number, scrollback: number): void {
   for (const { term, fit } of terminals.values()) {
     if (term.options.fontSize !== fontSize) term.options.fontSize = fontSize
     if (term.options.scrollback !== scrollback) term.options.scrollback = scrollback
-    fit.fit()
+    fitIfNeeded(term, fit)
   }
 }
 
@@ -86,13 +101,20 @@ export function SessionTerminal({ sessionId, fontSize, scrollback }: { sessionId
     if (!term.element) term.open(el)
     else el.appendChild(term.element)
 
-    fit.fit()
+    fitIfNeeded(term, fit)
     void window.sauron.ptyOpen(sessionId, term.cols, term.rows)
     term.focus()
 
-    const observer = new ResizeObserver(() => fit.fit())
+    // Measure on the next frame: resizing inside the observer's own callback is what provokes
+    // "ResizeObserver loop" warnings, and it coalesces a burst of layout changes into one fit.
+    let frame = 0
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => fitIfNeeded(term, fit))
+    })
     observer.observe(el)
     return () => {
+      cancelAnimationFrame(frame)
       observer.disconnect()
       // Keep the terminal alive for the next mount; the pty stays open until detach/stop.
       if (term.element && term.element.parentElement === el) el.removeChild(term.element)
