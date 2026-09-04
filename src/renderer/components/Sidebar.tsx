@@ -19,6 +19,8 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
   const [renaming, setRenaming] = useState<Session | null>(null)
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => new Set())
   const [archivedCollapsed, setArchivedCollapsed] = useState(true)
+  // External sessions are background noise most of the time, so their group starts closed.
+  const [expandedExternal, setExpandedExternal] = useState<Set<string>>(() => new Set())
   const openMenu = (e: React.MouseEvent, items: MenuItem[]) => {
     e.preventDefault()
     setMenu({ x: e.clientX, y: e.clientY, items })
@@ -123,7 +125,10 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
           const all = snapshot.sessions.filter((s) => s.projectId === project.id)
           // Closed (resumable) sessions live on the project page, not in the sidebar.
           const sessions = all.filter((s) => (s.kind === 'managed' ? isAlive(s) : new Date(s.lastActivityAt).getTime() >= cutoff))
-          const olderExternal = all.filter((s) => s.kind === 'external').length - sessions.filter((s) => s.kind === 'external').length
+          const managed = sessions.filter((s) => s.kind === 'managed')
+          const externals = sessions.filter((s) => s.kind === 'external')
+          const olderExternal = all.filter((s) => s.kind === 'external').length - externals.length
+          const externalOpen = expandedExternal.has(project.id)
           const alive = sessions.filter((s) => s.kind === 'managed' && isAlive(s)).length
           const waiting = sessions.filter((s) => s.state === 'waitingForInput').length
           return (
@@ -159,7 +164,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                 {waiting > 0 && <span className="badge waiting" title="Sessions waiting for input">{waiting}</span>}
                 {alive > 0 && <span className="badge">{alive}</span>}
               </Row>
-              {!collapsed && sessions.map((session) => (
+              {!collapsed && managed.map((session) => (
                 <Row
                   key={session.id}
                   nested
@@ -167,7 +172,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   onClick={() => onSelect({ kind: 'session', id: session.id })}
                   onContextMenu={(e) => openMenu(e, sessionMenu(session))}
                 >
-                  <span className={`glyph ${session.kind === 'external' ? 'external' : isAlive(session) ? 'accent' : 'muted'}`} title={session.kind === 'external' ? 'Started outside Sauron' : undefined}>
+                  <span className={`glyph ${isAlive(session) ? 'accent' : 'muted'}`}>
                     <ToolIcon tool={session.tool} />
                   </span>
                   <span className={`label ${isAlive(session) ? '' : 'muted'}`}>
@@ -177,11 +182,58 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   <StateDot state={session.state} />
                 </Row>
               ))}
-              {!collapsed && olderExternal > 0 && (
-                <div className="row nested hint-row" title="Older external sessions are listed in the project view">
-                  <span className="glyph">…</span>
-                  <span className="label muted">{olderExternal} older external</span>
-                </div>
+              {!collapsed && (externals.length > 0 || olderExternal > 0) && (
+                <>
+                  <div
+                    className="row nested external-group"
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={externalOpen}
+                    title="Sessions started outside Sauron"
+                    onClick={() => setExpandedExternal((current) => {
+                      const next = new Set(current)
+                      if (next.has(project.id)) next.delete(project.id)
+                      else next.add(project.id)
+                      return next
+                    })}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter' && event.key !== ' ') return
+                      event.preventDefault()
+                      setExpandedExternal((current) => {
+                        const next = new Set(current)
+                        if (next.has(project.id)) next.delete(project.id)
+                        else next.add(project.id)
+                        return next
+                      })
+                    }}
+                  >
+                    <span className="glyph">{externalOpen ? '▾' : '▸'}</span>
+                    <span className="label muted"><span className="name">External</span></span>
+                    <span className="badge">{externals.length + olderExternal}</span>
+                  </div>
+                  {externalOpen && externals.map((session) => (
+                    <Row
+                      key={session.id}
+                      nested
+                      deep
+                      selected={sameTarget(selection, { kind: 'session', id: session.id })}
+                      onClick={() => onSelect({ kind: 'session', id: session.id })}
+                      onContextMenu={(e) => openMenu(e, sessionMenu(session))}
+                    >
+                      <span className="glyph external"><ToolIcon tool={session.tool} /></span>
+                      <span className="label muted">
+                        <span className="name">{session.displayName}</span>
+                      </span>
+                      <StateDot state={session.state} />
+                    </Row>
+                  ))}
+                  {externalOpen && olderExternal > 0 && (
+                    <div className="row nested deep hint-row" title="Older external sessions are listed in the project view">
+                      <span className="glyph">…</span>
+                      <span className="label muted">{olderExternal} older external</span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )
@@ -249,17 +301,19 @@ function Row({
   children,
   selected,
   nested,
+  deep,
   onClick,
   onContextMenu,
 }: {
   children: React.ReactNode
   selected: boolean
   nested?: boolean
+  deep?: boolean
   onClick: () => void
   onContextMenu?: (e: React.MouseEvent) => void
 }) {
   return (
-    <div className={`row ${selected ? 'selected' : ''} ${nested ? 'nested' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
+    <div className={`row ${selected ? 'selected' : ''} ${nested ? 'nested' : ''} ${deep ? 'deep' : ''}`} onClick={onClick} onContextMenu={onContextMenu}>
       {children}
     </div>
   )
