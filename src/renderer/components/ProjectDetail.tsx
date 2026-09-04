@@ -222,7 +222,10 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
             {resumable.map((s) => (
               <li key={s.id} onContextMenu={(event) => openSessionMenu(event, s)}>
                 <span className="glyph"><ToolIcon tool={s.tool} /></span>
-                <span className="name">{s.displayName}</span>
+                <span className="name">
+                  <span className="name-title">{s.displayName}</span>
+                  <LastCommitLine commit={sessionCommits[s.id]} />
+                </span>
                 <span className="muted small">closed {relativeTime(s.lastActivityAt)}</span>
                 <button onClick={() => void window.sauron.resumeSession(s.id)}>Resume</button>
                 <button className="destructive" onClick={() => void window.sauron.forgetSession(s.id)}>
