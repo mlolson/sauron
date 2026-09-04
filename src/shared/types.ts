@@ -273,6 +273,10 @@ export interface SauronApi {
   addKeyDocumentDialog(projectId: string): Promise<void>
   removeKeyDocument(projectId: string, path: string): Promise<void>
   readDocument(projectId: string, path: string): Promise<{ content: string; mtime: string }>
+  /** Writes a document; rejects when it changed on disk since `expectedMtime`. */
+  writeDocument(projectId: string, path: string, content: string, expectedMtime: string | null): Promise<{ mtime: string }>
+  /** Commits just this document, with no session attribution. */
+  commitDocument(projectId: string, path: string, message: string): Promise<void>
 
   startMaster(): Promise<void>
   stopMaster(): Promise<void>

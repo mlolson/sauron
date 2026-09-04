@@ -17,7 +17,7 @@ import { StatusStore } from './services/status-store'
 import { MasterHome, RefreshScheduler } from './services/master'
 import { ensureClaudeTrusts } from './services/claude-config'
 import { GitWatcher } from './services/git-watcher'
-import { listKeyDocuments, readDocument, relativeInside } from './services/documents'
+import { listKeyDocuments, readDocument, relativeInside, writeDocument } from './services/documents'
 import type { KeyDocument } from '@shared/types'
 import { runCommand } from './services/command'
 import type { Worktree } from '@shared/worktrees'
@@ -27,7 +27,7 @@ import { CONFIG_VERSION, SESSIONS_VERSION, SauronError, isAlive } from '@shared/
 import { tmuxSessionName, shellCommandLine, TMUX_OPTION_PROJECT, TMUX_OPTION_SESSION, TMUX_OPTION_TITLE, TMUX_OPTION_TOOL } from '@shared/tmux-args'
 import { claudeTranscriptPath } from '@shared/transcripts'
 import { Persistence } from './services/persistence'
-import { commitSummaries, gitCommitDiff, gitToplevel, recentGitCommits } from './services/git'
+import { commitPath, commitSummaries, gitCommitDiff, gitToplevel, recentGitCommits } from './services/git'
 import { readTranscriptEntries } from './services/transcripts'
 import { renderHandoff } from '@shared/handoff'
 import { installPostCommitHook, removePostCommitHook } from './services/git-hooks'
@@ -948,6 +948,28 @@ export class AppState extends EventEmitter<StateEvents> {
     const project = this.project(projectId)
     if (!project) throw new SauronError('invalid_state', `Unknown project ${projectId}`)
     return readDocument(project, rel)
+  }
+
+  async writeDocument(projectId: string, rel: string, content: string, expectedMtime: string | null): Promise<{ mtime: string }> {
+    const project = this.project(projectId)
+    if (!project) throw new SauronError('invalid_state', `Unknown project ${projectId}`)
+    const result = await writeDocument(project, rel, content, expectedMtime)
+    await this.refreshDocuments(projectId)
+    return result
+  }
+
+  /**
+   * Commits one document. The commit is the user's, not a session's, so it carries no
+   * attribution: the post-commit hook sees no SAURON_SESSION_ID and records nothing.
+   */
+  async commitDocument(projectId: string, rel: string, message: string): Promise<void> {
+    const project = this.project(projectId)
+    if (!project) throw new SauronError('invalid_state', `Unknown project ${projectId}`)
+    if (!this.toolPaths?.git) throw new SauronError('executable_not_found', 'git was not found on PATH.')
+    if (!message.trim()) throw new SauronError('invalid_state', 'A commit message is required.')
+    await commitPath(this.toolPaths.git, project.path, rel, message.trim())
+    this.maybeCommitSummaryRefresh(projectId)
+    this.changed()
   }
 
   // MARK: Worktrees

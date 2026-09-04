@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
 import type { KeyDocument, Project } from '@shared/types'
 import { SauronError } from '@shared/types'
@@ -64,6 +64,24 @@ export function relativeInside(project: Project, absolute: string): string {
     throw new SauronError('invalid_state', `${absolute} is not inside ${project.path}.`)
   }
   return rel.split(sep).join('/')
+}
+
+/**
+ * Writes a document, refusing when it changed since the editor loaded it. Agents edit these
+ * files while they are open, so a blind write is a real way to lose their work.
+ */
+export async function writeDocument(project: Project, rel: string, content: string, expectedMtime: string | null): Promise<{ mtime: string }> {
+  const abs = resolve(project.path, rel)
+  relativeInside(project, abs)
+  if (expectedMtime) {
+    const current = await stat(abs).catch(() => null)
+    if (current && current.mtime.toISOString() !== expectedMtime) {
+      throw new SauronError('invalid_state', `${rel} changed on disk since you opened it. Reload to see the current version; your text stays in the editor.`)
+    }
+  }
+  await writeFile(abs, content, 'utf8')
+  const s = await stat(abs)
+  return { mtime: s.mtime.toISOString() }
 }
 
 export async function readDocument(project: Project, rel: string): Promise<{ content: string; mtime: string }> {

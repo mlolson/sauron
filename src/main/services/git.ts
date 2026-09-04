@@ -43,6 +43,22 @@ export async function gitCommitDiff(git: string, dir: string, hash: string): Pro
 }
 
 /**
+ * Stages one path and commits just that path. `--only` keeps anything else the user has
+ * staged out of the commit, so saving a document never sweeps up unrelated work.
+ */
+export async function commitPath(git: string, dir: string, rel: string, message: string): Promise<string> {
+  const add = await runCommand(git, ['add', '--', rel], { cwd: dir })
+  if (add.code !== 0) throw new SauronError('command_failed', `git add: ${add.stderr.trim()}`)
+  const commit = await runCommand(git, ['commit', '--only', '--message', message, '--', rel], { cwd: dir })
+  if (commit.code !== 0) {
+    const detail = `${commit.stdout.trim()}\n${commit.stderr.trim()}`.trim()
+    throw new SauronError('command_failed', /nothing to commit|no changes added/i.test(detail) ? `${rel} has no changes to commit.` : `git commit: ${detail}`)
+  }
+  const head = await runCommand(git, ['rev-parse', 'HEAD'], { cwd: dir })
+  return head.code === 0 ? head.stdout.trim() : ''
+}
+
+/**
  * Titles and dates for specific commits, in one git call. Hashes that no longer resolve — a
  * branch was reset, a commit was amended away — are simply absent from the result.
  */

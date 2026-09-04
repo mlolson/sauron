@@ -97,6 +97,10 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
   })
   handle('removeKeyDocument', (projectId, path) => state.removeKeyDocument(projectId, path))
   handle('readDocument', (projectId, path) => state.readDocument(projectId, path))
+  handle('writeDocument', (projectId, path, content, expectedMtime) => state.writeDocument(projectId, path, content, expectedMtime))
+  handle('commitDocument', async (projectId, path, message) => {
+    await state.commitDocument(projectId, path, message)
+  })
 
   handle('startMaster', () => state.startMaster())
   handle('stopMaster', () => state.stopMaster())
