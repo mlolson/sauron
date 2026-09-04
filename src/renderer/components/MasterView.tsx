@@ -9,12 +9,19 @@ export function MasterView({ session, preferences }: { session: Session | undefi
       <p>
         A long-lived {profile?.name ?? preferences.supervisorAgentId} session that keeps project summaries current and can start or direct worker sessions. It runs in its own
         home directory with generated CLAUDE.md and AGENTS.md instructions.
-        {session?.cliSessionId ? ' Starting will resume its previous conversation.' : ''}
+        {preferences.supervisorEnabled && session?.cliSessionId ? ' Starting will resume its previous conversation.' : ''}
+        {!preferences.supervisorEnabled ? ' It is currently disabled, so it will not run or refresh summaries.' : ''}
       </p>
       <div className="actions">
-        <button className="primary" onClick={() => void window.sauron.startMaster()}>
-          {session?.cliSessionId ? 'Resume Supervisor Agent' : 'Start Supervisor Agent'}
-        </button>
+        {preferences.supervisorEnabled ? (
+          <button className="primary" onClick={() => void window.sauron.startMaster()}>
+            {session?.cliSessionId ? 'Resume Supervisor Agent' : 'Start Supervisor Agent'}
+          </button>
+        ) : (
+          <button className="primary" onClick={() => void window.sauron.setPreferences({ supervisorEnabled: true })}>
+            Enable Supervisor Agent
+          </button>
+        )}
       </div>
     </div>
   )

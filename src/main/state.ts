@@ -214,7 +214,7 @@ export class AppState extends EventEmitter<StateEvents> {
     await this.syncGitWatchers()
     await this.syncCommitHooks()
     await this.regenerateMasterHome()
-    if (this.preferences.masterAutoStart && !(this.masterSession() && isAlive(this.masterSession()!))) {
+    if (this.preferences.supervisorEnabled && this.preferences.masterAutoStart && !(this.masterSession() && isAlive(this.masterSession()!))) {
       await this.startMaster()
     }
     this.changed()
@@ -245,6 +245,12 @@ export class AppState extends EventEmitter<StateEvents> {
     const before = this.preferences
     this.preferences = { ...before, ...prefs, toolOverrides: { ...before.toolOverrides, ...prefs.toolOverrides } }
     this.notifier.muted = this.preferences.notificationsMuted
+    // Disabling is not just a flag: the running agent has to go, and any queued summary work
+    // with it, or the app would keep waiting on an agent that will never answer.
+    if (before.supervisorEnabled && !this.preferences.supervisorEnabled) {
+      for (const project of this.projects) this.refresh.remove(project.id)
+      void this.stopMaster().catch((error) => this.report(error, { sessionId: MASTER_SESSION_ID }))
+    }
     void this.ensureSummaryPromptFile().catch((error) => this.report(error))
     this.persistConfig()
     this.changed()
@@ -1255,6 +1261,10 @@ export class AppState extends EventEmitter<StateEvents> {
 
   /** Starts the supervisor agent, resuming its previous conversation when possible. */
   async startMaster(): Promise<void> {
+    if (!this.preferences.supervisorEnabled) {
+      this.report(new SauronError('invalid_state', 'The supervisor agent is disabled. Enable it from its row in the sidebar.'), { sessionId: MASTER_SESSION_ID })
+      return
+    }
     const existing = this.masterSession()
     if (existing && isAlive(existing)) {
       this.select({ kind: 'session', id: MASTER_SESSION_ID })
@@ -1407,6 +1417,10 @@ export class AppState extends EventEmitter<StateEvents> {
 
   requestRefresh(projectId: string): void {
     if (!this.project(projectId)) return
+    if (!this.preferences.supervisorEnabled) {
+      this.report(new SauronError('invalid_state', 'The supervisor agent is disabled, so summaries cannot be refreshed.'), { projectId })
+      return
+    }
     const master = this.masterSession()
     if (!master || !isAlive(master)) {
       this.report(new SauronError('invalid_state', 'The supervisor agent is not running. Start it to refresh summaries.'), { projectId })

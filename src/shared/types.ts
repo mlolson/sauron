@@ -38,7 +38,9 @@ export interface RecentCommit {
 
 export interface Preferences {
   notificationsMuted: boolean
-  /** Start the supervisor agent when Sauron launches. */
+  /** Master switch. When false the supervisor never runs and cannot be started. */
+  supervisorEnabled: boolean
+  /** Start the supervisor agent when Sauron launches. Only consulted when it is enabled. */
   masterAutoStart: boolean
   /** Explicit executable paths; empty means "find on PATH". */
   toolOverrides: { claude: string; codex: string; tmux: string; git: string }
@@ -64,6 +66,7 @@ export interface Preferences {
 
 export const defaultPreferences: Preferences = {
   notificationsMuted: false,
+  supervisorEnabled: true,
   masterAutoStart: true,
   toolOverrides: { claude: '', codex: '', tmux: '', git: '' },
   agents: [

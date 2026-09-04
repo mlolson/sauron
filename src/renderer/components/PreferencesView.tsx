@@ -114,6 +114,7 @@ export function PreferencesView({ preferences, toolPaths, onClose }: Props) {
             <section><h3>Worktrees</h3><label className="pref-row"><span>Base directory</span><input readOnly value={preferences.worktreeBase} placeholder="default under Application Support" /></label></section>
             <section>
               <h3>Notifications and supervisor agent</h3>
+              <label className="pref-row check"><input type="checkbox" disabled checked={preferences.supervisorEnabled} /><span>Supervisor agent enabled</span></label>
               <label className="pref-row check"><input type="checkbox" disabled checked={!preferences.notificationsMuted} /><span>Show notifications when a session needs input or finishes</span></label>
               <label className="pref-row"><span>Supervisor agent</span><input readOnly value={preferences.supervisorAgentId} /></label>
               <label className="pref-row"><span>Supervisor arguments</span><input readOnly value={preferences.supervisorArgs.join(' ')} /></label>

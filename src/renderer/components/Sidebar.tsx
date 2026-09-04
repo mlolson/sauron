@@ -108,16 +108,37 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
       <nav>
         {(() => {
           const master = snapshot.sessions.find((s) => s.id === 'master')
+          const enabled = snapshot.preferences.supervisorEnabled
+          const running = Boolean(master && isAlive(master))
+          // The old menu offered Rename/Fork/Close, none of which the supervisor supports.
+          const menu: MenuItem[] = enabled
+            ? [
+                { label: 'Restart', action: () => void window.sauron.restartMaster() },
+                {
+                  label: 'Disable',
+                  destructive: true,
+                  action: () => {
+                    if (!running || confirm('Disable the supervisor agent?\n\nIt will be stopped, and project summaries will stop refreshing.')) {
+                      void window.sauron.setPreferences({ supervisorEnabled: false })
+                    }
+                  },
+                },
+              ]
+            : [{ label: 'Enable', action: () => void window.sauron.setPreferences({ supervisorEnabled: true }) }]
           return (
-            <Row selected={sameTarget(selection, { kind: 'master' })} onClick={() => onSelect({ kind: 'master' })} onContextMenu={master && isAlive(master) ? (e) => openMenu(e, sessionMenu(master)) : undefined}>
-              <span className={`glyph ${master && isAlive(master) ? 'accent' : 'muted'}`}>
+            <Row
+              selected={sameTarget(selection, { kind: 'master' })}
+              onClick={() => onSelect({ kind: 'master' })}
+              onContextMenu={(e) => openMenu(e, menu)}
+            >
+              <span className={`glyph ${running ? 'accent' : 'muted'}`}>
                 <ToolIcon tool={master?.tool ?? snapshot.preferences.supervisorAgentId} />
               </span>
-              <span className="label">
+              <span className={`label ${enabled ? '' : 'muted'}`}>
                 <span className="name">Supervisor Agent</span>
-                <span className="sub">{master && isAlive(master) ? (snapshot.refresh.inProgress ? 'refreshing a summary' : 'ready') : 'not running'}</span>
+                <span className="sub">{!enabled ? 'disabled' : running ? (snapshot.refresh.inProgress ? 'refreshing a summary' : 'ready') : 'not running'}</span>
               </span>
-              {master && <StateDot state={master.state} />}
+              {enabled && master && <StateDot state={master.state} />}
             </Row>
           )
         })()}
