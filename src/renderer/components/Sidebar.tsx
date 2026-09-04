@@ -20,7 +20,7 @@ interface Props {
 export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Props) {
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
   const [renaming, setRenaming] = useState<Session | null>(null)
-  const [forkingToWorktree, setForkingToWorktree] = useState<Session | null>({ id: 'x', displayName: 'Opus', tool: 'claude' } as Session) // TEMP
+  const [forkingToWorktree, setForkingToWorktree] = useState<Session | null>(null)
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => new Set())
   const [archivedCollapsed, setArchivedCollapsed] = useState(true)
   // External sessions are background noise most of the time, so their group starts closed.
