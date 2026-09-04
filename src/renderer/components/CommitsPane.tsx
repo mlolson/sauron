@@ -81,12 +81,12 @@ export function CommitsPane({ session, projectId, onClose }: { session: Session;
             This session
           </button>
           <button className={scope === 'all' ? 'active' : ''} onClick={() => setScope('all')}>
-            All commits
+            All sessions
           </button>
         </div>
         <div className="titles commits-title">
           <span className="title">Commits</span>
-          <span className="subtitle">{scope === 'session' ? session.displayName : 'Everything in this project, newest first'}</span>
+          <span className="subtitle">{scope === 'session' ? session.displayName : 'Every commit in this project, whoever made it'}</span>
         </div>
         <div className="actions">
           <span className="branch-filter-wrap">
