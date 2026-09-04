@@ -161,10 +161,9 @@ button.icon-button { width: 26px; height: 26px; padding: 0; font-size: 16px; lin
 /* Commits pane: covers the session area, leaving the sidebar reachable. */
 .commits-pane { position: absolute; inset: 0; z-index: 30; background: var(--bg); display: flex; flex-direction: column; }
 .commits-pane .commits-title { flex: 1; min-width: 0; margin-left: 4px; }
-.branch-filter-wrap { position: relative; display: inline-flex; align-items: center; }
-.branch-filter { width: 180px; background: var(--bg-hover); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 22px 4px 8px; font-size: 12px; }
-.branch-filter:focus { outline: none; border-color: var(--accent); }
-.branch-clear { position: absolute; right: 2px; padding: 0 4px; font-size: 14px; line-height: 1; }
+/* A native select: macOS gives its menu scrolling and type-ahead, so hundreds of branches
+   stay navigable without a custom combobox. */
+.branch-filter { max-width: 200px; background: var(--bg-hover); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 12px; }
 .commits-split { flex: 1; display: flex; min-height: 0; }
 .commits-list { width: 320px; flex: none; overflow-y: auto; border-right: 1px solid var(--border); }
 .commits-list .pad { padding: 16px; }
@@ -190,7 +189,17 @@ button.icon-button { width: 26px; height: 26px; padding: 0; font-size: 16px; lin
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
 }
-.session-header button, .session-header select, .session-header .tabs, .session-header .titles { -webkit-app-region: no-drag; }
+/* The header is the window's drag strip, so anything interactive in it must opt out or macOS
+   swallows the click as a drag. Whole containers are listed, not just element types, so a
+   control added here later cannot silently become undraggable-but-unclickable. */
+.session-header .actions,
+.session-header .segmented,
+.session-header .tabs,
+.session-header .titles,
+.session-header button,
+.session-header input,
+.session-header select,
+.session-header textarea { -webkit-app-region: no-drag; }
 .session-header .titles { display: flex; flex-direction: column; line-height: 1.2; }
 .session-header .title { font-weight: 600; }
 .session-header .subtitle { font-size: 11px; color: var(--fg-muted); }
