@@ -38,7 +38,6 @@ export interface RecentCommit {
 
 export interface Preferences {
   notificationsMuted: boolean
-  /** External sessions idle longer than this are listed under "recent" instead of the sidebar. */
   /** Start the supervisor agent when Sauron launches. */
   masterAutoStart: boolean
   /** Explicit executable paths; empty means "find on PATH". */

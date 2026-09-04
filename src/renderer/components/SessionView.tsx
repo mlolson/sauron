@@ -102,7 +102,7 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
           )}
           {!external && alive && session.tmuxName && (
             <button title={`Copy: tmux attach -t ${session.tmuxName}`} onClick={() => window.sauron.copyToClipboard(`tmux attach -t ${session.tmuxName}`)}>
-              Copy attach
+              Copy tmux attach cmd
             </button>
           )}
           {!external && alive && (
