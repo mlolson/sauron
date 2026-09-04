@@ -2,36 +2,36 @@ import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { overrideKeySequence } from '@shared/terminal-keys'
+import { shouldFit, type PreviousFit } from '@shared/terminal-fit'
 
 interface Entry {
   term: Terminal
   fit: FitAddon
+  /** The grid we left on the previous fit, and when; used to spot an oscillation. */
+  previous?: PreviousFit
   dispose: () => void
 }
 
 /** One xterm instance per session, kept across tab switches so we never re-attach. */
 const terminals = new Map<string, Entry>()
 
-/**
- * Resizes only when the grid would actually change.
- *
- * fit() writes the terminal's size, which resizes the element the ResizeObserver watches,
- * which fits again: if a rounding difference makes the two disagree the pair oscillates and
- * the terminal visibly bounces. Comparing the proposal with the current size first breaks
- * that cycle, since a settled terminal proposes what it already has.
- */
-function fitIfNeeded(term: Terminal, fit: FitAddon): void {
-  const dims = fit.proposeDimensions()
-  if (!dims || !Number.isFinite(dims.cols) || !Number.isFinite(dims.rows) || dims.cols < 2 || dims.rows < 2) return
-  if (dims.cols === term.cols && dims.rows === term.rows) return
+/** Applies a proposed resize when it is a real one; see shouldFit for why some are refused. */
+function fitIfNeeded(entry: Entry): void {
+  const { term, fit, previous } = entry
+  const proposed = fit.proposeDimensions()
+  if (!shouldFit(proposed, { cols: term.cols, rows: term.rows }, previous, Date.now())) return
+  entry.previous = { cols: term.cols, rows: term.rows, at: Date.now() }
   fit.fit()
 }
 
 export function applyTerminalPreferences(fontSize: number, scrollback: number): void {
-  for (const { term, fit } of terminals.values()) {
+  for (const entry of terminals.values()) {
+    const { term } = entry
     if (term.options.fontSize !== fontSize) term.options.fontSize = fontSize
     if (term.options.scrollback !== scrollback) term.options.scrollback = scrollback
-    fitIfNeeded(term, fit)
+    // A font change legitimately re-grids, so forget any oscillation seen at the old size.
+    entry.previous = undefined
+    fitIfNeeded(entry)
   }
 }
 
@@ -97,11 +97,11 @@ export function SessionTerminal({ sessionId, fontSize, scrollback }: { sessionId
     const el = container.current
     if (!el) return
     const entry = getOrCreate(sessionId, fontSize, scrollback)
-    const { term, fit } = entry
+    const { term } = entry
     if (!term.element) term.open(el)
     else el.appendChild(term.element)
 
-    fitIfNeeded(term, fit)
+    fitIfNeeded(entry)
     void window.sauron.ptyOpen(sessionId, term.cols, term.rows)
     term.focus()
 
@@ -110,7 +110,7 @@ export function SessionTerminal({ sessionId, fontSize, scrollback }: { sessionId
     let frame = 0
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => fitIfNeeded(term, fit))
+      frame = requestAnimationFrame(() => fitIfNeeded(entry))
     })
     observer.observe(el)
     return () => {
