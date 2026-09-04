@@ -29,13 +29,19 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
   })
   handle('addProjects', (paths) => state.addProjects(paths))
   handle('removeProject', async (id) => state.removeProject(id))
+  handle('archiveProject', (id, archived) => state.archiveProject(id, archived))
   handle('resolveTools', () => state.refreshTools())
 
   handle('launchSession', async (projectId, tool, options) => {
     await state.launchSession(projectId, tool, options)
   })
   handle('renameSession', (id, title) => state.renameSession(id, title))
+  handle('forkSession', async (id) => {
+    await state.forkSession(id)
+  })
   handle('refreshWorktrees', (projectId) => state.refreshWorktrees(projectId))
+  handle('recentCommits', (projectId) => state.recentCommits(projectId))
+  handle('commitDiff', (projectId, hash) => state.commitDiff(projectId, hash))
   handle('checkWorktreeRemoval', (projectId, path) => state.checkWorktreeRemoval(projectId, path))
   handle('removeWorktree', (projectId, path, force) => state.removeWorktree(projectId, path, force))
   handle('closeSession', (id) => state.closeSession(id))
@@ -67,6 +73,8 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
     state.activeSessionId = sessionId
   })
   handle('setPreferences', async (prefs) => state.setPreferences(prefs))
+  handle('getConfigFile', () => state.getConfigFile())
+  handle('saveConfigFile', (content) => state.saveConfigFile(content))
 
   handle('refreshDocuments', (projectId) => state.refreshDocuments(projectId))
   handle('addKeyDocumentDialog', async (projectId) => {
@@ -87,6 +95,7 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
 
   handle('startMaster', () => state.startMaster())
   handle('stopMaster', () => state.stopMaster())
+  handle('restartMaster', () => state.restartMaster())
   handle('refreshStatus', async (projectId) => state.requestRefresh(projectId))
   handle('refreshAllStatuses', async () => {
     for (const p of state.projects) state.requestRefresh(p.id)
@@ -101,6 +110,14 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
   handle('transcriptLoadOlder', async (sessionId, beforeIndex, count) => state.transcriptLoadOlder(sessionId, beforeIndex, count))
 
   on('revealInFinder', (path) => shell.showItemInFolder(path))
+  handle('openInVsCode', async (path) => {
+    // VS Code registers this scheme when it is installed; openExternal rejects when nothing handles it.
+    try {
+      await shell.openExternal(`vscode://file${encodeURI(path)}`)
+    } catch (error) {
+      state.report(new Error(`Could not open ${path} in VS Code. Is VS Code installed? (${(error as Error).message})`))
+    }
+  })
   on('revealLogs', () => shell.showItemInFolder(logFile))
   handle('chooseDirectory', async (title) => {
     const win = getWindow()

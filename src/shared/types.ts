@@ -9,6 +9,7 @@ export interface Project {
   path: string
   addedAt: string
   pinned: boolean
+  archived?: boolean
   /** Manual adjustments to the key documents list (project-relative paths). */
   keyDocuments?: { included: string[]; excluded: string[] }
 }
@@ -22,6 +23,19 @@ export interface KeyDocument {
   source: 'default' | 'added'
 }
 
+export interface RecentCommit {
+  hash: string
+  shortHash: string
+  title: string
+  message: string
+  branch: string
+  author: string
+  authoredAt: string
+  sessionId: string | null
+  sessionName: string | null
+  agentTool: AgentTool | null
+}
+
 export interface Preferences {
   notificationsMuted: boolean
   /** External sessions idle longer than this are listed under "recent" instead of the sidebar. */
@@ -30,6 +44,20 @@ export interface Preferences {
   masterAutoStart: boolean
   /** Explicit executable paths; empty means "find on PATH". */
   toolOverrides: { claude: string; codex: string; tmux: string; git: string }
+  /** Configured terminal agents. Claude and Codex start as defaults but are ordinary profiles. */
+  agents: AgentDefinition[]
+  /** Legacy field read during migration. */
+  customAgents?: AgentDefinition[]
+  /** Agent profile used for the global supervisor. */
+  supervisorAgentId: string
+  /** Extra command-line arguments for the supervisor (for example: --model opus). */
+  supervisorArgs: string[]
+  /** Refresh summaries after commits observed by Sauron's git proxy. */
+  supervisorProjectSummaryAfterCommit: boolean
+  /** Minimum time between automatic refresh requests for one project. */
+  supervisorProjectSummaryAfterCommitCooldownMinutes: number
+  /** Summary prompt file; relative paths resolve beside config.json. */
+  supervisorProjectSummaryPromptFile: string
   /** Base directory for Sauron-created worktrees; empty means the default under Application Support. */
   worktreeBase: string
   terminalFontSize: number
@@ -41,6 +69,15 @@ export const defaultPreferences: Preferences = {
   externalRecentHours: 24,
   masterAutoStart: true,
   toolOverrides: { claude: '', codex: '', tmux: '', git: '' },
+  agents: [
+    { id: 'claude', name: 'Claude', command: 'claude', args: ['--dangerously-skip-permissions'], forkCommand: ['--resume', '{sourceSessionId}', '--fork-session'] },
+    { id: 'codex', name: 'Codex', command: 'codex', args: ['--dangerously-bypass-approvals-and-sandbox'], forkCommand: ['fork', '{sourceSessionId}'] },
+  ],
+  supervisorAgentId: 'claude',
+  supervisorArgs: [],
+  supervisorProjectSummaryAfterCommit: true,
+  supervisorProjectSummaryAfterCommitCooldownMinutes: 5,
+  supervisorProjectSummaryPromptFile: 'summary-prompt.md',
   worktreeBase: '',
   terminalFontSize: 13,
   terminalScrollback: 50_000,
@@ -52,10 +89,21 @@ export interface AppConfig {
   preferences?: Preferences
 }
 
-export const CONFIG_VERSION = 1
+export const CONFIG_VERSION = 6
 
 /** What the session was started with. A plain shell may later run an agent; hooks update this. */
-export type AgentTool = 'claude' | 'codex' | 'shell'
+export type AgentTool = string
+export interface AgentDefinition {
+  /** Stable lowercase identifier used in persisted sessions and `sauron launch --tool`. */
+  id: string
+  name: string
+  /** Executable name or absolute path. */
+  command: string
+  /** One argument per item. Supports {prompt}, {cwd}, {sessionId}, and {sauronBin}. */
+  args: string[]
+  /** Optional arguments used to fork a conversation. */
+  forkCommand?: string[]
+}
 export type SessionKind = 'managed' | 'external'
 export type SessionState = 'running' | 'waitingForInput' | 'idle' | 'stopped'
 export type StateSource = 'hook' | 'inferred'
@@ -95,13 +143,14 @@ export interface ToolPaths {
   codex: string | null
   tmux: string | null
   git: string | null
+  /** Resolved executable path by agent id, including built-ins. */
+  agents: Record<string, string | null>
   /** The PATH used to find them; passed into launched sessions. */
   path: string
 }
 
 export function missingRequiredTools(t: ToolPaths): string[] {
   const missing: string[] = []
-  if (!t.claude) missing.push('claude')
   if (!t.tmux) missing.push('tmux')
   if (!t.git) missing.push('git')
   return missing
@@ -174,11 +223,16 @@ export interface SauronApi {
   addProjectDialog(): Promise<void>
   addProjects(paths: string[]): Promise<void>
   removeProject(id: string): Promise<void>
+  archiveProject(id: string, archived: boolean): Promise<void>
   resolveTools(): Promise<void>
 
   launchSession(projectId: string, tool: AgentTool, options?: LaunchOptions): Promise<void>
   renameSession(id: string, title: string): Promise<void>
+  /** Claude/Codex only: new terminal continuing a copy of the conversation as a new session. */
+  forkSession(id: string): Promise<void>
   refreshWorktrees(projectId: string): Promise<void>
+  recentCommits(projectId: string): Promise<RecentCommit[]>
+  commitDiff(projectId: string, hash: string): Promise<string>
   checkWorktreeRemoval(projectId: string, path: string): Promise<WorktreeRemovalCheck>
   removeWorktree(projectId: string, path: string, force: boolean): Promise<void>
   /** Kills the tmux session. Claude/Codex sessions stay resumable; plain terminals are removed. */
@@ -203,6 +257,8 @@ export interface SauronApi {
   /** Tells the main process which session is in front of the user, for notification suppression. */
   setActiveSession(sessionId: string | null): void
   setPreferences(prefs: Partial<Preferences>): Promise<void>
+  getConfigFile(): Promise<{ path: string; content: string }>
+  saveConfigFile(content: string): Promise<void>
 
   refreshDocuments(projectId: string): Promise<void>
   addKeyDocumentDialog(projectId: string): Promise<void>
@@ -211,6 +267,7 @@ export interface SauronApi {
 
   startMaster(): Promise<void>
   stopMaster(): Promise<void>
+  restartMaster(): Promise<void>
   refreshStatus(projectId: string): Promise<void>
   refreshAllStatuses(): Promise<void>
 
@@ -220,6 +277,8 @@ export interface SauronApi {
   transcriptLoadOlder(sessionId: string, beforeIndex: number, count: number): Promise<TranscriptEntry[]>
   onTranscriptAppend(sessionId: string, cb: (entries: TranscriptEntry[]) => void): () => void
   revealInFinder(path: string): void
+  /** Opens a file or directory in VS Code. Rejects if VS Code is not installed. */
+  openInVsCode(path: string): Promise<void>
   revealLogs(): void
   chooseDirectory(title: string): Promise<string | null>
   copyToClipboard(text: string): void

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { KeyDocument, Project, SelectionTarget, Session, ToolPaths } from '@shared/types'
+import type { KeyDocument, Preferences, Project, RecentCommit, SelectionTarget, Session, ToolPaths } from '@shared/types'
 import { isAlive } from '@shared/types'
 import type { Worktree } from '@shared/worktrees'
 import type { ProjectStatus, RefreshState } from '@shared/status'
@@ -8,11 +8,14 @@ import { abbreviate } from './Sidebar'
 import { relativeTime } from '../time'
 import { NewSessionBar } from './NewSessionBar'
 import { ToolIcon } from './ToolIcon'
+import { ContextMenu, type MenuItem } from './ContextMenu'
+import { RenameDialog } from './RenameDialog'
 
 interface Props {
   project: Project
   sessions: Session[]
   toolPaths: ToolPaths | null
+  preferences: Preferences
   worktrees: Worktree[]
   status: ProjectStatus | undefined
   refresh: RefreshState
@@ -22,10 +25,14 @@ interface Props {
   onSelect: (t: SelectionTarget) => void
 }
 
-export function ProjectDetail({ project, sessions, toolPaths, worktrees, status, refresh, masterAlive, hiddenExternal, documents, onSelect }: Props) {
+export function ProjectDetail({ project, sessions, toolPaths, preferences, worktrees, status, refresh, masterAlive, hiddenExternal, documents, onSelect }: Props) {
   const refreshing = refresh.inProgress === project.id
   const queued = refresh.queued.includes(project.id)
   const [showHidden, setShowHidden] = useState(false)
+  const [commits, setCommits] = useState<RecentCommit[] | null>(null)
+  const [diff, setDiff] = useState<{ commit: RecentCommit; content: string | null } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
+  const [renaming, setRenaming] = useState<Session | null>(null)
   const managed = sessions.filter((s) => s.projectId === project.id && s.kind === 'managed')
   const mine = managed.filter(isAlive)
   const resumable = managed.filter((s) => !isAlive(s))
@@ -36,6 +43,8 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, status,
   useEffect(() => {
     void window.sauron.refreshWorktrees(project.id)
     void window.sauron.refreshDocuments(project.id)
+    setCommits(null)
+    void window.sauron.recentCommits(project.id).then(setCommits)
   }, [project.id])
 
   const remove = async (wt: Worktree) => {
@@ -53,6 +62,32 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, status,
     // Errors surface as banners from the main process.
     if (confirm(message)) await window.sauron.removeWorktree(project.id, wt.path, check.dirty).catch(() => undefined)
   }
+  const viewDiff = async (commit: RecentCommit) => {
+    setDiff({ commit, content: null })
+    const content = await window.sauron.commitDiff(project.id, commit.hash)
+    setDiff((current) => current?.commit.hash === commit.hash ? { commit, content } : current)
+  }
+  const sessionMenu = (session: Session): MenuItem[] => {
+    const profile = preferences.agents.find((agent) => agent.id === session.tool)
+    const forkable = Boolean(profile?.forkCommand?.length && session.cliSessionId)
+    const common: MenuItem[] = [
+      { label: 'Rename…', action: () => setRenaming(session) },
+      ...(forkable ? [{ label: 'Fork', action: () => void window.sauron.forkSession(session.id) } satisfies MenuItem] : []),
+    ]
+    if (!isAlive(session)) return [...common, { label: 'Resume', action: () => void window.sauron.resumeSession(session.id) }, { label: 'Forget', destructive: true, action: () => void window.sauron.forgetSession(session.id) }]
+    return [...common, {
+      label: 'Close',
+      destructive: true,
+      action: () => {
+        const keeps = session.tool !== 'shell' && session.cliSessionId
+        if (keeps || confirm(`Close ${session.displayName}?\n\nThis kills the terminal. Plain terminals cannot be resumed.`)) void window.sauron.closeSession(session.id)
+      },
+    }]
+  }
+  const openSessionMenu = (event: React.MouseEvent, session: Session) => {
+    event.preventDefault()
+    setMenu({ x: event.clientX, y: event.clientY, items: sessionMenu(session) })
+  }
 
   return (
     <div className="page">
@@ -64,11 +99,12 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, status,
             <button className="link" title="Reveal in Finder" onClick={() => window.sauron.revealInFinder(project.path)}>
               ↗
             </button>
+            <button className="link" title="Open this project in VS Code" onClick={() => void window.sauron.openInVsCode(project.path)}>
+              Open in VS Code
+            </button>
           </div>
         </div>
       </header>
-
-      <NewSessionBar project={project} toolPaths={toolPaths} />
 
       <section className="card">
         <div className="card-head">
@@ -153,12 +189,13 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, status,
 
       <section className="card">
         <h2>Sessions</h2>
+        {project.archived ? <p className="muted">This project is archived. Unarchive it from the sidebar menu to start new sessions.</p> : <NewSessionBar project={project} toolPaths={toolPaths} preferences={preferences} />}
         {mine.length === 0 ? (
           <p className="muted">No sessions yet. Use New Terminal to start one.</p>
         ) : (
           <ul className="session-list">
             {mine.map((s) => (
-              <li key={s.id} onClick={() => onSelect({ kind: 'session', id: s.id })}>
+              <li key={s.id} onClick={() => onSelect({ kind: 'session', id: s.id })} onContextMenu={(event) => openSessionMenu(event, s)}>
                 <span className="glyph"><ToolIcon tool={s.tool} /></span>
                 <span className="name">
                   {s.displayName}
@@ -177,7 +214,7 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, status,
           <h2>Closed, resumable</h2>
           <ul className="session-list">
             {resumable.map((s) => (
-              <li key={s.id}>
+              <li key={s.id} onContextMenu={(event) => openSessionMenu(event, s)}>
                 <span className="glyph"><ToolIcon tool={s.tool} /></span>
                 <span className="name">{s.displayName}</span>
                 <span className="muted small">closed {relativeTime(s.lastActivityAt)}</span>
@@ -252,6 +289,83 @@ export function ProjectDetail({ project, sessions, toolPaths, worktrees, status,
           </ul>
         )}
       </section>
+
+      <section className="card">
+        <div className="card-head">
+          <h2>Recent commits</h2>
+          <span className="muted small">Most recent 20 across local branches</span>
+        </div>
+        {commits === null ? <p className="muted">Loading commits…</p> : commits.length === 0 ? <p className="muted">No commits found.</p> : (
+          <ul className="commit-list">
+            {commits.map((commit) => (
+              <li key={commit.hash}>
+                <div className="commit-heading">
+                  <strong>{commit.title}</strong>
+                  {commit.branch && <span className="tag accent">{commit.branch}</span>}
+                  <code className="commit-hash">{commit.shortHash}</code>
+                </div>
+                <div className="commit-message">{commit.message || <span className="muted">No additional message.</span>}</div>
+                <div className="commit-attribution muted small">
+                  <span>{commit.sessionName ? `Session: ${commit.sessionName}` : 'Session unknown'} · Git author: {commit.author} · {relativeTime(commit.authoredAt)}</span>
+                </div>
+                <div className="commit-actions">
+                  <button onClick={() => void viewDiff(commit)}>View</button>
+                  <CopyHashButton hash={commit.hash} />
+                  {commit.sessionId && <button onClick={() => onSelect({ kind: 'session', id: commit.sessionId! })}>Go to session</button>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {diff && <DiffViewer commit={diff.commit} content={diff.content} onClose={() => setDiff(null)} onGoToSession={(sessionId) => { setDiff(null); onSelect({ kind: 'session', id: sessionId }) }} />}
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
+      {renaming && <RenameDialog initial={renaming.displayName} onSubmit={(title) => void window.sauron.renameSession(renaming.id, title)} onClose={() => setRenaming(null)} />}
     </div>
+  )
+}
+
+function DiffViewer({ commit, content, onClose, onGoToSession }: { commit: RecentCommit; content: string | null; onClose: () => void; onGoToSession: (sessionId: string) => void }) {
+  return (
+    <div className="modal-backdrop diff-backdrop" onMouseDown={onClose}>
+      <div className="diff-viewer" onMouseDown={(e) => e.stopPropagation()}>
+        <header>
+          <div><strong>{commit.title}</strong><div className="muted small">{commit.shortHash} · {commit.author}</div></div>
+          <div className="actions diff-viewer-actions">
+            <CopyHashButton hash={commit.hash} />
+            {commit.sessionId && <button onClick={() => onGoToSession(commit.sessionId!)}>Go to session</button>}
+            <button onClick={onClose}>Close</button>
+          </div>
+        </header>
+        <div className="diff-content">
+          {content === null ? <p className="muted">Loading diff…</p> : content ? content.split('\n').map((line, index) => <div key={index} className={`diff-line ${diffLineKind(line)}`}>{line || ' '}</div>) : <p className="muted">This commit has no textual diff.</p>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function diffLineKind(line: string): string {
+  if (line.startsWith('diff --git')) return 'file'
+  if (line.startsWith('@@')) return 'hunk'
+  if (line.startsWith('+') && !line.startsWith('+++')) return 'addition'
+  if (line.startsWith('-') && !line.startsWith('---')) return 'deletion'
+  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('index ')) return 'meta'
+  return ''
+}
+
+function CopyHashButton({ hash }: { hash: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = () => {
+    window.sauron.copyToClipboard(hash)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1400)
+  }
+  return (
+    <span className="copy-hash-wrap">
+      <button onClick={copy}>Copy hash to clipboard</button>
+      {copied && <span className="copy-tooltip" role="status">Copied</span>}
+    </span>
   )
 }
