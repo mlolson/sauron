@@ -49,3 +49,19 @@ describe('branch filtering', () => {
     expect(await hashesOnBranch(GIT, dir, 'nope')).toEqual(new Set())
   })
 })
+
+describe('branch names on commits', () => {
+  it('labels commits from both listing paths', async () => {
+    const dir = await repo()
+    const { commitsByHash } = await import('../src/main/services/git')
+    const all = await recentGitCommits(GIT, dir, 20)
+    expect(all.find((c) => c.title === 'on feature')?.branch).toBe('feature')
+    expect(all.find((c) => c.title === 'on main')?.branch).toBe('main')
+
+    // The by-hash path feeds the session list and must label them too.
+    const byHash = await commitsByHash(GIT, dir, all.map((c) => c.hash))
+    expect(byHash.find((c) => c.title === 'on feature')?.branch).toBe('feature')
+    expect(byHash.find((c) => c.title === 'on main')?.branch).toBe('main')
+    expect(await commitsByHash(GIT, dir, [])).toEqual([])
+  })
+})
