@@ -47,3 +47,20 @@ describe('latestPerSession', () => {
     store.close()
   })
 })
+
+describe('commitsForSession', () => {
+  it('lists a session\'s commits newest first across projects, honouring the limit', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sauron-attribution-'))
+    dirs.push(dir)
+    const store = new AttributionStore(join(dir, 'attributions.sqlite'))
+    store.open()
+    store.set('p1', 'a'.repeat(40), 's1')
+    store.set('p2', 'b'.repeat(40), 's1')
+    store.set('p1', 'c'.repeat(40), 's1')
+    store.set('p1', 'd'.repeat(40), 's2')
+    expect(store.commitsForSession('s1', 10)).toEqual(['c'.repeat(40), 'b'.repeat(40), 'a'.repeat(40)])
+    expect(store.commitsForSession('s1', 2)).toEqual(['c'.repeat(40), 'b'.repeat(40)])
+    expect(store.commitsForSession('nobody', 10)).toEqual([])
+    store.close()
+  })
+})

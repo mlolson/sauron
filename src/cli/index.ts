@@ -8,6 +8,7 @@
  *   sauron launch --project <name|id> [--tool shell|claude|codex] [--title <text>] [--prompt <text>] [--worktree [<branch>]]
  *   sauron rename --session <id> --title <text>
  *   sauron fork --session <id>       (Claude/Codex: new terminal continuing a copy of the conversation)
+ *   sauron handoff --session <id> --tool <agent>   (a different agent takes over from a briefing)
  *   sauron worktrees --project <name|id>
  *   sauron worktrees remove --project <name|id> --path <dir> [--force]
  *   sauron close --session <id>      (kill; agents stay resumable, plain terminals are forgotten)
@@ -173,6 +174,9 @@ async function main(): Promise<void> {
     case 'fork':
       payload = { cmd: 'sessions.fork', session: flags.session }
       break
+    case 'handoff':
+      payload = { cmd: 'sessions.handoff', session: flags.session, tool: flags.tool }
+      break
     case 'rename':
       payload = { cmd: 'sessions.rename', session: flags.session, title: flags.title }
       break
@@ -194,7 +198,7 @@ async function main(): Promise<void> {
       payload = JSON.parse(sub ?? '{}')
       break
     default:
-      console.error('usage: sauron <ping|projects|sessions|launch|stop|resume|send|status|master|select|worktrees|hook|commit-hook|raw> [options]')
+      console.error('usage: sauron <ping|projects|sessions|launch|stop|resume|send|status|master|select|worktrees|fork|handoff|hook|commit-hook|raw> [options]')
       process.exit(2)
   }
   const response = await request(payload)

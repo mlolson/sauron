@@ -16,6 +16,15 @@ export interface TranscriptFile {
   sizeBytes: number
 }
 
+/** Parses a whole transcript once. For handoffs, which need the conversation, not a live tail. */
+export async function readTranscriptEntries(path: string, tool: TranscriptTool): Promise<TranscriptEntry[]> {
+  const parser = parserFor(tool)
+  const entries: TranscriptEntry[] = []
+  const rl = createInterface({ input: createReadStream(path, { encoding: 'utf8' }), crlfDelay: Infinity })
+  for await (const line of rl) entries.push(...parser.parseLine(line))
+  return entries
+}
+
 /** Reads only the first records of a transcript to learn its cwd and session id. */
 export async function readTranscriptHeader(path: string, tool: TranscriptTool, maxBytes = 256 * 1024): Promise<TranscriptHeader> {
   const parser = parserFor(tool)

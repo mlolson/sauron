@@ -183,6 +183,8 @@ export interface LaunchOptions {
   prompt?: string
   /** Run the session in a new git worktree on this branch. */
   worktreeBranch?: string
+  /** Run the session in this existing directory instead of the project root. Wins over worktreeBranch. */
+  worktreePath?: string
 }
 
 export interface WorktreeRemovalCheck {
@@ -284,6 +286,11 @@ export interface SauronApi {
   transcriptClose(sessionId: string): Promise<void>
   transcriptLoadOlder(sessionId: string, beforeIndex: number, count: number): Promise<TranscriptEntry[]>
   onTranscriptAppend(sessionId: string, cb: (entries: TranscriptEntry[]) => void): () => void
+  /**
+   * Starts a session of a different agent that continues this one's work from a briefing:
+   * the recent conversation, the session's commits, and the working tree state.
+   */
+  handoffSession(sessionId: string, tool: AgentTool): Promise<void>
   /** The latest commit each session in this project made, keyed by session id. */
   lastCommitBySession(projectId: string): Promise<Record<string, SessionCommit>>
   revealInFinder(path: string): void

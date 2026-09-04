@@ -51,6 +51,14 @@ export class AttributionStore {
     return latest
   }
 
+  /** Commits a session made, newest first, across every project. */
+  commitsForSession(sessionId: string, limit: number): string[] {
+    const rows = this.requireDb().prepare(
+      'SELECT commit_hash FROM commit_attributions WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?',
+    ).all(sessionId, limit) as { commit_hash: string }[]
+    return rows.map((row) => row.commit_hash)
+  }
+
   close(): void {
     this.db?.close()
     this.db = null

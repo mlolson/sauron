@@ -60,6 +60,7 @@ const api: SauronApi = {
   transcriptClose: (sessionId) => ipcRenderer.invoke('transcriptClose', sessionId),
   transcriptLoadOlder: (sessionId, beforeIndex, count) => ipcRenderer.invoke('transcriptLoadOlder', sessionId, beforeIndex, count),
   onTranscriptAppend: (sessionId, cb) => subscribe<TranscriptEntry[]>(`transcript:append:${sessionId}`, cb),
+  handoffSession: (sessionId, tool) => ipcRenderer.invoke('handoffSession', sessionId, tool),
   lastCommitBySession: (projectId) => ipcRenderer.invoke('lastCommitBySession', projectId),
   revealInFinder: (path) => ipcRenderer.send('revealInFinder', path),
   openInVsCode: (path) => ipcRenderer.invoke('openInVsCode', path),

@@ -1,13 +1,13 @@
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import type { AgentDefinition, AgentTool, AppError, LaunchOptions, Preferences, Project, Session, SelectionTarget, SessionCommit, Snapshot, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
 import { defaultPreferences } from '@shared/types'
 import { claudeHookSettings, codexNotifyConfig, looksLikeApprovalPrompt, transitionForHook, type HookEvent } from '@shared/hooks'
 import { writeJsonAtomic } from './services/persistence'
 import { join } from 'node:path'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { Notifier } from './services/notifier'
 import { TranscriptIndexer, TranscriptTailer, type TranscriptFile } from './services/transcripts'
 import { projectForCwd } from '@shared/transcripts'
@@ -28,6 +28,8 @@ import { tmuxSessionName, shellCommandLine, TMUX_OPTION_PROJECT, TMUX_OPTION_SES
 import { claudeTranscriptPath } from '@shared/transcripts'
 import { Persistence } from './services/persistence'
 import { commitSummaries, gitCommitDiff, gitToplevel, recentGitCommits } from './services/git'
+import { readTranscriptEntries } from './services/transcripts'
+import { renderHandoff } from '@shared/handoff'
 import { installPostCommitHook, removePostCommitHook } from './services/git-hooks'
 import { resolveTools, sessionEnvironment } from './services/cli-resolver'
 import { TmuxService } from './services/tmux'
@@ -587,8 +589,8 @@ export class AppState extends EventEmitter<StateEvents> {
       const id = randomUUID()
       const title = options.title?.trim() || this.nextDisplayName(tool, project.id)
       const tmuxName = tmuxSessionName(title, id)
-      let worktreePath: string | null = null
-      if (options.worktreeBranch !== undefined) {
+      let worktreePath: string | null = options.worktreePath ?? null
+      if (!worktreePath && options.worktreeBranch !== undefined) {
         if (!this.worktreeService) throw new SauronError('executable_not_found', 'git was not found on PATH.')
         const branch = options.worktreeBranch.trim() || defaultWorktreeBranch(id)
         worktreePath = await this.worktreeService.create(project.path, project.name, branch)
@@ -753,6 +755,66 @@ export class AppState extends EventEmitter<StateEvents> {
       this.changed()
       this.select({ kind: 'session', id: newId })
       return session
+    } catch (error) {
+      this.report(error, { sessionId: id })
+      return null
+    }
+  }
+
+  /**
+   * Hands a session's work to a different agent. Agents cannot read each other's session
+   * stores, so this is a briefed restart, not a fork: the new agent starts in the same
+   * directory with a prompt pointing at a handoff document. The document is written
+   * mechanically from the transcript, the session's commits, and `git status`; no model is
+   * involved, so it is instant. Works for external sessions too.
+   */
+  async handoffSession(id: string, tool: AgentTool): Promise<Session | null> {
+    const source = this.session(id)
+    const target = this.agentDefinition(tool)
+    if (!source || !source.projectId || !target || tool === 'shell') {
+      this.report(new SauronError('invalid_state', 'The session or the target agent is not known.'), { sessionId: id })
+      return null
+    }
+    if (tool === source.tool) {
+      this.report(new SauronError('invalid_state', `${target.name} is already running this session; use Fork instead.`), { sessionId: id })
+      return null
+    }
+    try {
+      const { tools } = this.requireTools()
+      if (!tools.agents[tool]) throw new SauronError('executable_not_found', `${target.name} executable was not found.`)
+      const project = this.project(source.projectId)
+      if (!project) throw new SauronError('invalid_state', 'The session belongs to a project that no longer exists.')
+      const cwd = source.worktreePath ?? source.workingDir
+      const entries = source.transcriptPath && (source.tool === 'claude' || source.tool === 'codex')
+        ? await readTranscriptEntries(source.transcriptPath, source.tool)
+        : []
+      const git = tools.git
+      const hashes = this.attributionStore.commitsForSession(source.id, 10)
+      const [status, branch, summaries] = git
+        ? await Promise.all([
+            runCommand(git, ['status', '--short'], { cwd }),
+            runCommand(git, ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd }),
+            commitSummaries(git, cwd, hashes),
+          ])
+        : [null, null, new Map<string, SessionCommit>()]
+      const document = renderHandoff({
+        sourceName: source.displayName,
+        sourceTool: source.tool,
+        targetName: target.name,
+        cwd,
+        branch: branch?.code === 0 ? branch.stdout.trim() : null,
+        entries,
+        commits: hashes.flatMap((hash) => summaries.get(hash) ?? []),
+        gitStatus: status?.code === 0 ? status.stdout : '',
+      })
+      const file = join(await mkdtemp(join(tmpdir(), 'sauron-handoff-')), 'handoff.md')
+      await writeFile(file, document, 'utf8')
+      const prompt = `You are taking over work from another agent. Read ${file} before doing anything else, then continue the work it describes.`
+      return await this.launchSession(project.id, tool, {
+        title: `${source.displayName} → ${target.name}`,
+        prompt,
+        worktreePath: cwd !== project.path ? cwd : undefined,
+      })
     } catch (error) {
       this.report(error, { sessionId: id })
       return null

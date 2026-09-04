@@ -4,7 +4,7 @@ import { isAlive } from '@shared/types'
 import type { Worktree } from '@shared/worktrees'
 import type { ProjectStatus, RefreshState } from '@shared/status'
 import { StateDot } from './StateDot'
-import { abbreviate } from './Sidebar'
+import { abbreviate, handoffItems } from './Sidebar'
 import { relativeTime } from '../time'
 import { NewSessionBar } from './NewSessionBar'
 import { ToolIcon } from './ToolIcon'
@@ -76,6 +76,7 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
     const common: MenuItem[] = [
       { label: 'Rename…', action: () => setRenaming(session) },
       ...(forkable ? [{ label: 'Fork', action: () => void window.sauron.forkSession(session.id) } satisfies MenuItem] : []),
+      ...handoffItems(preferences.agents, toolPaths?.agents ?? {}, session),
     ]
     if (!isAlive(session)) return [...common, { label: 'Resume', action: () => void window.sauron.resumeSession(session.id) }, { label: 'Forget', destructive: true, action: () => void window.sauron.forgetSession(session.id) }]
     return [...common, {

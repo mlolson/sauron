@@ -180,6 +180,12 @@ export class SocketServer {
         await state.closeSession(String(req.session))
         return null
       }
+      case 'sessions.handoff': {
+        if (typeof req.tool !== 'string') throw new Error('tool is required')
+        const session = await state.handoffSession(String(req.session), req.tool)
+        if (!session) throw new Error('handoff failed')
+        return { id: session.id, tmuxName: session.tmuxName }
+      }
       case 'sessions.fork': {
         const session = await state.forkSession(String(req.session))
         if (!session) throw new Error('fork failed')

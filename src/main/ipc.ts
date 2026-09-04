@@ -109,6 +109,9 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
   handle('transcriptClose', async (sessionId) => state.transcriptClose(sessionId))
   handle('transcriptLoadOlder', async (sessionId, beforeIndex, count) => state.transcriptLoadOlder(sessionId, beforeIndex, count))
 
+  handle('handoffSession', async (sessionId, tool) => {
+    await state.handoffSession(sessionId, tool)
+  })
   handle('lastCommitBySession', (projectId) => state.lastCommitBySession(projectId))
   on('revealInFinder', (path) => shell.showItemInFolder(path))
   handle('openInVsCode', async (path) => {

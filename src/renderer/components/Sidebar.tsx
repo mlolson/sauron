@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Project, SelectionTarget, Session, Snapshot } from '@shared/types'
+import type { AgentDefinition, Project, SelectionTarget, Session, Snapshot } from '@shared/types'
 import { isAlive } from '@shared/types'
 import { sameTarget } from '../store'
 import { StateDot } from './StateDot'
@@ -58,11 +58,13 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
     const profile = snapshot.preferences.agents.find((agent) => agent.id === session.tool)
     const forkable = Boolean(profile?.forkCommand?.length && session.cliSessionId)
     const fork: MenuItem[] = forkable ? [{ label: 'Fork', action: () => void window.sauron.forkSession(session.id) }] : []
-    if (session.kind === 'external') return [...fork, { label: 'Hide', action: () => void window.sauron.hideSession(session.id) }]
+    const handoff = handoffItems(snapshot.preferences.agents, snapshot.toolPaths?.agents ?? {}, session)
+    if (session.kind === 'external') return [...fork, ...handoff, { label: 'Hide', action: () => void window.sauron.hideSession(session.id) }]
     if (isAlive(session)) {
       return [
         { label: 'Rename…', action: () => setRenaming(session) },
         ...fork,
+        ...handoff,
         {
           label: 'Close',
           destructive: true,
@@ -77,6 +79,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
       { label: 'Rename…', action: () => setRenaming(session) },
       { label: 'Resume', action: () => void window.sauron.resumeSession(session.id) },
       ...fork,
+      ...handoff,
       { label: 'Forget', destructive: true, action: () => void window.sauron.forgetSession(session.id) },
     ]
   }
@@ -317,6 +320,14 @@ function Row({
       {children}
     </div>
   )
+}
+
+/** One "Handoff to <agent>" item per other configured agent; greyed out when its binary is missing. */
+export function handoffItems(agents: AgentDefinition[], found: Record<string, string | null>, session: Session): MenuItem[] {
+  if (session.id === 'master') return []
+  return agents
+    .filter((agent) => agent.id !== session.tool)
+    .map((agent) => ({ label: `Handoff to ${agent.name}`, disabled: !found[agent.id], action: () => void window.sauron.handoffSession(session.id, agent.id) }))
 }
 
 function branchOf(snapshot: Snapshot, session: Session): string {
