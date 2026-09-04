@@ -1,19 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AgentTool, Project, ToolPaths } from '@shared/types'
+import type { AgentTool, Preferences, Project, ToolPaths } from '@shared/types'
 
 interface Props {
   project: Project
   toolPaths: ToolPaths | null
+  preferences: Preferences
 }
 
 /** Title field plus a split button: New Terminal, with Claude and Codex as convenience choices. */
-export function NewSessionBar({ project, toolPaths }: Props) {
+export function NewSessionBar({ project, toolPaths, preferences }: Props) {
   const [title, setTitle] = useState('')
   const [useWorktree, setUseWorktree] = useState(false)
   const [branch, setBranch] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const menu = useRef<HTMLDivElement>(null)
-  const codexAvailable = Boolean(toolPaths?.codex)
+  const agents = preferences.agents
 
   useEffect(() => {
     if (!menuOpen) return
@@ -55,14 +56,14 @@ export function NewSessionBar({ project, toolPaths }: Props) {
           {menuOpen && (
             <div className="context-menu anchored">
               <div className="item" onClick={() => launch('shell')}>
-                Terminal
+                New terminal
               </div>
-              <div className="item" onClick={() => launch('claude')}>
-                Terminal running Claude
-              </div>
-              <div className={`item ${codexAvailable ? '' : 'disabled'}`} onClick={() => codexAvailable && launch('codex')} title={codexAvailable ? '' : 'codex was not found on PATH'}>
-                Terminal running Codex
-              </div>
+              {agents.map((agent) => {
+                const available = Boolean(toolPaths?.agents[agent.id])
+                return <div key={agent.id} className={`item ${available ? '' : 'disabled'}`} onClick={() => available && launch(agent.id)} title={available ? '' : `${agent.name} was not found on PATH`}>
+                  New {agent.name}
+                </div>
+              })}
             </div>
           )}
         </div>

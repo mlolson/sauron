@@ -16,6 +16,10 @@ export class MasterHome {
     return join(this.dir, 'CLAUDE.md')
   }
 
+  get instructionsPath(): string {
+    return join(this.dir, 'AGENTS.md')
+  }
+
   /** Writes CLAUDE.md and returns a hash of its content. */
   async regenerate(projects: Project[], sauronBin: string): Promise<string> {
     await mkdir(this.dir, { recursive: true })
@@ -27,6 +31,9 @@ export class MasterHome {
       codexSessionRoot: join(homedir(), '.codex', 'sessions'),
     })
     await writeFile(this.claudeMdPath, md, 'utf8')
+    // AGENTS.md is understood by Codex, OpenCode, Pi, and other agent CLIs. Keep the
+    // Claude-specific filename too for backwards compatibility and native Claude loading.
+    await writeFile(this.instructionsPath, md, 'utf8')
     return createHash('sha1').update(md).digest('hex')
   }
 }

@@ -14,6 +14,7 @@ export function ToolIcon({ tool, className = '' }: { tool: AgentTool; className?
         </span>
       )
     default:
+      if (tool !== 'shell') return <span className={`tool-icon shell ${className}`} title={tool}>{tool.slice(0, 2).toUpperCase()}</span>
       return (
         <span className={`tool-icon shell ${className}`} title="Terminal">
           {'>_'}

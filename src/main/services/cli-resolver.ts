@@ -2,7 +2,7 @@ import { accessSync, constants } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { runCommand } from './command'
-import type { ToolPaths } from '@shared/types'
+import type { AgentDefinition, ToolPaths } from '@shared/types'
 
 /** Directories tools commonly install into; always searched last so a bare Finder launch still finds them. */
 function commonToolDirs(): string[] {
@@ -68,7 +68,7 @@ type ToolName = 'claude' | 'codex' | 'tmux' | 'git'
  * Locates the tools. Precedence: explicit override, `SAURON_TOOL_<NAME>` environment variable
  * (the value "none" forces "not found", handy for testing the setup screen), then PATH.
  */
-export async function resolveTools(overrides: Partial<Record<ToolName, string>> = {}): Promise<ToolPaths> {
+export async function resolveTools(overrides: Partial<Record<ToolName, string>> = {}, customAgents: AgentDefinition[] = []): Promise<ToolPaths> {
   const path = await loginShellPath()
   const locate = (name: ToolName): string | null => {
     const override = overrides[name] || process.env[`SAURON_TOOL_${name.toUpperCase()}`]
@@ -80,7 +80,15 @@ export async function resolveTools(overrides: Partial<Record<ToolName, string>> 
     codex: locate('codex'),
     tmux: locate('tmux'),
     git: locate('git'),
+    agents: {},
     path,
+  }
+  tools.agents.claude = tools.claude
+  tools.agents.codex = tools.codex
+  for (const agent of customAgents) {
+    tools.agents[agent.id] = agent.command.includes('/')
+      ? (() => { try { accessSync(agent.command, constants.X_OK); return agent.command } catch { return null } })()
+      : findExecutable(agent.command, path)
   }
   console.log('resolved tools', tools)
   return tools

@@ -58,6 +58,9 @@ export class TmuxService {
 
   async sendText(name: string, text: string): Promise<void> {
     await this.run(['send-keys', '-t', tmuxTarget(name), '-l', text])
+    // Interactive TUIs such as Codex detect a burst of characters as pasted input.
+    // Let that burst settle before Enter so it is interpreted as Submit, not pasted text.
+    await new Promise((resolve) => setTimeout(resolve, 200))
     await this.run(['send-keys', '-t', tmuxTarget(name), 'Enter'])
   }
 

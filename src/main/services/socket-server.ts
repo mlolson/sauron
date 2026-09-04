@@ -104,7 +104,7 @@ export class SocketServer {
         if (req.project !== undefined && !project) throw new Error(`unknown project ${req.project}`)
         return state.allSessions
           .filter((s) => !project || s.projectId === project.id)
-          .map(({ id, projectId, tool, kind, displayName, tmuxName, state: st, workingDir }) => ({ id, projectId, tool, kind, displayName, tmuxName, state: st, workingDir }))
+          .map(({ id, projectId, tool, kind, displayName, tmuxName, state: st, workingDir, cliSessionId, transcriptPath, lastActivityAt }) => ({ id, projectId, tool, kind, displayName, tmuxName, state: st, workingDir, cliSessionId, transcriptPath, lastActivityAt }))
       }
       case 'commits.record': {
         if (typeof req.session !== 'string' || typeof req.cwd !== 'string' || typeof req.hash !== 'string') throw new Error('session, cwd, and hash are required')
@@ -115,7 +115,7 @@ export class SocketServer {
         const project = this.findProject(req.project)
         if (!project) throw new Error(`unknown project ${req.project}`)
         const tool = req.tool ?? 'claude'
-        if (tool !== 'claude' && tool !== 'codex' && tool !== 'shell') throw new Error(`unsupported tool ${String(req.tool)}`)
+        if (typeof tool !== 'string' || (tool !== 'shell' && !state.agentDefinitions().some((agent) => agent.id === tool))) throw new Error(`unsupported tool ${String(req.tool)}`)
         const session = await state.launchSession(project.id, tool, {
           title: typeof req.title === 'string' ? req.title : undefined,
           prompt: typeof req.prompt === 'string' ? req.prompt : undefined,
@@ -179,6 +179,11 @@ export class SocketServer {
       case 'sessions.close': {
         await state.closeSession(String(req.session))
         return null
+      }
+      case 'sessions.fork': {
+        const session = await state.forkSession(String(req.session))
+        if (!session) throw new Error('fork failed')
+        return { id: session.id, tmuxName: session.tmuxName }
       }
       case 'sessions.rename': {
         await state.renameSession(String(req.session), String(req.title ?? ''))

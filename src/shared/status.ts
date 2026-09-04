@@ -64,6 +64,30 @@ export interface MasterContext {
   codexSessionRoot: string
 }
 
+export const defaultProjectSummaryPrompt = `# Project status refresh
+
+Refresh the status summary for project "{projectName}" (id {projectId}, path {projectPath}).
+The previous summary timestamp is {previousSummaryUpdatedAt}.
+
+1. Read the previous status with \`sauron status get --project {projectId}\` (it may not exist yet).
+2. In \`{projectPath}\`, inspect \`git log --oneline -20\`, \`git status --short\`, and
+   \`git branch -a\`. Note the HEAD commit.
+3. Run \`sauron sessions --project {projectId}\` and compare each session's \`lastActivityAt\`
+   with the previous summary timestamp. Completely exclude sessions whose last activity is not
+   newer. For every eligible session, inspect at most its last 10 user and assistant messages.
+   Do not ingest full transcripts; consult adjacent tool-call summaries only when necessary.
+4. Read README, CLAUDE.md, AGENTS.md, TODO.md, or similar planning docs if present.
+5. Write the result with \`sauron status set --project {projectId} --summary "..." --update
+   "..." --todo "..."\`.
+   - Summary: exactly one plain sentence saying what the project is and where it stands.
+   - Updates: 3–6 short bullets for recent changes, newest first.
+   - TODOs: 3–8 short bullets for open work. Prefix blockers with "Blocked:".
+   - Details are optional.
+6. Reply with one brief line saying the status was updated.
+
+Be economical: skip steps with nothing new and keep tool output small.
+`
+
 /** The CLAUDE.md Sauron writes into the supervisor agent's home directory. */
 export function renderMasterClaudeMd(ctx: MasterContext): string {
   const rows = ctx.projects.map((p) => `| ${p.name} | \`${p.id}\` | \`${p.path}\` |`).join('\n')
@@ -73,7 +97,7 @@ You are the coordinating agent inside Sauron, a desktop app that oversees coding
 across several git projects. You run in a long-lived session that the user chats with directly.
 Your jobs:
 
-1. Keep a short, accurate status summary for every project (see "Status refresh" below).
+1. Keep a short, accurate status summary for every project when Sauron sends a refresh procedure.
 2. Help the user coordinate work: start worker sessions, send them instructions, and report on
    what they are doing.
 3. Answer questions about any project using its repository and session transcripts.
@@ -99,6 +123,7 @@ Every project path is readable from this session (they are passed with \`--add-d
 - \`sauron send --session <id> --text "<text>"\` — type a message into a running worker (refused while it is mid-turn)
 - \`sauron status set --project <name|id> --summary "<one sentence>" --update "<bullet>" [--update ...] --todo "<bullet>" [--todo ...] [--details "<text>"]\` — write a status (repeat \`--update\` and \`--todo\` per bullet)
 - \`sauron status get --project <name|id>\` — read the current status
+- \`sauron fork --session <id>\` — new terminal continuing a copy of a Claude/Codex conversation
 - \`sauron worktrees --project <name|id>\` — list worktrees
 
 Do not use \`sauron stop\` unless the user asks you to stop a session.
@@ -113,31 +138,6 @@ Do not use \`sauron stop\` unless the user asks you to stop a session.
   path for sessions Sauron knows about.
 - Codex rollouts: \`${ctx.codexSessionRoot}/YYYY/MM/DD/rollout-*.jsonl\`; the first record's
   \`payload.cwd\` names the project.
-
-## Status refresh
-
-When Sauron or the user asks you to "refresh the status summary for project X", do this:
-
-1. Read the previous status with \`sauron status get --project X\` (it may not exist yet).
-2. In the project directory look at \`git log --oneline -20\`, \`git status --short\`, and
-   \`git branch -a\`. Note the HEAD commit.
-3. Skim recent session transcripts for that project (last few user and assistant messages of
-   the most recently modified files) to learn what agents are working on or blocked by.
-4. Read README, CLAUDE.md, AGENTS.md, TODO.md, or similar planning docs if present.
-5. Write the result with
-   \`sauron status set --project X --summary "..." --update "..." --update "..." --todo "..." --todo "..."\`.
-   - \`--summary\`: exactly ONE plain sentence saying what the project is and where it stands.
-     No markdown, no preamble, no second sentence (Sauron truncates to the first sentence).
-   - \`--update\` (3 to 6 of them): one bullet each for recent changes worth knowing: notable
-     commits, what active sessions did, problems found or fixed. Newest first.
-   - \`--todo\` (3 to 8 of them): one bullet each for open work: in-progress tasks, blockers,
-     and obvious next steps. Mark blockers with "Blocked:".
-   - \`--details\` (optional): anything important that fits neither list.
-6. Reply with one line saying the status was updated. Keep it brief; the user may not be
-   reading this session while refreshes run.
-
-Be economical: skip steps that clearly have nothing new, and keep tool output small
-(\`head\`, \`tail\`, \`--oneline\`).
 
 ## Coordinating workers
 

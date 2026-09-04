@@ -1,17 +1,18 @@
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
-import { basename, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import { homedir } from 'node:os'
-import type { AgentTool, AppError, LaunchOptions, Preferences, Project, Session, SelectionTarget, Snapshot, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
+import type { AgentDefinition, AgentTool, AppError, LaunchOptions, Preferences, Project, Session, SelectionTarget, Snapshot, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
 import { defaultPreferences } from '@shared/types'
 import { claudeHookSettings, codexNotifyConfig, looksLikeApprovalPrompt, transitionForHook, type HookEvent } from '@shared/hooks'
 import { writeJsonAtomic } from './services/persistence'
 import { join } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { Notifier } from './services/notifier'
 import { TranscriptIndexer, TranscriptTailer, type TranscriptFile } from './services/transcripts'
 import { projectForCwd } from '@shared/transcripts'
 import type { TranscriptEntry, TranscriptPage } from '@shared/transcript-types'
-import { MASTER_SESSION_ID, firstSentence, type ProjectStatus } from '@shared/status'
+import { defaultProjectSummaryPrompt, MASTER_SESSION_ID, firstSentence, type ProjectStatus } from '@shared/status'
 import { StatusStore } from './services/status-store'
 import { MasterHome, RefreshScheduler } from './services/master'
 import { ensureClaudeTrusts } from './services/claude-config'
@@ -67,6 +68,7 @@ export class AppState extends EventEmitter<StateEvents> {
   private transcriptTimer: NodeJS.Timeout | null = null
   readonly statusStore: StatusStore
   private gitWatchers = new Map<string, GitWatcher>()
+  private automaticRefreshAt = new Map<string, number>()
   readonly masterHome: MasterHome
   readonly refresh: RefreshScheduler
   readonly attributionStore: AttributionStore
@@ -79,6 +81,10 @@ export class AppState extends EventEmitter<StateEvents> {
   constructor(public readonly persistence: Persistence) {
     super()
     this.statusStore = new StatusStore(persistence.paths.statusDir, () => {
+      const master = this.masterSession()
+      if (master && master.tool !== 'claude' && master.tool !== 'codex') {
+        this.updateSession(MASTER_SESSION_ID, (session) => { session.state = 'idle' })
+      }
       this.refresh.markDone()
       this.changed()
     })
@@ -138,7 +144,49 @@ export class AppState extends EventEmitter<StateEvents> {
       this.attributionStore.open()
       const config = await this.persistence.loadConfig()
       this.projects = config.projects
-      this.preferences = { ...defaultPreferences, ...config.preferences, toolOverrides: { ...defaultPreferences.toolOverrides, ...config.preferences?.toolOverrides } }
+      const savedPreferences = config.preferences
+      const legacyPreferences = (savedPreferences ?? {}) as Partial<Preferences> & {
+        supervisorAutoSummariesActiveProjects?: boolean
+        supervisorAutoSummariesAfterCommit?: boolean
+        supervisorSummaryCooldownMinutes?: number
+        supervisorProjectSummaryPrompt?: string
+      }
+      const {
+        supervisorAutoSummariesActiveProjects: _removedActiveSummary,
+        supervisorAutoSummariesAfterCommit: legacySummaryAfterCommit,
+        supervisorSummaryCooldownMinutes: legacySummaryCooldown,
+        supervisorProjectSummaryPrompt: legacySummaryPrompt,
+        ...cleanPreferences
+      } = legacyPreferences
+      let migratedAgents = savedPreferences?.agents ?? [
+        { ...defaultPreferences.agents[0]!, command: savedPreferences?.toolOverrides?.claude || 'claude' },
+        { ...defaultPreferences.agents[1]!, command: savedPreferences?.toolOverrides?.codex || 'codex' },
+        ...(savedPreferences?.customAgents ?? []),
+      ]
+      if (config.version < 2) {
+        const defaultsById = new Map(defaultPreferences.agents.map((agent) => [agent.id, agent]))
+        migratedAgents = migratedAgents.map((agent) => {
+          const defaultAgent = defaultsById.get(agent.id)
+          if (!defaultAgent) return agent
+          return { ...agent, args: [...defaultAgent.args.filter((arg) => !agent.args.includes(arg)), ...agent.args] }
+        })
+      }
+      if (config.version < 3) {
+        const defaultsById = new Map(defaultPreferences.agents.map((agent) => [agent.id, agent]))
+        migratedAgents = migratedAgents.map((agent) => ({ ...agent, forkCommand: agent.forkCommand ?? defaultsById.get(agent.id)?.forkCommand }))
+      }
+      this.preferences = {
+        ...defaultPreferences,
+        ...cleanPreferences,
+        agents: migratedAgents,
+        supervisorArgs: savedPreferences?.supervisorArgs ?? [],
+        supervisorProjectSummaryAfterCommit: cleanPreferences.supervisorProjectSummaryAfterCommit ?? legacySummaryAfterCommit ?? true,
+        supervisorProjectSummaryAfterCommitCooldownMinutes: cleanPreferences.supervisorProjectSummaryAfterCommitCooldownMinutes ?? legacySummaryCooldown ?? 5,
+        supervisorProjectSummaryPromptFile: cleanPreferences.supervisorProjectSummaryPromptFile ?? 'summary-prompt.md',
+        toolOverrides: { ...defaultPreferences.toolOverrides, ...savedPreferences?.toolOverrides },
+      }
+      await this.ensureSummaryPromptFile(legacySummaryPrompt)
+      if (config.version < CONFIG_VERSION) this.persistConfig()
       this.notifier.muted = this.preferences.notificationsMuted
       const file = await this.persistence.loadSessions()
       this.sessions = file.sessions
@@ -168,7 +216,7 @@ export class AppState extends EventEmitter<StateEvents> {
 
   async refreshTools(): Promise<void> {
     const o = this.preferences.toolOverrides
-    const tools = await resolveTools({ claude: o.claude || undefined, codex: o.codex || undefined, tmux: o.tmux || undefined, git: o.git || undefined })
+    const tools = await resolveTools({ claude: o.claude || undefined, codex: o.codex || undefined, tmux: o.tmux || undefined, git: o.git || undefined }, this.preferences.agents)
     this.toolPaths = tools
     this.worktreeService = tools.git ? new WorktreeService(tools.git, this.preferences.worktreeBase || this.paths.worktreesDir) : null
     if (tools.tmux) {
@@ -191,11 +239,61 @@ export class AppState extends EventEmitter<StateEvents> {
     const before = this.preferences
     this.preferences = { ...before, ...prefs, toolOverrides: { ...before.toolOverrides, ...prefs.toolOverrides } }
     this.notifier.muted = this.preferences.notificationsMuted
+    void this.ensureSummaryPromptFile().catch((error) => this.report(error))
     this.persistConfig()
     this.changed()
     const toolsChanged =
-      JSON.stringify(before.toolOverrides) !== JSON.stringify(this.preferences.toolOverrides) || before.worktreeBase !== this.preferences.worktreeBase
+      JSON.stringify(before.toolOverrides) !== JSON.stringify(this.preferences.toolOverrides) ||
+      JSON.stringify(before.agents) !== JSON.stringify(this.preferences.agents) ||
+      before.worktreeBase !== this.preferences.worktreeBase
     if (toolsChanged) void this.refreshTools().then(() => this.syncGitWatchers())
+  }
+
+  async getConfigFile(): Promise<{ path: string; content: string }> {
+    this.persistConfig()
+    await this.persistence.flush()
+    return { path: this.paths.configFile, content: await readFile(this.paths.configFile, 'utf8') }
+  }
+
+  async saveConfigFile(content: string): Promise<void> {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(content)
+    } catch (error) {
+      throw new SauronError('persistence', `Invalid JSON: ${(error as Error).message}`)
+    }
+    if (!parsed || typeof parsed !== 'object') throw new SauronError('persistence', 'Config must be a JSON object.')
+    const config = parsed as Partial<import('@shared/types').AppConfig>
+    if (!Array.isArray(config.projects)) throw new SauronError('persistence', 'Config must contain a projects array.')
+    if (!config.preferences || typeof config.preferences !== 'object') throw new SauronError('persistence', 'Config must contain a preferences object.')
+    if (!Array.isArray(config.preferences.agents)) throw new SauronError('persistence', 'preferences.agents must be an array.')
+    if (typeof config.preferences.supervisorProjectSummaryAfterCommit !== 'boolean') throw new SauronError('persistence', 'supervisorProjectSummaryAfterCommit must be a boolean.')
+    if (typeof config.preferences.supervisorProjectSummaryAfterCommitCooldownMinutes !== 'number' || config.preferences.supervisorProjectSummaryAfterCommitCooldownMinutes < 0) throw new SauronError('persistence', 'supervisorProjectSummaryAfterCommitCooldownMinutes must be a non-negative number.')
+    if (typeof config.preferences.supervisorProjectSummaryPromptFile !== 'string' || !config.preferences.supervisorProjectSummaryPromptFile.trim()) throw new SauronError('persistence', 'supervisorProjectSummaryPromptFile must be a non-empty string.')
+    for (const agent of config.preferences.agents) {
+      if (!agent || typeof agent.id !== 'string' || !agent.id || typeof agent.name !== 'string' || typeof agent.command !== 'string' || !Array.isArray(agent.args) || !agent.args.every((arg) => typeof arg === 'string')) {
+        throw new SauronError('persistence', 'Every agent needs string id, name, command, and a string args array.')
+      }
+      if (agent.forkCommand !== undefined && (!Array.isArray(agent.forkCommand) || !agent.forkCommand.every((arg) => typeof arg === 'string'))) {
+        throw new SauronError('persistence', 'Agent forkCommand must be a string array when present.')
+      }
+    }
+    this.projects = config.projects
+    this.preferences = {
+      ...defaultPreferences,
+      ...config.preferences,
+      agents: config.preferences.agents,
+      supervisorArgs: Array.isArray(config.preferences.supervisorArgs) ? config.preferences.supervisorArgs : [],
+      toolOverrides: { ...defaultPreferences.toolOverrides, ...config.preferences.toolOverrides },
+    }
+    this.notifier.muted = this.preferences.notificationsMuted
+    await this.ensureSummaryPromptFile()
+    this.persistConfig()
+    await this.persistence.flush()
+    await this.refreshTools()
+    await this.syncGitWatchers()
+    await this.regenerateMasterHome()
+    this.changed()
   }
 
   private persistSessions(): void {
@@ -232,6 +330,7 @@ export class AppState extends EventEmitter<StateEvents> {
     const projectId = projectForCwd(cwd, this.projects, worktreePaths)
     if (!projectId) return
     this.attributionStore.set(projectId, hash, sessionId)
+    this.maybeCommitSummaryRefresh(projectId)
     this.changed()
   }
 
@@ -256,7 +355,7 @@ export class AppState extends EventEmitter<StateEvents> {
       if (this.projects.some((p) => p.path === root)) {
         throw new SauronError('project_already_added', `${root} is already in the project list.`)
       }
-      const project: Project = { id: randomUUID(), name: basename(root), path: root, addedAt: new Date().toISOString(), pinned: false }
+      const project: Project = { id: randomUUID(), name: basename(root), path: root, addedAt: new Date().toISOString(), pinned: false, archived: false }
       this.projects.push(project)
       this.persistConfig()
       this.changed()
@@ -284,33 +383,53 @@ export class AppState extends EventEmitter<StateEvents> {
     void this.syncGitWatchers()
   }
 
-  /** One watcher per project. On startup, projects whose HEAD moved since their last summary are queued. */
+  async archiveProject(id: string, archived: boolean): Promise<void> {
+    const project = this.project(id)
+    if (!project || Boolean(project.archived) === archived) return
+    if (archived) {
+      const live = this.sessionsFor(id).filter((session) => session.kind === 'managed' && isAlive(session))
+      for (const session of live) await this.closeSession(session.id)
+      this.refresh.remove(id)
+    }
+    project.archived = archived
+    this.persistConfig()
+    await this.syncGitWatchers()
+    this.changed()
+    this.select({ kind: 'project', id })
+  }
+
+  /** Watches refs for worktree metadata only; commit summary triggers come from the git proxy. */
   async syncGitWatchers(): Promise<void> {
     const git = this.toolPaths?.git
     if (!git) return
-    const wanted = new Set(this.projects.map((p) => p.id))
+    const wanted = new Set(this.projects.filter((project) => !project.archived).map((p) => p.id))
     for (const [id, w] of this.gitWatchers) {
       if (!wanted.has(id)) {
         w.stop()
         this.gitWatchers.delete(id)
       }
     }
-    for (const project of this.projects) {
+    for (const project of this.projects.filter((candidate) => !candidate.archived)) {
       if (this.gitWatchers.has(project.id)) continue
       const watcher = new GitWatcher(git, project.path, () => {
         console.log('commit detected in', project.name)
-        this.refresh.enqueue(project.id)
         void this.refreshWorktrees(project.id)
       })
       this.gitWatchers.set(project.id, watcher)
       await watcher.start()
-      const status = this.statusStore.statuses[project.id]
-      const head = await watcher.headCommit()
-      if (status && head && status.headCommit && status.headCommit !== head) {
-        console.log('HEAD moved since last summary for', project.name)
-        this.refresh.enqueue(project.id)
-      }
     }
+  }
+
+  private maybeCommitSummaryRefresh(projectId: string): void {
+    const enabled = this.preferences.supervisorProjectSummaryAfterCommit
+    const project = this.project(projectId)
+    if (!enabled || !project || project.archived) return
+    const cooldown = Math.max(0, this.preferences.supervisorProjectSummaryAfterCommitCooldownMinutes) * 60_000
+    const lastRequest = this.automaticRefreshAt.get(projectId) ?? 0
+    const lastSummary = new Date(this.statusStore.statuses[projectId]?.updatedAt ?? 0).getTime()
+    if (Date.now() - Math.max(lastRequest, Number.isFinite(lastSummary) ? lastSummary : 0) < cooldown) return
+    this.automaticRefreshAt.set(projectId, Date.now())
+    this.refresh.enqueue(projectId)
   }
 
   // MARK: Session helpers
@@ -340,30 +459,56 @@ export class AppState extends EventEmitter<StateEvents> {
   }
 
   private nextDisplayName(tool: AgentTool, projectId: string | null): string {
-    const label = tool === 'claude' ? 'Claude' : tool === 'codex' ? 'Codex' : 'Terminal'
+    const label = tool === 'shell' ? 'Terminal' : this.agentDefinition(tool)?.name ?? tool
     const count = this.sessionsFor(projectId).filter((s) => s.tool === tool).length
     return count === 0 ? label : `${label} ${count + 1}`
   }
 
-  /** Agents run unattended inside Sauron, so they always start with permission prompts bypassed. */
-  private static readonly CLAUDE_BYPASS = ['--dangerously-skip-permissions']
-  private static readonly CODEX_BYPASS = ['--dangerously-bypass-approvals-and-sandbox']
+  agentDefinitions(): AgentDefinition[] {
+    return this.preferences.agents
+  }
+
+  private agentDefinition(id: string): AgentDefinition | undefined {
+    return this.agentDefinitions().find((agent) => agent.id === id)
+  }
+
+  private expandAgentArgs(args: string[], values: Record<string, string | undefined>): { args: string[]; usedPrompt: boolean } {
+    let usedPrompt = false
+    const expanded: string[] = []
+    for (const arg of args) {
+      if (arg.includes('{prompt}')) usedPrompt = true
+      const value = arg.replace(/\{(prompt|cwd|sessionId|sourceSessionId|sauronBin)\}/g, (_m, key: string) => values[key] ?? '')
+      if (value) expanded.push(value)
+    }
+    return { args: expanded, usedPrompt }
+  }
 
   /** The command line that starts an agent inside a session's shell, or null for a plain shell. */
-  private async agentCommand(tool: AgentTool, sessionId: string, prompt: string | undefined, tools: ToolPaths): Promise<string[] | null> {
+  private async agentCommand(tool: AgentTool, sessionId: string, prompt: string | undefined, tools: ToolPaths, cwd?: string): Promise<string[] | null> {
     if (tool === 'claude') {
-      if (!tools.claude) throw new SauronError('executable_not_found', 'claude was not found on PATH.')
-      const cmd = [tools.claude, ...AppState.CLAUDE_BYPASS, '--session-id', sessionId, ...(await this.claudeSettingsArgs(sessionId))]
-      if (prompt) cmd.push(prompt)
+      const definition = this.agentDefinition(tool)
+      const executable = tools.agents.claude
+      if (!definition || !executable) throw new SauronError('executable_not_found', 'Claude is not configured or its executable was not found.')
+      const extra = this.expandAgentArgs(definition.args, { prompt, cwd, sessionId, sauronBin: this.sauronBin ?? undefined })
+      const cmd = [executable, '--session-id', sessionId, ...(await this.claudeSettingsArgs(sessionId)), ...extra.args]
+      if (prompt && !extra.usedPrompt) cmd.push(prompt)
       return cmd
     }
     if (tool === 'codex') {
-      if (!tools.codex) throw new SauronError('executable_not_found', 'codex was not found on PATH.')
-      const cmd = [tools.codex, ...AppState.CODEX_BYPASS, ...(this.sauronBin ? ['-c', codexNotifyConfig(this.sauronBin)] : [])]
-      if (prompt) cmd.push(prompt)
+      const definition = this.agentDefinition(tool)
+      const executable = tools.agents.codex
+      if (!definition || !executable) throw new SauronError('executable_not_found', 'Codex is not configured or its executable was not found.')
+      const extra = this.expandAgentArgs(definition.args, { prompt, cwd, sessionId, sauronBin: this.sauronBin ?? undefined })
+      const cmd = [executable, ...(this.sauronBin ? ['-c', codexNotifyConfig(this.sauronBin)] : []), ...extra.args]
+      if (prompt && !extra.usedPrompt) cmd.push(prompt)
       return cmd
     }
-    return null
+    if (tool === 'shell') return null
+    const definition = this.agentDefinition(tool)
+    const executable = tools.agents[tool]
+    if (!definition || !executable) throw new SauronError('executable_not_found', `${definition?.command ?? tool} was not found on PATH.`)
+    const expanded = this.expandAgentArgs(definition.args, { prompt, cwd, sessionId, sauronBin: this.sauronBin ?? undefined })
+    return [executable, ...expanded.args, ...(prompt && !expanded.usedPrompt ? [prompt] : [])]
   }
 
   /** Stamps identifying options onto a tmux session so it can be recovered without sessions.json. */
@@ -384,6 +529,10 @@ export class AppState extends EventEmitter<StateEvents> {
       this.report(new SauronError('invalid_state', `Unknown project ${projectId}`))
       return null
     }
+    if (project.archived) {
+      this.report(new SauronError('invalid_state', `Unarchive ${project.name} before starting a session.`), { projectId })
+      return null
+    }
     try {
       const { tools, tmux } = this.requireTools()
       const id = randomUUID()
@@ -397,7 +546,7 @@ export class AppState extends EventEmitter<StateEvents> {
         await this.refreshWorktrees(project.id, false)
       }
       const cwd = worktreePath ?? project.path
-      const agent = await this.agentCommand(tool, id, options.prompt?.trim() || undefined, tools)
+      const agent = await this.agentCommand(tool, id, options.prompt?.trim() || undefined, tools, cwd)
       const shell = process.env.SHELL || '/bin/zsh'
       await tmux.newSession({ name: tmuxName, workingDir: cwd, environment: this.launchEnvironment(id, tools), command: [shell, '-l'] })
       const now = new Date().toISOString()
@@ -471,11 +620,13 @@ export class AppState extends EventEmitter<StateEvents> {
       const { tools, tmux } = this.requireTools()
       let command: string[] | null = null
       if (session.cliSessionId && session.tool === 'claude') {
-        if (!tools.claude) throw new SauronError('executable_not_found', 'claude was not found on PATH.')
-        command = [tools.claude, ...AppState.CLAUDE_BYPASS, '--resume', session.cliSessionId, ...(await this.claudeSettingsArgs(session.id))]
+        const executable = tools.agents.claude
+        if (!executable) throw new SauronError('executable_not_found', 'Claude executable was not found.')
+        command = [executable, '--resume', session.cliSessionId, ...(await this.claudeSettingsArgs(session.id)), ...(this.agentDefinition('claude')?.args ?? [])]
       } else if (session.cliSessionId && session.tool === 'codex') {
-        if (!tools.codex) throw new SauronError('executable_not_found', 'codex was not found on PATH.')
-        command = [tools.codex, ...AppState.CODEX_BYPASS, ...(this.sauronBin ? ['-c', codexNotifyConfig(this.sauronBin)] : []), 'resume', session.cliSessionId]
+        const executable = tools.agents.codex
+        if (!executable) throw new SauronError('executable_not_found', 'Codex executable was not found.')
+        command = [executable, ...(this.sauronBin ? ['-c', codexNotifyConfig(this.sauronBin)] : []), ...(this.agentDefinition('codex')?.args ?? []), 'resume', session.cliSessionId]
       }
       const tmuxName = tmuxSessionName(session.displayName, session.id)
       const shell = process.env.SHELL || '/bin/zsh'
@@ -497,6 +648,65 @@ export class AppState extends EventEmitter<StateEvents> {
       this.select({ kind: 'session', id })
     } catch (error) {
       this.report(error, { sessionId: id })
+    }
+  }
+
+  /**
+   * Forks an agent conversation into a new managed session: a fresh terminal running
+   * `claude --resume <id> --fork-session` or `codex fork <id>`. Works for external sessions too.
+   */
+  async forkSession(id: string): Promise<Session | null> {
+    const source = this.session(id)
+    const definition = source ? this.agentDefinition(source.tool) : undefined
+    if (!source?.cliSessionId || !definition?.forkCommand?.length) {
+      this.report(new SauronError('invalid_state', 'This agent has no fork command configured, or the session id is not known.'), { sessionId: id })
+      return null
+    }
+    try {
+      const { tools, tmux } = this.requireTools()
+      const newId = randomUUID()
+      const executable = tools.agents[source.tool]
+      if (!executable) throw new SauronError('executable_not_found', `${definition.name} executable was not found.`)
+      const cwd = source.worktreePath ?? source.workingDir
+      const profileArgs = this.expandAgentArgs(definition.args, { cwd, sessionId: newId, sourceSessionId: source.cliSessionId, sauronBin: this.sauronBin ?? undefined }).args
+      const forkArgs = this.expandAgentArgs(definition.forkCommand, { cwd, sessionId: newId, sourceSessionId: source.cliSessionId, sauronBin: this.sauronBin ?? undefined }).args
+      const integrationArgs = source.tool === 'claude'
+        ? await this.claudeSettingsArgs(newId)
+        : source.tool === 'codex' && this.sauronBin ? ['-c', codexNotifyConfig(this.sauronBin)] : []
+      const command = [executable, ...integrationArgs, ...profileArgs, ...forkArgs]
+      const title = `${source.displayName} (fork)`
+      const tmuxName = tmuxSessionName(title, newId)
+      const shell = process.env.SHELL || '/bin/zsh'
+      await tmux.newSession({ name: tmuxName, workingDir: cwd, environment: this.launchEnvironment(newId, tools), command: [shell, '-l'] })
+      const now = new Date().toISOString()
+      const session: Session = {
+        id: newId,
+        projectId: source.projectId,
+        tool: source.tool,
+        kind: 'managed',
+        displayName: title,
+        tmuxName,
+        // The fork gets a new CLI session id; the SessionStart hook (Claude) or the
+        // transcript indexer (Codex) fills it in.
+        cliSessionId: null,
+        transcriptPath: null,
+        workingDir: source.kind === 'external' ? cwd : source.workingDir,
+        worktreePath: source.kind === 'external' ? null : source.worktreePath,
+        createdAt: now,
+        lastActivityAt: now,
+        state: 'running',
+        stateSource: 'inferred',
+      }
+      await this.stampTmux(tmux, tmuxName, session)
+      await tmux.sendText(tmuxName, shellCommandLine(command))
+      this.sessions.push(session)
+      this.persistSessions()
+      this.changed()
+      this.select({ kind: 'session', id: newId })
+      return session
+    } catch (error) {
+      this.report(error, { sessionId: id })
+      return null
     }
   }
 
@@ -825,7 +1035,7 @@ export class AppState extends EventEmitter<StateEvents> {
     let tailer = this.tailers.get(sessionId)
     if (!tailer) {
       const path = session.transcriptPath
-      if (session.tool === 'shell') return { entries: [], total: 0 }
+      if (session.tool !== 'claude' && session.tool !== 'codex') return { entries: [], total: 0 }
       tailer = new TranscriptTailer(path, session.tool, {
         onEntries: (entries) => this.transcriptListeners.get(sessionId)?.(entries),
       })
@@ -896,7 +1106,7 @@ export class AppState extends EventEmitter<StateEvents> {
     try {
       await this.tmux.sendText(
         master.tmuxName,
-        `Sauron regenerated your instructions. Read ${this.masterHome.claudeMdPath} again now and follow it from here on; reply with one line when done.`,
+        `Sauron regenerated your instructions. Read ${this.masterHome.instructionsPath} again now and follow it from here on; reply with one line when done.`,
       )
       this.masterNeedsReload = false
       this.masterClaudeMdHash = await this.masterHome.regenerate(this.projects, this.sauronBin!)
@@ -917,47 +1127,67 @@ export class AppState extends EventEmitter<StateEvents> {
     }
     try {
       const { tools, tmux } = this.requireTools()
-      if (!tools.claude) throw new SauronError('executable_not_found', 'claude was not found on PATH.')
+      const supervisorId = this.preferences.supervisorAgentId
+      const definition = this.agentDefinition(supervisorId)
+      const executable = tools.agents[supervisorId]
+      if (!definition || !executable) throw new SauronError('executable_not_found', `${definition?.command ?? supervisorId} was not found on PATH.`)
       await this.regenerateMasterHome()
-      await ensureClaudeTrusts(this.masterHome.dir)
+      if (supervisorId === 'claude') await ensureClaudeTrusts(this.masterHome.dir)
       const addDirs = this.projects.flatMap((p) => ['--add-dir', p.path])
-      const settings = await this.claudeSettingsArgs(MASTER_SESSION_ID)
-      const tryStart = async (cliSessionId: string, resume: boolean): Promise<string> => {
+      const settings = supervisorId === 'claude' ? await this.claudeSettingsArgs(MASTER_SESSION_ID) : []
+      const tryStart = async (cliSessionId: string | null, resume: boolean): Promise<string> => {
         const tmuxName = tmuxSessionName('supervisor', randomUUID())
-        const command = resume
-          ? [tools.claude!, ...AppState.CLAUDE_BYPASS, '--resume', cliSessionId, ...settings, ...addDirs]
-          : [tools.claude!, ...AppState.CLAUDE_BYPASS, '--session-id', cliSessionId, ...settings, ...addDirs]
+        let command: string[]
+        const profileArgs = this.expandAgentArgs(definition.args, {
+          cwd: this.masterHome.dir,
+          sessionId: MASTER_SESSION_ID,
+          sauronBin: this.sauronBin ?? undefined,
+        }).args
+        if (supervisorId === 'claude') {
+          command = resume
+            ? [executable, '--resume', cliSessionId!, ...settings, ...addDirs, ...profileArgs, ...this.preferences.supervisorArgs]
+            : [executable, '--session-id', cliSessionId!, ...settings, ...addDirs, ...profileArgs, ...this.preferences.supervisorArgs]
+        } else if (supervisorId === 'codex') {
+          command = [executable, ...(this.sauronBin ? ['-c', codexNotifyConfig(this.sauronBin)] : []), ...profileArgs, ...this.preferences.supervisorArgs]
+        } else {
+          const expanded = this.expandAgentArgs([...definition.args, ...this.preferences.supervisorArgs], {
+            cwd: this.masterHome.dir,
+            sessionId: MASTER_SESSION_ID,
+            sauronBin: this.sauronBin ?? undefined,
+          })
+          command = [executable, ...expanded.args]
+        }
         await tmux.newSession({ name: tmuxName, workingDir: this.masterHome.dir, environment: this.launchEnvironment(MASTER_SESSION_ID, tools), command })
         return tmuxName
       }
-      let cliSessionId = existing?.cliSessionId ?? null
+      let cliSessionId = supervisorId === 'claude' && existing?.tool === 'claude' ? existing.cliSessionId : null
       let tmuxName: string
       let resumed = false
-      if (cliSessionId) {
+      if (cliSessionId && supervisorId === 'claude') {
         tmuxName = await tryStart(cliSessionId, true)
         await sleep(3000)
         resumed = await tmux.hasSession(tmuxName)
         if (!resumed) console.warn('master resume failed; starting fresh')
       }
       if (!resumed) {
-        cliSessionId = randomUUID()
+        cliSessionId = supervisorId === 'claude' ? randomUUID() : null
         tmuxName = await tryStart(cliSessionId, false)
       }
       const now = new Date().toISOString()
       const session: Session = {
         id: MASTER_SESSION_ID,
         projectId: null,
-        tool: 'claude',
+        tool: supervisorId,
         kind: 'managed',
         displayName: 'Supervisor Agent',
         tmuxName: tmuxName!,
         cliSessionId,
-        transcriptPath: claudeTranscriptPath(homedir(), this.masterHome.dir, cliSessionId!),
+        transcriptPath: supervisorId === 'claude' && cliSessionId ? claudeTranscriptPath(homedir(), this.masterHome.dir, cliSessionId) : null,
         workingDir: this.masterHome.dir,
         worktreePath: null,
         createdAt: existing?.createdAt ?? now,
         lastActivityAt: now,
-        state: 'running',
+        state: supervisorId === 'claude' || supervisorId === 'codex' ? 'running' : 'idle',
         stateSource: 'inferred',
       }
       this.pty?.close(MASTER_SESSION_ID)
@@ -977,17 +1207,58 @@ export class AppState extends EventEmitter<StateEvents> {
     await this.stopSession(MASTER_SESSION_ID)
   }
 
-  private masterPromptFor(projectId: string): string | null {
+  /** Stops the current supervisor process and starts it with the latest profile settings. */
+  async restartMaster(): Promise<void> {
+    const existing = this.masterSession()
+    if (existing && isAlive(existing)) await this.stopMaster()
+    await this.startMaster()
+  }
+
+  private summaryPromptPath(): string {
+    const configured = this.preferences.supervisorProjectSummaryPromptFile
+    return isAbsolute(configured) ? configured : resolve(this.paths.root, configured)
+  }
+
+  private async ensureSummaryPromptFile(legacyPrompt?: string): Promise<void> {
+    const path = this.summaryPromptPath()
+    await mkdir(dirname(path), { recursive: true })
+    try {
+      const existing = await readFile(path, 'utf8')
+      if (existing.includes('Follow the "Status refresh" procedure in AGENTS.md')) {
+        await writeFile(path, defaultProjectSummaryPrompt, 'utf8')
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      const initial = legacyPrompt?.includes('Follow the "Status refresh" procedure in AGENTS.md')
+        ? defaultProjectSummaryPrompt
+        : legacyPrompt?.trim() || defaultProjectSummaryPrompt
+      await writeFile(path, initial, { encoding: 'utf8', flag: 'wx' })
+    }
+  }
+
+  private async masterPromptFor(projectId: string): Promise<string | null> {
     const project = this.project(projectId)
     if (!project) return null
-    return `Please refresh the status summary for project "${project.name}" (id ${project.id}, path ${project.path}). Follow the "Status refresh" procedure in CLAUDE.md and reply with one line when done.`
+    const previous = this.statusStore.statuses[projectId]
+    const cutoff = previous?.updatedAt ?? 'none (this is the first summary)'
+    const values: Record<string, string> = {
+      projectName: project.name,
+      projectId: project.id,
+      projectPath: project.path,
+      previousSummaryUpdatedAt: cutoff,
+    }
+    const template = await readFile(this.summaryPromptPath(), 'utf8')
+    return template.replace(
+      /\{(projectName|projectId|projectPath|previousSummaryUpdatedAt)\}/g,
+      (_match, key: string) => values[key]!,
+    )
   }
 
   private async sendRefreshPrompt(projectId: string): Promise<boolean> {
     const master = this.masterSession()
-    const prompt = this.masterPromptFor(projectId)
-    if (!master?.tmuxName || !isAlive(master) || !prompt || !this.tmux) return false
     try {
+      const prompt = await this.masterPromptFor(projectId)
+      if (!master?.tmuxName || !isAlive(master) || !prompt || !this.tmux) return false
       await this.tmux.sendText(master.tmuxName, prompt)
       this.updateSession(MASTER_SESSION_ID, (s) => {
         s.state = 'running'
@@ -1120,7 +1391,7 @@ export class AppState extends EventEmitter<StateEvents> {
     const projectId = (await this.tmux.getOption(tmuxName, TMUX_OPTION_PROJECT)) || null
     const title = (await this.tmux.getOption(tmuxName, TMUX_OPTION_TITLE)) || tmuxName
     const toolRaw = await this.tmux.getOption(tmuxName, TMUX_OPTION_TOOL)
-    const tool: AgentTool = toolRaw === 'claude' || toolRaw === 'codex' ? toolRaw : 'shell'
+    const tool: AgentTool = toolRaw === 'shell' || (toolRaw && this.agentDefinition(toolRaw)) ? toolRaw : 'shell'
     const project = projectId ? this.project(projectId) : undefined
     const now = new Date().toISOString()
     this.sessions.push({
