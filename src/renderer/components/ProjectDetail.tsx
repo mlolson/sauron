@@ -4,7 +4,7 @@ import { isAlive } from '@shared/types'
 import type { Worktree } from '@shared/worktrees'
 import type { ProjectStatus, RefreshState } from '@shared/status'
 import { StateDot } from './StateDot'
-import { abbreviate, handoffItems } from './Sidebar'
+import { abbreviate, handoffItems, importExternalSession } from './Sidebar'
 import { relativeTime } from '../time'
 import { NewSessionBar } from './NewSessionBar'
 import { ToolIcon } from './ToolIcon'
@@ -261,14 +261,29 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
           <p className="muted">None found. Sessions started from a terminal in this directory appear here automatically.</p>
         ) : (
           <ul className="session-list">
-            {external.slice(0, 30).map((s) => (
-              <li key={s.id} onClick={() => onSelect({ kind: 'session', id: s.id })}>
-                <span className="glyph external"><ToolIcon tool={s.tool} /></span>
-                <span className="name">{s.displayName}</span>
-                <StateDot state={s.state} />
-                <span className="muted small">active {relativeTime(s.lastActivityAt)}</span>
-              </li>
-            ))}
+            {external.slice(0, 30).map((s) => {
+              const importable = Boolean(preferences.agents.find((agent) => agent.id === s.tool)?.forkCommand?.length && s.cliSessionId)
+              return (
+                <li key={s.id} onClick={() => onSelect({ kind: 'session', id: s.id })}>
+                  <span className="glyph external"><ToolIcon tool={s.tool} /></span>
+                  <span className="name">{s.displayName}</span>
+                  <StateDot state={s.state} />
+                  <span className="muted small">active {relativeTime(s.lastActivityAt)}</span>
+                  {importable && (
+                    <button
+                      title="Bring this session under Sauron: a managed session continues a copy of the conversation. The original keeps running in your terminal."
+                      onClick={(event) => {
+                        // The row itself opens the session; the button must not also do that.
+                        event.stopPropagation()
+                        void importExternalSession(s)
+                      }}
+                    >
+                      Import
+                    </button>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         )}
       </section>

@@ -112,7 +112,7 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
           )}
           {external && forkable && (
             <button title="Bring this session under Sauron: a managed session continues a copy of the conversation. The original keeps running in your terminal." onClick={() => void importExternalSession(session)}>
-              Import to Sauron
+              Import
             </button>
           )}
           {external && (

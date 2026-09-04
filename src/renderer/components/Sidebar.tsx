@@ -58,7 +58,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
     const profile = snapshot.preferences.agents.find((agent) => agent.id === session.tool)
     const forkable = Boolean(profile?.forkCommand?.length && session.cliSessionId)
     const fork: MenuItem[] = forkable
-      ? [session.kind === 'external' ? { label: 'Import to Sauron', action: () => void importExternalSession(session) } : { label: 'Fork', action: () => void window.sauron.forkSession(session.id) }]
+      ? [session.kind === 'external' ? { label: 'Import', action: () => void importExternalSession(session) } : { label: 'Fork', action: () => void window.sauron.forkSession(session.id) }]
       : []
     const handoff = handoffItems(snapshot.preferences.agents, snapshot.toolPaths?.agents ?? {}, session)
     if (session.kind === 'external') return [...fork, ...handoff, { label: 'Hide', action: () => void window.sauron.hideSession(session.id) }]
