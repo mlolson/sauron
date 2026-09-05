@@ -1,33 +1,34 @@
-# Sauron
+# Sauron: An agentic terminal development environment, based on tmux
 
-**One window for every coding agent you have running.**
+**About Sauron**
+I really like the simplicity of running agents in the terminal, but I was having problems managing the complexity of running many of them across multiple projects. I decided to build something for my own use, custom tailored to exactly how I like to work. 
 
-Sauron is a macOS app for overseeing AI coding agents across your projects. If you run
-Claude Code or Codex in more than one repository at a time, you know the failure mode:
-sessions scattered across terminal tabs, no way to tell which one is waiting on you, no
-memory of what each project was in the middle of, and no record of which agent made which
-commit. Sauron replaces that sprawl with a single view.
+It's not quite and IDE, and it's not quite a terminal. I therefore call it a "terminal development environment". 
 
-Every project you add gets a live status summary, a list of the sessions running in it, and
-its recent commits — each one attributed to the session that made it. Sessions run inside
-tmux, so they outlive the app; you can attach to any of them from a plain terminal. A
-persistent **supervisor agent** keeps the summaries current and can start or direct worker
-sessions on your behalf.
+## Key design principles
 
-Claude Code and Codex are built in. Any other interactive terminal agent (OpenCode, Pi, your
-own) can be added as a profile in Preferences.
+* **Unopinionated**: Sauron doesn't provide any frameworks, skills, or other instructions for your agents. Agents run in regular tmux sessions, Sauron simply keeps track of them. Sauron is also not opinionated about which harness or inference provider you use. Anything that runs in a terminal is supported.
+
+* **Organized around projects**: Agents are organized around the projects that they are working on. A supervisor agent maintains an up to date summary of the status of each project: recent updates, blockers, and TODO's. Come back to a project after a week or a month and immediately know where to pick it up.
+
+* **Persistent sessions** Because sessions are running in tmux, they are persistent. You can quit the app or reboot your laptop and the sessions will still be there. 
+
+* **Commit attribution and code review tools**: Sauron keeps track of the commits that each agent writes. Code review tools allow you to quickly review each agent's code output.
+
+* **Seamless handoff between agents**: Fork agents and handoff work to another type of agent with a single click. Ran into your limit for Claude? Hand off to Codex and don't miss a beat. Helps avoid vendor lock-in.
+
+* **Totally Customizable**: Add as many types of agents as you wish. Customize supervisor agent type and behavior. 
+
+
+
 
 ## Key features
 
-**Project overview.** Each project shows a supervisor-written summary of where things stand,
-its key documents (any Markdown at the root or one level down, plus files you add), its git
-worktrees, and its recent commits. Documents open in a built-in viewer that doubles as an
-editor: edit, save, or save-and-commit the file alone without touching anything else you
-have staged. A save is refused if an agent changed the file underneath you.
+**Built on tmux** 
 
-**Sessions that survive.** Every session Sauron starts runs in a tmux session named
-`sauron-<project>-<id>`. Quit the app, relaunch, and they are all still there. Copy the
-attach command from the session header and drive the same session from iTerm or Terminal.
+
+
+**Built on tmux.** Every session Sauron starts runs in a tmux session. Quit the app, relaunch, and they are all still there. 
 
 **Commit attribution.** A post-commit hook, installed into each project, records which
 session made every commit — it fires only when git runs inside a Sauron session, so your own
@@ -54,9 +55,6 @@ instructions. Chat with it, ask it to start or message workers, or click **Refre
 project to have it rewrite the status summary. Summaries also refresh automatically after
 commits. Right-click it to restart, pause summaries, or disable it entirely.
 
-**Small things that matter.** Shift+Enter inserts a newline in the embedded terminal, as it
-does in a native one. The sidebar collapses to a rail. Each session row shows how long since
-it was active. A quick switcher (⌘K) jumps between sessions.
 
 ## Stack
 

@@ -203,6 +203,14 @@ export interface SessionCommit {
   authoredAt: string
 }
 
+/** A client attached to a tmux session. */
+export interface TmuxClient {
+  pid: number
+  tty: string
+  width: number
+  height: number
+}
+
 export interface AppError {
   message: string
   /** Optional scope so the renderer can attach the banner to a project or session. */
@@ -270,6 +278,10 @@ export interface SauronApi {
 
   ptyOpen(sessionId: string, cols: number, rows: number): Promise<void>
   ptyClose(sessionId: string): Promise<void>
+  /** Clients attached to the session's tmux session other than Sauron's own terminal. */
+  sessionClients(sessionId: string): Promise<TmuxClient[]>
+  /** Detaches every client except Sauron's, giving the terminal back to the app. */
+  detachOtherClients(sessionId: string): Promise<void>
   ptyInput(sessionId: string, data: string): void
   ptyResize(sessionId: string, cols: number, rows: number): void
   onPtyData(sessionId: string, cb: (data: string) => void): () => void

@@ -74,6 +74,10 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
     })
   })
   handle('ptyClose', async (sessionId) => state.pty?.close(sessionId))
+  handle('sessionClients', (sessionId) => state.sessionClients(sessionId))
+  handle('detachOtherClients', async (sessionId) => {
+    await state.detachOtherClients(sessionId)
+  })
   on('ptyInput', (sessionId, data) => state.pty?.write(sessionId, data))
   on('ptyResize', (sessionId, cols, rows) => state.pty?.resize(sessionId, cols, rows))
 

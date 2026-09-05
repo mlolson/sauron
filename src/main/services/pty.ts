@@ -16,6 +16,11 @@ export class PtyService {
     return this.ptys.has(sessionId)
   }
 
+  /** The pid of the `tmux attach` client we spawned, which is how it is told apart from others. */
+  pid(sessionId: string): number | null {
+    return this.ptys.get(sessionId)?.proc.pid ?? null
+  }
+
   open(sessionId: string, tmuxName: string, cwd: string, cols: number, rows: number, handlers: PtyHandlers): void {
     if (this.ptys.has(sessionId)) return
     const proc = pty.spawn(this.tmuxPath, attachArgs(tmuxName), {

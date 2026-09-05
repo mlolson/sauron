@@ -1,6 +1,6 @@
 import { checkCommand, runCommand } from './command'
 import { newSessionArgs, tmuxTarget, TMUX_SESSION_PREFIX } from '@shared/tmux-args'
-import { SauronError } from '@shared/types'
+import { SauronError, type TmuxClient } from '@shared/types'
 
 /** Thin wrapper over the tmux CLI, using the user's default server. */
 export class TmuxService {
@@ -71,6 +71,24 @@ export class TmuxService {
   /** The visible screen of the session's active pane. */
   async capturePane(name: string): Promise<string> {
     return this.run(['capture-pane', '-p', '-t', tmuxTarget(name)])
+  }
+
+  /** Every client attached to a session. tmux sizes the window by these, so they matter. */
+  async listClients(name: string): Promise<TmuxClient[]> {
+    const r = await runCommand(this.tmuxPath, ['list-clients', '-t', tmuxTarget(name), '-F', '#{client_pid}\t#{client_tty}\t#{client_width}\t#{client_height}'], { env: this.environment })
+    if (r.code !== 0) return []
+    return r.stdout
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const [pid = '', tty = '', width = '', height = ''] = line.split('\t')
+        return { pid: Number(pid), tty, width: Number(width), height: Number(height) }
+      })
+      .filter((c) => Number.isFinite(c.pid) && c.tty)
+  }
+
+  async detachClient(tty: string): Promise<void> {
+    await this.run(['detach-client', '-t', tty])
   }
 
   async killSession(name: string): Promise<void> {

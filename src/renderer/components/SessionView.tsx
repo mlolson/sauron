@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { SelectionTarget, Session, Snapshot } from '@shared/types'
+import type { SelectionTarget, Session, Snapshot, TmuxClient } from '@shared/types'
 import { isAlive } from '@shared/types'
 import { SessionTerminal } from './SessionTerminal'
 import { TranscriptView } from './TranscriptView'
@@ -39,6 +39,25 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
     if (draft.trim() && draft.trim() !== session.displayName) void window.sauron.renameSession(session.id, draft.trim())
   }
   const showTerminal = !external && alive && view === 'terminal'
+  // Other tmux clients on this session. Polled only while the terminal is on screen.
+  const [others, setOthers] = useState<TmuxClient[]>([])
+  const [showAnyway, setShowAnyway] = useState(false)
+  useEffect(() => {
+    if (!showTerminal) return
+    let active = true
+    const poll = () => void window.sauron.sessionClients(session.id).then((list) => active && setOthers(list))
+    poll()
+    const timer = setInterval(poll, 2000)
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [showTerminal, session.id])
+  // A new arrival should get the notice again even if the last one was dismissed.
+  useEffect(() => {
+    if (others.length === 0) setShowAnyway(false)
+  }, [others.length])
+  const elsewhere = showTerminal && others.length > 0 && !showAnyway
 
   return (
     <div className="session-view">
@@ -130,7 +149,28 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
         <CommitsPane session={session} projectId={session.projectId} onClose={() => setShowCommits(false)} />
       )}
       {showTerminal ? (
-        <SessionTerminal sessionId={session.id} fontSize={snapshot.preferences.terminalFontSize} scrollback={snapshot.preferences.terminalScrollback} />
+        <>
+          {elsewhere && (
+            <div className="placeholder attached-elsewhere">
+              <div className="big">⇄</div>
+              <h2>Attached in another terminal</h2>
+              <p>
+                This session is open in {others.length === 1 ? 'another terminal' : `${others.length} other terminals`} (
+                {others.map((c) => `${c.tty.replace('/dev/', '')} ${c.width}×${c.height}`).join(', ')}). tmux sizes the window to whichever client was
+                used last, so showing it here too would leave one of them garbled.
+              </p>
+              <div className="actions">
+                <button className="primary" onClick={() => void window.sauron.detachOtherClients(session.id)}>
+                  Detach {others.length === 1 ? 'it' : 'them'}
+                </button>
+                <button onClick={() => setShowAnyway(true)}>Show anyway</button>
+              </div>
+            </div>
+          )}
+          <div className="terminal-host" hidden={elsewhere}>
+            <SessionTerminal sessionId={session.id} fontSize={snapshot.preferences.terminalFontSize} scrollback={snapshot.preferences.terminalScrollback} />
+          </div>
+        </>
       ) : external || (alive && view === 'transcript') ? (
         <TranscriptView sessionId={session.id} readOnly={external} />
       ) : (

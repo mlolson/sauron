@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
-import type { AgentDefinition, AgentTool, AppError, LaunchOptions, Preferences, Project, RecentCommit, Session, SelectionTarget, SessionCommit, Snapshot, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
+import type { AgentDefinition, AgentTool, AppError, LaunchOptions, Preferences, Project, RecentCommit, Session, SelectionTarget, SessionCommit, Snapshot, TmuxClient, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
 import { defaultPreferences } from '@shared/types'
 import { compareSessions } from '@shared/session-order'
 import { claudeHookSettings, codexNotifyConfig, looksLikeApprovalPrompt, transitionForHook, type HookEvent } from '@shared/hooks'
@@ -895,6 +895,24 @@ export class AppState extends EventEmitter<StateEvents> {
       this.report(error, { sessionId: id })
       return null
     }
+  }
+
+  /**
+   * Clients attached to a session's tmux session besides Sauron's own. tmux sizes a window to
+   * its most recently active client, so a second client of a different size leaves the other
+   * one looking broken; knowing about it lets the app step aside rather than fight.
+   */
+  async sessionClients(id: string): Promise<TmuxClient[]> {
+    const session = this.session(id)
+    if (!session?.tmuxName || !this.tmux) return []
+    const own = this.pty?.pid(id) ?? null
+    return (await this.tmux.listClients(session.tmuxName)).filter((client) => client.pid !== own)
+  }
+
+  async detachOtherClients(id: string): Promise<void> {
+    const session = this.session(id)
+    if (!session?.tmuxName || !this.tmux) return
+    for (const client of await this.sessionClients(id)) await this.tmux.detachClient(client.tty)
   }
 
   /** Interrupts whatever runs in the session, then kills the tmux session. */

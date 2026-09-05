@@ -224,6 +224,9 @@ button.icon-button { width: 26px; height: 26px; padding: 0; font-size: 16px; lin
 .tab { overflow: hidden; text-overflow: ellipsis; }
 .tab.active { background: var(--bg-selected); }
 .session-header .actions { display: flex; gap: 6px; }
+.terminal-host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* An author display rule outranks the hidden attribute's default; restate it. */
+.terminal-host[hidden] { display: none; }
 .terminal { flex: 1; min-height: 0; background: #000; padding: 4px 0 0 6px; }
 .terminal .xterm { height: 100%; }
 

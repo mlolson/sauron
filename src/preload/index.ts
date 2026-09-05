@@ -41,6 +41,8 @@ const api: SauronApi = {
 
   ptyOpen: (sessionId, cols, rows) => ipcRenderer.invoke('ptyOpen', sessionId, cols, rows),
   ptyClose: (sessionId) => ipcRenderer.invoke('ptyClose', sessionId),
+  sessionClients: (sessionId) => ipcRenderer.invoke('sessionClients', sessionId),
+  detachOtherClients: (sessionId) => ipcRenderer.invoke('detachOtherClients', sessionId),
   ptyInput: (sessionId, data) => ipcRenderer.send('ptyInput', sessionId, data),
   ptyResize: (sessionId, cols, rows) => ipcRenderer.send('ptyResize', sessionId, cols, rows),
   onPtyData: (sessionId, cb) => subscribe<string>(`pty:data:${sessionId}`, cb),
