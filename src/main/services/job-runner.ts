@@ -4,7 +4,8 @@ import { openSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { AttributionStore } from './attribution-store'
-import { dueCommitJobs, cooldownCutoff } from '@shared/triggers'
+import { dueCommitJobs, cooldownCutoff, dueCronJobs } from '@shared/triggers'
+import { findExecutable } from './cli-resolver'
 import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises'
 import { join, resolve as resolvePath, isAbsolute } from 'node:path'
 import { AppPaths, writeJsonAtomic } from './persistence'
@@ -333,6 +334,57 @@ async function sendToApp(socketPath: string, payload: Record<string, unknown>): 
     socket.on('error', finish)
     socket.on('close', finish)
   })
+}
+
+/**
+ * One scheduler tick, run by launchd every minute. Starts each cron job whose most recent
+ * scheduled minute has not had a run, claiming the slot in SQLite first so a slot starts at
+ * most one run however many ticks see it. Cheap when nothing is due: a config read, a few
+ * SQLite reads, and no shell.
+ */
+export async function tick(root: string, now = new Date()): Promise<{ started: string[]; skipped: string[] }> {
+  const { paths, config } = await load(root)
+  const store = new JobStore(paths.jobsDatabase)
+  store.open()
+  const started: string[] = []
+  const skipped: string[] = []
+  try {
+    for (const project of config.projects) {
+      if (project.archived) continue
+      const jobs = project.backgroundJobs ?? []
+      const state = {
+        running: new Set(jobs.filter((j) => store.running(j.id)).map((j) => j.id)),
+        lastRunAt: new Map(jobs.map((j) => [j.id, store.lastRunAt(j.id)]).filter((e): e is [string, string] => typeof e[1] === 'string')),
+      }
+      for (const { job, scheduledAt } of dueCronJobs(jobs, state, now)) {
+        // The claim's cutoff is the scheduled minute itself: it succeeds only if no run
+        // started at or after it, which is exactly "once per slot".
+        if (!store.claim(job.id, now.toISOString(), scheduledAt.toISOString())) continue
+        if (job.skipIfUnchanged && !(await changedSinceLastRun(config, store, project, job.id))) {
+          skipped.push(`${project.name}/${job.id}`)
+          console.log(`${now.toISOString()} skipped ${project.name}/${job.id}: no commits since its last run`)
+          continue
+        }
+        spawnRunner(paths, project.id, job.id, 'cron')
+        started.push(`${project.name}/${job.id}`)
+        console.log(`${now.toISOString()} started ${project.name}/${job.id} for ${scheduledAt.toISOString()}`)
+      }
+    }
+  } finally {
+    store.close()
+  }
+  return { started, skipped }
+}
+
+/** Whether the main checkout's HEAD moved since the job's last run began. Never run: yes. */
+async function changedSinceLastRun(config: AppConfig, store: JobStore, project: Project, jobId: string): Promise<boolean> {
+  const last = store.forJob(jobId, 1)[0]
+  if (!last) return true
+  // launchd's PATH is minimal; find git the way the app does, without a login shell.
+  const git = config.preferences?.toolOverrides?.git || findExecutable('git', `${process.env.PATH ?? ''}:/opt/homebrew/bin:/usr/local/bin:/usr/bin`)
+  if (!git) return true
+  const head = await runCommand(git, ['rev-parse', 'HEAD'], { cwd: project.path })
+  return head.code !== 0 || head.stdout.trim() !== last.baseCommit
 }
 
 /** Where a Claude run's transcript will be, for the app to adopt. */

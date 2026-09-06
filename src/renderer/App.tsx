@@ -115,7 +115,7 @@ export function App() {
         <ErrorBanners errors={errors} onDismiss={dismiss} />
         {detail}
       </main>
-      {showPrefs && <PreferencesView preferences={snapshot.preferences} toolPaths={snapshot.toolPaths} projects={snapshot.projects} onClose={() => setShowPrefs(false)} />}
+      {showPrefs && <PreferencesView preferences={snapshot.preferences} toolPaths={snapshot.toolPaths} projects={snapshot.projects} schedulerLoaded={snapshot.schedulerLoaded} onClose={() => setShowPrefs(false)} />}
       {showSwitcher && <QuickSwitcher snapshot={snapshot} onSelect={setSelection} onClose={() => setShowSwitcher(false)} />}
     </div>
   )

@@ -104,6 +104,13 @@ async function hookPayload(tool: string, positional: string[]): Promise<{ event:
 }
 
 async function main(): Promise<void> {
+  if (process.argv[2] === 'tick') {
+    // Run by launchd every minute. Prints only when it starts or skips something, so the
+    // log stays a record of actions rather than of minutes.
+    const { tick, defaultRoot } = await import('../main/services/job-runner')
+    await tick(defaultRoot())
+    return
+  }
   if (process.argv[2] === 'job') {
     const { positional: jp, flags: jf } = parseFlags(process.argv.slice(3))
     const { startRun, finishRun, defaultRoot } = await import('../main/services/job-runner')
@@ -236,7 +243,7 @@ async function main(): Promise<void> {
       payload = JSON.parse(sub ?? '{}')
       break
     default:
-      console.error('usage: sauron <ping|projects|sessions|launch|stop|resume|send|status|master|select|worktrees|fork|handoff|job|hook|commit-hook|raw> [options]')
+      console.error('usage: sauron <ping|projects|sessions|launch|stop|resume|send|status|master|select|worktrees|fork|handoff|job|tick|hook|commit-hook|raw> [options]')
       process.exit(2)
   }
   const response = await request(payload)

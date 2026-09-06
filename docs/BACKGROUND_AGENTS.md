@@ -1,6 +1,6 @@
 # Sauron — Background Agents and the Review Queue
 
-Version: 0.3 (phases 1 and 2 shipped)
+Version: 0.4 (phases 1–3 shipped)
 Date: 2026-09-05
 Owner: Matt Olson
 Status: Agreed
@@ -149,7 +149,19 @@ adopts tmux sessions and external transcripts it did not start.
 ### 5.1 Cron
 
 `sauron tick` evaluates each enabled cron job's expression against `job_state.last_run_at`
-and starts any that are due. Full five-field cron syntax, parsed by Sauron.
+and starts any that are due. Full five-field cron syntax, parsed by Sauron, in local time.
+
+A job is due when its most recent scheduled minute is later than its last run began. The
+tick claims that minute in SQLite before starting anything, so a slot starts at most one run
+however many ticks see it. Scheduled minutes are looked for up to 24 hours back, which is
+how a tick that launchd runs after the machine wakes catches up on a slot missed during
+sleep. A job that has **never** run looks back only one hour: without a record of when it
+was configured, that stops a nightly job from firing the moment it is added at midday.
+
+The app installs the LaunchAgent (`~/Library/LaunchAgents/com.mattolson.sauron.tick.plist`)
+on every load, rewriting and reloading it only when its contents changed. Its output goes
+to `jobs/tick.log`; the tick prints only when it starts or skips something, so the log is a
+record of actions, though Electron's runtime adds one stderr line per tick.
 
 ### 5.2 After a commit
 
@@ -271,9 +283,10 @@ context menu; the same on the project overview page.
    security review on this project" becomes one click. — *Shipped.*
 2. **Commit trigger**, evaluated by the hook, working with the app closed. — *Shipped;
    verified with the app running and with it closed.*
-3. **Cron**, via the launchd tick.
-4. Badges, skip-if-unchanged, re-run, and — only if wanted — an opt-in auto-merge for
-   specific jobs.
+3. **Cron**, via the launchd tick. — *Shipped; skip-if-unchanged with it, verified: the
+   tick started a job, skipped it the next minute with nothing changed, and started it
+   again after a commit.*
+4. Badges, re-run, and — only if wanted — an opt-in auto-merge for specific jobs.
 
 ---
 

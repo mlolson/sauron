@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Preferences, Project, ToolPaths } from '@shared/types'
 
-interface Props { preferences: Preferences; toolPaths: ToolPaths | null; projects: Project[]; onClose: () => void }
+interface Props { preferences: Preferences; toolPaths: ToolPaths | null; projects: Project[]; schedulerLoaded: boolean | null; onClose: () => void }
 
 function validateConfig(content: string): string | null {
   try {
@@ -26,7 +26,7 @@ function validateConfig(content: string): string | null {
   }
 }
 
-export function PreferencesView({ preferences, toolPaths, projects, onClose }: Props) {
+export function PreferencesView({ preferences, toolPaths, projects, schedulerLoaded, onClose }: Props) {
   const [editor, setEditor] = useState<{ path: string; content: string; original: string } | null>(null)
   const [jsonError, setJsonError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -126,6 +126,7 @@ export function PreferencesView({ preferences, toolPaths, projects, onClose }: P
             <section><h3>Terminal</h3><label className="pref-row"><span>Font size</span><input type="number" readOnly value={preferences.terminalFontSize} /></label><label className="pref-row"><span>Scrollback lines</span><input type="number" readOnly value={preferences.terminalScrollback} /></label></section>
             <section>
               <h3>Background agents</h3>
+              <label className="pref-row"><span>Scheduler (launchd, every minute)</span><input readOnly value={schedulerLoaded === null ? 'not checked yet' : schedulerLoaded ? 'loaded — cron jobs run with the app closed' : 'not loaded; see the error banner'} /></label>
               {projects.every((p) => !(p.backgroundJobs?.length)) ? (
                 <p className="muted small">None configured. Add them from a project's page or context menu.</p>
               ) : projects.filter((p) => p.backgroundJobs?.length).map((p) => (

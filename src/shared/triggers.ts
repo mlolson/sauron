@@ -1,4 +1,5 @@
 import type { BackgroundJob } from './types'
+import { parseCron, previousFireTime } from './cron'
 
 /** Pure trigger evaluation, shared by the hook path and tested without git or a database. */
 
@@ -39,4 +40,34 @@ export function dueCommitJobs(jobs: BackgroundJob[], state: TriggerState, now: D
 /** The instant before which a job's last run must have started for it to be due again. */
 export function cooldownCutoff(job: BackgroundJob & { trigger: { kind: 'commit' } }, now: Date): string {
   return new Date(now.getTime() - spacingMs(job.trigger.cooldownMinutes)).toISOString()
+}
+
+/** How far back a scheduled minute may lie and still count. Missed ticks — the machine was
+ * asleep — are caught up within this window, and a run is never started for a slot older. */
+export const CRON_LOOKBACK_MINUTES = 24 * 60
+/** A job that has never run is not started for a slot that passed before it was configured;
+ * without a record of when that was, a short window stands in for it. */
+export const CRON_FIRST_RUN_LOOKBACK_MINUTES = 60
+
+/**
+ * Cron jobs whose most recent scheduled minute has not yet had a run. Returns that minute
+ * too: it is the claim's cutoff, so each scheduled slot starts at most one run.
+ */
+export function dueCronJobs(jobs: BackgroundJob[], state: TriggerState, now: Date): { job: BackgroundJob; scheduledAt: Date }[] {
+  const due: { job: BackgroundJob; scheduledAt: Date }[] = []
+  for (const job of jobs) {
+    if (!job.enabled || job.trigger.kind !== 'cron' || state.running.has(job.id)) continue
+    let spec
+    try {
+      spec = parseCron(job.trigger.schedule)
+    } catch {
+      continue // a bad expression never fires; the editor should have refused it
+    }
+    const last = state.lastRunAt.get(job.id)
+    const scheduledAt = previousFireTime(spec, now, last ? CRON_LOOKBACK_MINUTES : CRON_FIRST_RUN_LOOKBACK_MINUTES)
+    if (!scheduledAt) continue
+    if (last && new Date(last).getTime() >= scheduledAt.getTime()) continue
+    due.push({ job, scheduledAt })
+  }
+  return due
 }

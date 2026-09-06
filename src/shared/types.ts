@@ -230,6 +230,8 @@ export interface Snapshot {
   refresh: RefreshState
   /** Recent background runs per project id, newest first. */
   runs: Record<string, JobRun[]>
+  /** Whether the launchd agent that evaluates cron jobs is loaded; null before the app has tried. */
+  schedulerLoaded: boolean | null
   loaded: boolean
 }
 

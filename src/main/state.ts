@@ -38,6 +38,7 @@ import { PtyService } from './services/pty'
 import { AttributionStore } from './services/attribution-store'
 import { JobStore } from './services/job-store'
 import { runTranscriptPath } from './services/job-runner'
+import { installTick } from './services/launchd'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -81,6 +82,7 @@ export class AppState extends EventEmitter<StateEvents> {
   readonly jobStore: JobStore
   /** Recent background runs per project, refreshed from the job store on change. */
   runs: Record<string, JobRun[]> = {}
+  schedulerLoaded: boolean | null = null
 
   tmux: TmuxService | null = null
   pty: PtyService | null = null
@@ -129,6 +131,7 @@ export class AppState extends EventEmitter<StateEvents> {
       statuses: this.statusStore.statuses,
       refresh: { queued: this.refresh.queued, inProgress: this.refresh.inProgress },
       runs: this.runs,
+      schedulerLoaded: this.schedulerLoaded,
       loaded: this.loaded,
     }
   }
@@ -219,6 +222,7 @@ export class AppState extends EventEmitter<StateEvents> {
     await this.refreshTools()
     await this.reconcileSessions()
     await this.refreshRuns()
+    await this.installScheduler()
     await Promise.all(this.projects.map((p) => this.refreshWorktrees(p.id, false)))
     await Promise.all(this.projects.map((p) => this.refreshDocuments(p.id, false)))
     this.startLivenessPolling()
@@ -935,6 +939,19 @@ export class AppState extends EventEmitter<StateEvents> {
   }
 
   // MARK: Background jobs
+
+  /** Installs the launchd agent that runs `sauron tick`, so cron jobs fire with the app closed. */
+  async installScheduler(): Promise<void> {
+    if (!this.sauronBin) return
+    try {
+      const result = await installTick(this.sauronBin, join(this.paths.jobsDir, 'tick.log'))
+      this.schedulerLoaded = result.loaded
+      if (result.error) this.report(new SauronError('command_failed', `Background scheduler not installed: ${result.error}`))
+    } catch (error) {
+      this.schedulerLoaded = false
+      this.report(error)
+    }
+  }
 
   /** Reloads runs from the store and makes sure each one exists as a session. */
   async refreshRuns(): Promise<void> {

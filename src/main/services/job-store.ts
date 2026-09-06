@@ -77,6 +77,12 @@ export class JobStore {
     return rows.map(toRun)
   }
 
+  /** A job's runs, newest first. */
+  forJob(jobId: string, limit = 20): JobRun[] {
+    const rows = this.requireDb().prepare('SELECT * FROM runs WHERE job_id = ? ORDER BY started_at DESC LIMIT ?').all(jobId, limit) as unknown as Row[]
+    return rows.map(toRun)
+  }
+
   all(limit = 500): JobRun[] {
     const rows = this.requireDb().prepare('SELECT * FROM runs ORDER BY started_at DESC LIMIT ?').all(limit) as unknown as Row[]
     return rows.map(toRun)
