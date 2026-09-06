@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { describeTrigger } from '@shared/jobs'
+import { AgentsView } from './AgentsView'
 import type { Preferences, Project, ToolPaths } from '@shared/types'
 
 interface Props { preferences: Preferences; toolPaths: ToolPaths | null; projects: Project[]; schedulerLoaded: boolean | null; onClose: () => void }
@@ -31,6 +32,7 @@ export function PreferencesView({ preferences, toolPaths, projects, schedulerLoa
   const [editor, setEditor] = useState<{ path: string; content: string; original: string } | null>(null)
   const [jsonError, setJsonError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [managingAgents, setManagingAgents] = useState(false)
 
   useEffect(() => {
     if (!editor) return
@@ -127,6 +129,7 @@ export function PreferencesView({ preferences, toolPaths, projects, schedulerLoa
             <section><h3>Terminal</h3><label className="pref-row"><span>Font size</span><input type="number" readOnly value={preferences.terminalFontSize} /></label><label className="pref-row"><span>Scrollback lines</span><input type="number" readOnly value={preferences.terminalScrollback} /></label></section>
             <section>
               <h3>Background agents</h3>
+              <label className="pref-row"><span>Defined agents</span><span><button onClick={() => setManagingAgents(true)}>Manage background agents…</button></span></label>
               <label className="pref-row"><span>Scheduler (launchd, every minute)</span><input readOnly value={schedulerLoaded === null ? 'not checked yet' : schedulerLoaded ? 'loaded — cron jobs run with the app closed' : 'not loaded; see the error banner'} /></label>
               {preferences.backgroundAgents.length === 0 ? (
                 <p className="muted small">None defined. Create them from a project's Add background agent… button or context menu.</p>
@@ -139,6 +142,7 @@ export function PreferencesView({ preferences, toolPaths, projects, schedulerLoa
           </>
         )}
       </div>
+      {managingAgents && <AgentsView templates={preferences.backgroundAgents} agents={preferences.agents} projects={projects} onClose={() => setManagingAgents(false)} />}
     </div>
   )
 }

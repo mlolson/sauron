@@ -26,7 +26,10 @@ export function TriggerDialog({ project, job, defaultTrigger, onClose }: {
       <div className="modal job-dialog" onMouseDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && onClose()}>
         <header><h2>{job.name} · trigger for {project.name}</h2></header>
         <label className="pref-row check"><input type="checkbox" checked={!custom} onChange={(e) => setCustom(!e.target.checked)} /><span>Use the agent's default: {describeTrigger({ trigger: defaultTrigger })}</span></label>
-        {custom && <TriggerEditor value={trigger} onChange={setTrigger} />}
+        <fieldset className="trigger-fields" disabled={!custom}>
+          {/* Keyed so the editor's drafts reset when it switches between the default and the override. */}
+          <TriggerEditor key={custom ? 'custom' : 'default'} value={custom ? trigger : defaultTrigger} onChange={setTrigger} />
+        </fieldset>
         {error && <p className="save-error">{error}</p>}
         <div className="actions right">
           <button onClick={onClose}>Cancel</button>

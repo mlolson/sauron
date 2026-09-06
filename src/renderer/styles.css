@@ -498,6 +498,9 @@ button:disabled { opacity: 0.5; }
 .interval-fields { display: flex; gap: 8px; align-items: center; }
 .interval-fields input.text { width: 90px; margin: 0; }
 .job-list.picker li button.link { padding: 2px 6px; }
+.trigger-fields { border: none; margin: 0; padding: 0; min-width: 0; }
+.trigger-fields:disabled { opacity: 0.45; }
+.trigger-fields:disabled select, .trigger-fields:disabled input { cursor: default; }
 .job-dialog .pref-row select, .job-dialog .pref-row input.text { flex: 1; }
 .log-modal { width: min(900px, 90vw); }
 .run-log { max-height: 60vh; overflow: auto; font-size: 11.5px; line-height: 1.45; background: rgba(127,127,127,0.12); padding: 10px 12px; border-radius: 8px; white-space: pre-wrap; user-select: text; -webkit-user-select: text; }

@@ -5,62 +5,64 @@ import { JobDialog } from './JobDialog'
 import { ToolIcon } from './ToolIcon'
 
 /**
- * Attaches a background agent to a project from the list of those already defined. A new one
- * can be created from here; editing and deleting, which affect every project an agent is
- * attached to, live in Preferences. Attaching uses the agent's default trigger; the project
- * page is where a project overrides it.
+ * The one place background agents are created, edited and deleted. They are shared across
+ * projects, so a change here reaches every project the agent is attached to; project pages
+ * only attach, detach and override the trigger.
  */
-export function AgentPicker({ project, templates, agents, onClose }: {
-  project: Project
+export function AgentsView({ templates, agents, projects, onClose }: {
   templates: BackgroundAgentTemplate[]
   agents: AgentDefinition[]
+  projects: Project[]
   onClose: () => void
 }) {
   const [editing, setEditing] = useState<{ template: BackgroundAgentTemplate | null } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const attached = new Set((project.backgroundJobs ?? []).map((j) => j.template))
 
-  const attach = (template: BackgroundAgentTemplate) => {
-    void window.sauron.saveProjectJobs(project.id, [...(project.backgroundJobs ?? []), { template: template.id, enabled: true }]).then(onClose, (e: Error) => setError(e.message))
-  }
+  const attachedTo = (id: string) => projects.filter((p) => p.backgroundJobs?.some((j) => j.template === id)).map((p) => p.name)
   const save = (template: BackgroundAgentTemplate) => {
     const next = templates.some((t) => t.id === template.id) ? templates.map((t) => (t.id === template.id ? template : t)) : [...templates, template]
     void window.sauron.saveBackgroundAgents(next).catch((e: Error) => setError(e.message))
+  }
+  const remove = (template: BackgroundAgentTemplate) => {
+    const names = attachedTo(template.id)
+    const where = names.length ? `\n\nIt is detached from ${names.join(', ')}.` : ''
+    if (!confirm(`Delete the background agent "${template.name}"?${where} Past runs and their branches are kept.`)) return
+    void window.sauron.saveBackgroundAgents(templates.filter((t) => t.id !== template.id)).catch((e: Error) => setError(e.message))
   }
 
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div className="modal job-dialog" onMouseDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && !editing && onClose()}>
         <header>
-          <h2>Add background agent to {project.name}</h2>
+          <h2>Background agents</h2>
+          <div className="actions">
+            <button className="primary" onClick={() => setEditing({ template: null })}>Create background agent…</button>
+            <button className="link" onClick={onClose}>✕</button>
+          </div>
         </header>
+        <p className="muted small">Defined once and attached to projects from a project's page. Editing one here changes it everywhere it is attached.</p>
         {templates.length === 0 ? (
-          <p className="muted">No background agents defined yet. Create one, and it can be attached to any project.</p>
+          <p className="muted">None yet.</p>
         ) : (
           <ul className="job-list picker">
             {templates.map((template) => {
-              const isAttached = attached.has(template.id)
+              const names = attachedTo(template.id)
               return (
                 <li key={template.id}>
                   <span className="glyph"><ToolIcon tool={template.agentId} /></span>
                   <span className="name">
                     <span className="name-title">{template.name}</span>
                     <span className="muted small">{describeTrigger(template)}{template.autoMerge ? ' · auto-merge' : ''} · {template.promptFile}</span>
+                    <span className="muted small">{names.length ? `Attached to ${names.join(', ')}` : 'Not attached to any project'}</span>
                   </span>
-                  <button className="primary" disabled={isAttached} title={isAttached ? 'Already attached to this project' : `Attach with its default trigger`} onClick={() => attach(template)}>
-                    {isAttached ? 'Attached' : 'Attach'}
-                  </button>
+                  <button onClick={() => setEditing({ template })}>Edit…</button>
+                  <button className="destructive" onClick={() => remove(template)}>Delete</button>
                 </li>
               )
             })}
           </ul>
         )}
         {error && <p className="save-error">{error}</p>}
-        <p className="muted small">Agents are edited and deleted in Preferences, since a change there reaches every project.</p>
-        <div className="actions right">
-          <button onClick={() => setEditing({ template: null })}>Create background agent…</button>
-          <button onClick={onClose}>Close</button>
-        </div>
         {editing && <JobDialog agents={agents} existing={editing.template} taken={templates.map((t) => t.id)} onSubmit={save} onClose={() => setEditing(null)} />}
       </div>
     </div>
