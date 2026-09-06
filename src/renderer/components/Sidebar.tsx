@@ -10,6 +10,8 @@ import { RenameDialog } from './RenameDialog'
 import { WorktreeDialog } from './WorktreeDialog'
 import { AgentPicker } from './AgentPicker'
 import { resolveProjectJobs } from '@shared/jobs'
+import { TriggerDialog } from './TriggerDialog'
+import type { BackgroundJob, JobRun } from '@shared/types'
 import { ToolIcon } from './ToolIcon'
 
 interface Props {
@@ -29,6 +31,9 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
   // External sessions are background noise most of the time, so their group starts closed.
   const [expandedExternal, setExpandedExternal] = useState<Set<string>>(() => new Set())
   const [collapsed, setCollapsed] = useState(false)
+  // Background agents are a standing part of a project, so their group starts open.
+  const [collapsedJobs, setCollapsedJobs] = useState<Set<string>>(() => new Set())
+  const [editingTrigger, setEditingTrigger] = useState<{ project: Project; job: BackgroundJob } | null>(null)
   // Only the id being dragged and the row it is hovering; the order itself lives in the snapshot.
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropBefore, setDropBefore] = useState<string | null>(null)
@@ -44,7 +49,6 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
       ...agents.map((agent) => ({ label: `New ${agent.name}`, disabled: !snapshot.toolPaths?.agents[agent.id], action: () => void window.sauron.launchSession(project.id, agent.id) } satisfies MenuItem)),
       { separator: true } satisfies MenuItem,
       { label: 'Add background agent…', action: () => setAddingJobTo(project) } satisfies MenuItem,
-      ...resolveProjectJobs(project, snapshot.preferences.backgroundAgents).filter((job) => job.enabled).map((job) => ({ label: `Run ${job.name}`, action: () => void window.sauron.runJob(project.id, job.id) } satisfies MenuItem)),
       { separator: true } satisfies MenuItem,
     ] : []),
     { label: 'Reveal in Finder', action: () => window.sauron.revealInFinder(project.path) },
@@ -68,6 +72,21 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
     },
   ]
 
+  const jobMenu = (project: Project, job: BackgroundJob, running: JobRun | undefined): MenuItem[] => {
+    const attached = project.backgroundJobs ?? []
+    return [
+      { label: running ? 'Running…' : 'Run now', disabled: Boolean(running) || !job.enabled, action: () => void window.sauron.runJob(project.id, job.id) },
+      { label: 'Trigger…', action: () => setEditingTrigger({ project, job }) },
+      { label: job.enabled ? 'Disable' : 'Enable', action: () => void window.sauron.saveProjectJobs(project.id, attached.map((j) => (j.template === job.id ? { ...j, enabled: !job.enabled } : j))) },
+      { separator: true },
+      {
+        label: 'Detach from project',
+        action: () => {
+          if (confirm(`Detach "${job.name}" from ${project.name}?\n\nThe agent itself is kept, and so are past runs and their branches.`)) void window.sauron.saveProjectJobs(project.id, attached.filter((j) => j.template !== job.id))
+        },
+      },
+    ]
+  }
   const sessionMenu = (session: Session): MenuItem[] => {
     const profile = snapshot.preferences.agents.find((agent) => agent.id === session.tool)
     const forkable = Boolean(profile?.forkCommand?.length && session.cliSessionId)
@@ -180,8 +199,13 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
         {snapshot.projects.filter((project) => !project.archived).map((project) => {
           const collapsed = collapsedProjects.has(project.id)
           const all = snapshot.sessions.filter((s) => s.projectId === project.id)
-          // Closed (resumable) sessions live on the project page, not in the sidebar.
-          const managed = all.filter((s) => s.kind === 'managed' && isAlive(s)).sort(compareSessions)
+          const jobs = resolveProjectJobs(project, snapshot.preferences.backgroundAgents)
+          const jobIds = new Set(jobs.map((j) => j.id))
+          const runs = snapshot.runs[project.id] ?? []
+          // Closed (resumable) sessions live on the project page, not in the sidebar. A run of an
+          // attached background agent is shown as that agent's row, not as a session of its own.
+          const managed = all.filter((s) => s.kind === 'managed' && isAlive(s) && !(s.background && jobIds.has(s.background.jobId))).sort(compareSessions)
+          const jobsOpen = !collapsedJobs.has(project.id)
           // Every external session, newest first; the group is collapsed, so length costs nothing.
           const externals = all.filter((s) => s.kind === 'external').sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
           const externalOpen = expandedExternal.has(project.id)
@@ -279,6 +303,53 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   <StateDot state={session.state} />
                 </Row>
               ))}
+              {!collapsed && jobs.length > 0 && (
+                <>
+                  <div
+                    className="row nested external-group"
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={jobsOpen}
+                    title="Agents that run on this project unattended"
+                    onClick={() => toggleIn(setCollapsedJobs, project.id)}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter' && event.key !== ' ') return
+                      event.preventDefault()
+                      toggleIn(setCollapsedJobs, project.id)
+                    }}
+                  >
+                    <span className="glyph">{jobsOpen ? '▾' : '▸'}</span>
+                    <span className="label muted"><span className="name">Background agents</span></span>
+                    <span className="badge">{jobs.length}</span>
+                  </div>
+                  {jobsOpen && jobs.map((job) => {
+                    const running = runs.find((r) => r.jobId === job.id && r.status === 'running')
+                    const last = latestRun(runs, job.id)
+                    const runSession = (run: JobRun | undefined) => run && snapshot.sessions.find((s) => s.id === run.sessionId)
+                    const target = runSession(running) ?? runSession(last)
+                    return (
+                      <Row
+                        key={job.id}
+                        nested
+                        deep
+                        selected={target ? sameTarget(selection, { kind: 'session', id: target.id }) : false}
+                        onClick={() => onSelect(target ? { kind: 'session', id: target.id } : { kind: 'project', id: project.id })}
+                        onContextMenu={(e) => openMenu(e, jobMenu(project, job, running))}
+                      >
+                        <span className={`glyph ${running ? 'accent' : 'muted'}`}><ToolIcon tool={job.agentId} /></span>
+                        <span className={`label ${running ? '' : 'muted'}`}>
+                          <span className="name">{job.name}</span>
+                          <span className="sub">{running ? `running · ${running.branch}` : job.enabled ? 'idle' : 'disabled'}</span>
+                        </span>
+                        <span className="when" title={last ? `Last run started ${new Date(last.startedAt).toLocaleString()}` : 'Never run'}>
+                          {running ? compactTime(running.startedAt) : last ? compactTime(last.startedAt) : '—'}
+                        </span>
+                        <StateDot state={running ? 'running' : 'stopped'} />
+                      </Row>
+                    )
+                  })}
+                </>
+              )}
               {!collapsed && externals.length > 0 && (
                 <>
                   <div
@@ -394,6 +465,14 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
           onClose={() => setForkingToWorktree(null)}
         />
       )}
+      {editingTrigger && (
+        <TriggerDialog
+          project={snapshot.projects.find((p) => p.id === editingTrigger.project.id) ?? editingTrigger.project}
+          job={editingTrigger.job}
+          defaultTrigger={snapshot.preferences.backgroundAgents.find((t) => t.id === editingTrigger.job.id)?.trigger ?? { kind: 'manual' }}
+          onClose={() => setEditingTrigger(null)}
+        />
+      )}
       {addingJobTo && (
         <AgentPicker
           // The snapshot's copy, so an attach made from the picker shows as "Attached" at once.
@@ -405,6 +484,21 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
       )}
     </aside>
   )
+}
+
+/** Adds the id to the set when absent and removes it when present. */
+function toggleIn(set: React.Dispatch<React.SetStateAction<Set<string>>>, id: string): void {
+  set((current) => {
+    const next = new Set(current)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+}
+
+/** The most recently started run of a job, whatever its outcome. */
+function latestRun(runs: JobRun[], jobId: string): JobRun | undefined {
+  return runs.filter((r) => r.jobId === jobId).sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]
 }
 
 function Row({
