@@ -72,7 +72,7 @@ export function App() {
     case 'project': {
       const project = snapshot.projects.find((p) => p.id === selection.id)
       detail = project ? (
-        <ProjectDetail project={project} sessions={snapshot.sessions} toolPaths={snapshot.toolPaths} preferences={snapshot.preferences} worktrees={snapshot.worktrees[project.id] ?? []} status={snapshot.statuses[project.id]} refresh={snapshot.refresh} masterAlive={snapshot.sessions.some((s) => s.id === 'master' && s.state !== 'stopped')} hiddenExternal={snapshot.hiddenExternal} documents={snapshot.documents[project.id] ?? []} onSelect={setSelection} />
+        <ProjectDetail runs={snapshot.runs[project.id] ?? []} project={project} sessions={snapshot.sessions} toolPaths={snapshot.toolPaths} preferences={snapshot.preferences} worktrees={snapshot.worktrees[project.id] ?? []} status={snapshot.statuses[project.id]} refresh={snapshot.refresh} masterAlive={snapshot.sessions.some((s) => s.id === 'master' && s.state !== 'stopped')} hiddenExternal={snapshot.hiddenExternal} documents={snapshot.documents[project.id] ?? []} onSelect={setSelection} />
       ) : (
         <EmptyDetail />
       )
@@ -115,7 +115,7 @@ export function App() {
         <ErrorBanners errors={errors} onDismiss={dismiss} />
         {detail}
       </main>
-      {showPrefs && <PreferencesView preferences={snapshot.preferences} toolPaths={snapshot.toolPaths} onClose={() => setShowPrefs(false)} />}
+      {showPrefs && <PreferencesView preferences={snapshot.preferences} toolPaths={snapshot.toolPaths} projects={snapshot.projects} onClose={() => setShowPrefs(false)} />}
       {showSwitcher && <QuickSwitcher snapshot={snapshot} onSelect={setSelection} onClose={() => setShowSwitcher(false)} />}
     </div>
   )

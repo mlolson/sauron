@@ -104,6 +104,35 @@ async function hookPayload(tool: string, positional: string[]): Promise<{ event:
 }
 
 async function main(): Promise<void> {
+  if (process.argv[2] === 'job') {
+    const { positional: jp, flags: jf } = parseFlags(process.argv.slice(3))
+    const { startRun, finishRun, defaultRoot } = await import('../main/services/job-runner')
+    const root = defaultRoot()
+    if (jp[0] === 'run') {
+      if (!jf.project || !jf.job) throw new Error('usage: sauron job run --project <name|id> --job <id> [--trigger manual|cron|commit]')
+      const trigger = (jf.trigger === 'cron' || jf.trigger === 'commit' ? jf.trigger : 'manual') as 'manual' | 'cron' | 'commit'
+      const run = await startRun(root, jf.project, jf.job, trigger)
+      console.log(JSON.stringify({ id: run.id, sessionId: run.sessionId, tmuxName: run.tmuxName, branch: run.branch, worktreePath: run.worktreePath }, null, 2))
+      return
+    }
+    if (jp[0] === 'list' || jp[0] === 'merge' || jp[0] === 'discard') {
+      const payload = jp[0] === 'list' ? { cmd: 'jobs.list', project: jf.project } : { cmd: `jobs.${jp[0]}`, run: jf.run }
+      const response = await request(payload)
+      if (!response.ok) {
+        console.error('error:', response.error)
+        process.exit(1)
+      }
+      console.log(JSON.stringify(response.result, null, 2))
+      return
+    }
+    if (jp[0] === 'finish') {
+      if (!jf.run) throw new Error('usage: sauron job finish --run <id> --exit <code>')
+      const run = await finishRun(root, jf.run, Number(jf.exit ?? '1'))
+      console.log(JSON.stringify({ id: run.id, status: run.status, commitCount: run.commitCount }, null, 2))
+      return
+    }
+    throw new Error('usage: sauron job <run|finish|list|merge|discard> ...')
+  }
   const { positional, flags, lists } = parseFlags(process.argv.slice(2))
   const [command, sub] = positional
   let payload: Record<string, unknown>
@@ -203,7 +232,7 @@ async function main(): Promise<void> {
       payload = JSON.parse(sub ?? '{}')
       break
     default:
-      console.error('usage: sauron <ping|projects|sessions|launch|stop|resume|send|status|master|select|worktrees|fork|handoff|hook|commit-hook|raw> [options]')
+      console.error('usage: sauron <ping|projects|sessions|launch|stop|resume|send|status|master|select|worktrees|fork|handoff|job|hook|commit-hook|raw> [options]')
       process.exit(2)
   }
   const response = await request(payload)

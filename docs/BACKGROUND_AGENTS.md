@@ -1,9 +1,9 @@
 # Sauron — Background Agents and the Review Queue
 
-Version: 0.1 (design, pre-implementation)
+Version: 0.2 (decisions agreed; phase 1 in progress)
 Date: 2026-09-05
 Owner: Matt Olson
-Status: Draft, for discussion
+Status: Agreed
 
 ---
 
@@ -270,12 +270,13 @@ context menu; the same on the project overview page.
 
 ---
 
-## 10. Decisions to confirm
+## 10. Decisions
 
-1. **launchd plus a CLI runner, no daemon.** This is the load-bearing decision; everything
-   in §4 follows from it.
-2. **Headless agents** (`claude -p`, `codex exec`) rather than a TUI with a typed prompt.
-3. **Runs appear as sessions** in the sidebar, rather than in a separate jobs list.
-4. **Merge semantics:** `--no-ff` merge preserving the agent's commits, versus squashing each
-   review to a single commit.
-5. Anything from phases 2–4 that belongs in phase 1.
+Agreed 2026-09-05:
+
+1. **launchd plus a CLI runner, no daemon.** Everything in §4 follows from it.
+2. **Headless agents** (`claude -p`, `codex exec`), not a TUI with a typed prompt.
+3. **Runs appear as sessions** in the sidebar, with a distinct glyph, not in a separate list.
+4. **Merge is `--no-ff`**, preserving the agent's commits. Squash may become a per-job option
+   later if reviews turn out to be noisy.
+5. Phase 1 as written; nothing pulled forward.

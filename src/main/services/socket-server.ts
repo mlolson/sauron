@@ -106,6 +106,29 @@ export class SocketServer {
           .filter((s) => !project || s.projectId === project.id)
           .map(({ id, projectId, tool, kind, displayName, tmuxName, state: st, workingDir, cliSessionId, transcriptPath, lastActivityAt }) => ({ id, projectId, tool, kind, displayName, tmuxName, state: st, workingDir, cliSessionId, transcriptPath, lastActivityAt }))
       }
+      case 'jobs.changed': {
+        await state.refreshRuns()
+        return null
+      }
+      case 'jobs.list': {
+        const project = this.findProject(req.project)
+        if (!project) throw new Error(`unknown project ${req.project}`)
+        return state.runs[project.id] ?? []
+      }
+      case 'jobs.run': {
+        const project = this.findProject(req.project)
+        if (!project) throw new Error(`unknown project ${req.project}`)
+        await state.runJob(project.id, String(req.job))
+        return null
+      }
+      case 'jobs.merge': {
+        await state.mergeRun(String(req.run))
+        return null
+      }
+      case 'jobs.discard': {
+        await state.discardRun(String(req.run))
+        return null
+      }
       case 'commits.record': {
         if (typeof req.session !== 'string' || typeof req.cwd !== 'string' || typeof req.hash !== 'string') throw new Error('session, cwd, and hash are required')
         await state.recordCommit(req.session, req.cwd, req.hash)

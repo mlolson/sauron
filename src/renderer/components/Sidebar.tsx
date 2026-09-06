@@ -8,6 +8,8 @@ import { StateDot } from './StateDot'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { RenameDialog } from './RenameDialog'
 import { WorktreeDialog } from './WorktreeDialog'
+import { JobDialog } from './JobDialog'
+import type { BackgroundJob } from '@shared/types'
 import { ToolIcon } from './ToolIcon'
 
 interface Props {
@@ -21,6 +23,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
   const [renaming, setRenaming] = useState<Session | null>(null)
   const [forkingToWorktree, setForkingToWorktree] = useState<Session | null>(null)
+  const [addingJobTo, setAddingJobTo] = useState<Project | null>(null)
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => new Set())
   const [archivedCollapsed, setArchivedCollapsed] = useState(true)
   // External sessions are background noise most of the time, so their group starts closed.
@@ -39,6 +42,9 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
     ...(!project.archived ? [
       { label: 'New terminal', action: () => void window.sauron.launchSession(project.id, 'shell') } satisfies MenuItem,
       ...agents.map((agent) => ({ label: `New ${agent.name}`, disabled: !snapshot.toolPaths?.agents[agent.id], action: () => void window.sauron.launchSession(project.id, agent.id) } satisfies MenuItem)),
+      { separator: true } satisfies MenuItem,
+      { label: 'Add background agent…', action: () => setAddingJobTo(project) } satisfies MenuItem,
+      ...(project.backgroundJobs ?? []).filter((job) => job.enabled).map((job) => ({ label: `Run ${job.name}`, action: () => void window.sauron.runJob(project.id, job.id) } satisfies MenuItem)),
       { separator: true } satisfies MenuItem,
     ] : []),
     { label: 'Reveal in Finder', action: () => window.sauron.revealInFinder(project.path) },
@@ -93,7 +99,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
     }
     return [
       { label: 'Rename…', action: () => setRenaming(session) },
-      { label: 'Resume', action: () => void window.sauron.resumeSession(session.id) },
+      ...(session.background ? [] : [{ label: 'Resume', action: () => void window.sauron.resumeSession(session.id) } satisfies MenuItem]),
       ...fork,
       ...handoff,
       { label: 'Forget', destructive: true, action: () => void window.sauron.forgetSession(session.id) },
@@ -263,7 +269,9 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   </span>
                   <span className={`label ${isAlive(session) ? '' : 'muted'}`}>
                     <span className="name">{session.displayName}</span>
-                    {session.worktreePath && <span className="sub">{branchOf(snapshot, session)}</span>}
+                    {(session.background || session.worktreePath) && (
+                      <span className="sub">{session.background ? `background run · ${branchOf(snapshot, session)}` : branchOf(snapshot, session)}</span>
+                    )}
                   </span>
                   <span className="when" title={`Last active ${new Date(session.lastActivityAt).toLocaleString()}`}>{compactTime(session.lastActivityAt)}</span>
                   <StateDot state={session.state} />
@@ -382,6 +390,15 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
           action="Fork"
           onSubmit={(branch) => void window.sauron.forkSession(forkingToWorktree.id, { worktreeBranch: branch })}
           onClose={() => setForkingToWorktree(null)}
+        />
+      )}
+      {addingJobTo && (
+        <JobDialog
+          agents={snapshot.preferences.agents}
+          existing={null}
+          taken={(addingJobTo.backgroundJobs ?? []).map((j) => j.id)}
+          onSubmit={(job: BackgroundJob) => void window.sauron.saveProjectJobs(addingJobTo.id, [...(addingJobTo.backgroundJobs ?? []), job])}
+          onClose={() => setAddingJobTo(null)}
         />
       )}
     </aside>

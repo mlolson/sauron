@@ -90,7 +90,6 @@ export async function resolveTools(overrides: Partial<Record<ToolName, string>> 
       ? (() => { try { accessSync(agent.command, constants.X_OK); return agent.command } catch { return null } })()
       : findExecutable(agent.command, path)
   }
-  console.log('resolved tools', tools)
   return tools
 }
 

@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
-import type { AgentDefinition, AgentTool, AppError, LaunchOptions, Preferences, Project, RecentCommit, Session, SelectionTarget, SessionCommit, Snapshot, TmuxClient, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
+import type { AgentDefinition, AgentTool, AppError, BackgroundJob, JobRun, LaunchOptions, Preferences, Project, RecentCommit, Session, SelectionTarget, SessionCommit, Snapshot, TmuxClient, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
 import { defaultPreferences } from '@shared/types'
 import { compareSessions } from '@shared/session-order'
 import { claudeHookSettings, codexNotifyConfig, looksLikeApprovalPrompt, transitionForHook, type HookEvent } from '@shared/hooks'
@@ -36,6 +36,8 @@ import { resolveTools, sessionEnvironment } from './services/cli-resolver'
 import { TmuxService } from './services/tmux'
 import { PtyService } from './services/pty'
 import { AttributionStore } from './services/attribution-store'
+import { JobStore } from './services/job-store'
+import { runTranscriptPath } from './services/job-runner'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -76,6 +78,9 @@ export class AppState extends EventEmitter<StateEvents> {
   readonly masterHome: MasterHome
   readonly refresh: RefreshScheduler
   readonly attributionStore: AttributionStore
+  readonly jobStore: JobStore
+  /** Recent background runs per project, refreshed from the job store on change. */
+  runs: Record<string, JobRun[]> = {}
 
   tmux: TmuxService | null = null
   pty: PtyService | null = null
@@ -94,6 +99,7 @@ export class AppState extends EventEmitter<StateEvents> {
     })
     this.masterHome = new MasterHome(persistence.paths.masterDir, persistence.paths.statusDir)
     this.attributionStore = new AttributionStore(persistence.paths.attributionDatabase)
+    this.jobStore = new JobStore(persistence.paths.jobsDatabase)
     this.refresh = new RefreshScheduler({
       isMasterIdle: () => this.masterSession()?.state === 'idle',
       send: (projectId) => this.sendRefreshPrompt(projectId),
@@ -122,6 +128,7 @@ export class AppState extends EventEmitter<StateEvents> {
       documents: this.documents,
       statuses: this.statusStore.statuses,
       refresh: { queued: this.refresh.queued, inProgress: this.refresh.inProgress },
+      runs: this.runs,
       loaded: this.loaded,
     }
   }
@@ -146,6 +153,7 @@ export class AppState extends EventEmitter<StateEvents> {
     try {
       await this.persistence.paths.createLayout()
       this.attributionStore.open()
+      this.jobStore.open()
       const config = await this.persistence.loadConfig()
       this.projects = config.projects
       const savedPreferences = config.preferences
@@ -181,6 +189,11 @@ export class AppState extends EventEmitter<StateEvents> {
         const defaultsById = new Map(defaultPreferences.agents.map((agent) => [agent.id, agent]))
         migratedAgents = migratedAgents.map((agent) => ({ ...agent, forkCommand: agent.forkCommand ?? defaultsById.get(agent.id)?.forkCommand }))
       }
+      {
+        // Not versioned: filling in a missing background command is idempotent and harmless.
+        const defaultsById = new Map(defaultPreferences.agents.map((agent) => [agent.id, agent]))
+        migratedAgents = migratedAgents.map((agent) => ({ ...agent, backgroundCommand: agent.backgroundCommand ?? defaultsById.get(agent.id)?.backgroundCommand }))
+      }
       this.preferences = {
         ...defaultPreferences,
         ...cleanPreferences,
@@ -205,6 +218,7 @@ export class AppState extends EventEmitter<StateEvents> {
     }
     await this.refreshTools()
     await this.reconcileSessions()
+    await this.refreshRuns()
     await Promise.all(this.projects.map((p) => this.refreshWorktrees(p.id, false)))
     await Promise.all(this.projects.map((p) => this.refreshDocuments(p.id, false)))
     this.startLivenessPolling()
@@ -224,6 +238,7 @@ export class AppState extends EventEmitter<StateEvents> {
   async refreshTools(): Promise<void> {
     const o = this.preferences.toolOverrides
     const tools = await resolveTools({ claude: o.claude || undefined, codex: o.codex || undefined, tmux: o.tmux || undefined, git: o.git || undefined }, this.preferences.agents)
+    console.log('resolved tools', tools)
     this.toolPaths = tools
     this.worktreeService = tools.git ? new WorktreeService(tools.git, this.preferences.worktreeBase || this.paths.worktreesDir) : null
     if (tools.tmux) {
@@ -730,6 +745,10 @@ export class AppState extends EventEmitter<StateEvents> {
   async resumeSession(id: string): Promise<void> {
     const session = this.session(id)
     if (!session || session.state !== 'stopped') return
+    if (session.background) {
+      this.report(new SauronError('invalid_state', 'A background run cannot be resumed. Run the job again, or open the run to continue by hand.'), { sessionId: id })
+      return
+    }
     try {
       const { tools, tmux } = this.requireTools()
       let command: string[] | null = null
@@ -913,6 +932,142 @@ export class AppState extends EventEmitter<StateEvents> {
     const session = this.session(id)
     if (!session?.tmuxName || !this.tmux) return
     for (const client of await this.sessionClients(id)) await this.tmux.detachClient(client.tty)
+  }
+
+  // MARK: Background jobs
+
+  /** Reloads runs from the store and makes sure each one exists as a session. */
+  async refreshRuns(): Promise<void> {
+    const runs: Record<string, JobRun[]> = {}
+    for (const project of this.projects) runs[project.id] = this.jobStore.forProject(project.id, 50)
+    this.runs = runs
+    let changed = false
+    for (const [projectId, list] of Object.entries(runs)) {
+      const project = this.project(projectId)
+      if (!project) continue
+      for (const run of list) {
+        const job = project.backgroundJobs?.find((j) => j.id === run.jobId)
+        const tool = job?.agentId ?? 'shell'
+        const existing = this.sessions.find((s) => s.id === run.sessionId)
+        const finished = run.status !== 'running'
+        if (!existing) {
+          this.sessions.push({
+            id: run.sessionId,
+            projectId,
+            tool,
+            kind: 'managed',
+            displayName: `${job?.name ?? run.jobId} (run)`,
+            tmuxName: run.tmuxName,
+            cliSessionId: tool === 'claude' ? run.sessionId : null,
+            transcriptPath: runTranscriptPath(run, tool),
+            workingDir: project.path,
+            worktreePath: run.worktreePath,
+            createdAt: run.startedAt,
+            lastActivityAt: run.finishedAt ?? run.startedAt,
+            state: finished ? 'stopped' : 'running',
+            stateSource: 'inferred',
+            background: { jobId: run.jobId, runId: run.id },
+          })
+          changed = true
+        } else if (finished && existing.state !== 'stopped') {
+          existing.state = 'stopped'
+          existing.lastActivityAt = run.finishedAt ?? existing.lastActivityAt
+          this.pty?.close(existing.id)
+          changed = true
+        }
+      }
+    }
+    if (changed) this.persistSessions()
+    this.changed()
+  }
+
+  async saveProjectJobs(projectId: string, jobs: BackgroundJob[]): Promise<void> {
+    const project = this.project(projectId)
+    if (!project) throw new SauronError('invalid_state', `Unknown project ${projectId}`)
+    const ids = new Set<string>()
+    for (const job of jobs) {
+      if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(job.id)) throw new SauronError('invalid_state', `Job id "${job.id}" must be lowercase letters, digits and hyphens.`)
+      if (ids.has(job.id)) throw new SauronError('invalid_state', `Two jobs share the id "${job.id}".`)
+      ids.add(job.id)
+      if (!this.agentDefinition(job.agentId)?.backgroundCommand?.length) throw new SauronError('invalid_state', `Agent "${job.agentId}" has no background command, so it cannot run jobs.`)
+      if (!job.promptFile.trim()) throw new SauronError('invalid_state', `Job "${job.name}" needs a prompt file.`)
+    }
+    project.backgroundJobs = jobs
+    this.persistConfig()
+    this.changed()
+  }
+
+  /**
+   * Starts a run through the CLI runner, the one code path that starts runs, so the app,
+   * launchd and the post-commit hook cannot disagree. Waits for the runner to hand off to
+   * tmux, which takes a few seconds, so its errors can be shown.
+   */
+  async runJob(projectId: string, jobId: string): Promise<void> {
+    const project = this.project(projectId)
+    if (!project || !this.sauronBin) throw new SauronError('invalid_state', 'Unknown project, or the CLI is not installed.')
+    const result = await runCommand(this.sauronBin, ['job', 'run', '--project', project.id, '--job', jobId, '--trigger', 'manual'], { timeoutMs: 90_000 })
+    if (result.code !== 0) throw new SauronError('command_failed', result.stderr.trim() || result.stdout.trim() || `sauron job run exited ${result.code}`)
+    await this.refreshRuns()
+    await this.refreshWorktrees(project.id)
+  }
+
+  private runContext(runId: string): { run: JobRun; project: Project; git: string; worktrees: WorktreeService } {
+    const run = this.jobStore.get(runId)
+    if (!run) throw new SauronError('invalid_state', `Unknown run ${runId}`)
+    const project = this.project(run.projectId)
+    if (!project) throw new SauronError('invalid_state', 'The run belongs to a project that no longer exists.')
+    if (!this.toolPaths?.git || !this.worktreeService) throw new SauronError('executable_not_found', 'git was not found on PATH.')
+    return { run, project, git: this.toolPaths.git, worktrees: this.worktreeService }
+  }
+
+  /**
+   * Merges a run's branch into the project's current branch with --no-ff, keeping the agent's
+   * commits. Checked with merge-tree first, which computes the merge without touching the
+   * working tree, so a conflict is reported rather than left half-applied.
+   */
+  async mergeRun(runId: string): Promise<void> {
+    const { run, project, git, worktrees } = this.runContext(runId)
+    if (run.status !== 'needs_review') throw new SauronError('invalid_state', `Run is ${run.status.replace('_', ' ')}, not awaiting review.`)
+    const job = project.backgroundJobs?.find((j) => j.id === run.jobId)
+    const head = await runCommand(git, ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: project.path })
+    const current = head.code === 0 ? head.stdout.trim() : 'HEAD'
+    const probe = await runCommand(git, ['merge-tree', '--write-tree', current, run.branch], { cwd: project.path })
+    if (probe.code !== 0) {
+      throw new SauronError('command_failed', `${run.branch} conflicts with ${current}. Open the run and resolve it in a session, then merge again.`)
+    }
+    const merge = await runCommand(git, ['merge', '--no-ff', '-m', `Merge background run: ${job?.name ?? run.jobId}`, run.branch], { cwd: project.path })
+    if (merge.code !== 0) throw new SauronError('command_failed', `git merge: ${merge.stderr.trim() || merge.stdout.trim()}`)
+    await worktrees.remove(project.path, run.worktreePath, true).catch((error) => this.report(error, { projectId: project.id }))
+    await runCommand(git, ['branch', '-d', run.branch], { cwd: project.path })
+    this.jobStore.setStatus(run.id, 'merged')
+    await this.refreshRuns()
+    await this.refreshWorktrees(project.id)
+    this.maybeCommitSummaryRefresh(project.id)
+  }
+
+  async discardRun(runId: string): Promise<void> {
+    const { run, project, git, worktrees } = this.runContext(runId)
+    if (run.status === 'running') throw new SauronError('invalid_state', 'The run is still in progress; stop its session first.')
+    await worktrees.remove(project.path, run.worktreePath, true).catch(() => undefined)
+    await runCommand(git, ['branch', '-D', run.branch], { cwd: project.path })
+    this.jobStore.setStatus(run.id, 'discarded')
+    await this.refreshRuns()
+    await this.refreshWorktrees(project.id)
+  }
+
+  /** An interactive agent in the run's worktree, to continue or to resolve a conflict. */
+  async openRun(runId: string, prompt?: string): Promise<void> {
+    const { run, project } = this.runContext(runId)
+    const job = project.backgroundJobs?.find((j) => j.id === run.jobId)
+    const tool = job?.agentId ?? this.preferences.supervisorAgentId
+    await this.launchSession(project.id, tool, { title: `${job?.name ?? run.jobId} (review)`, worktreePath: run.worktreePath, prompt })
+  }
+
+  async runLog(runId: string, maxChars = 20_000): Promise<string> {
+    const run = this.jobStore.get(runId)
+    if (!run) throw new SauronError('invalid_state', `Unknown run ${runId}`)
+    const text = await readFile(run.logPath, 'utf8').catch(() => '')
+    return text.length > maxChars ? `…${text.slice(-maxChars)}` : text
   }
 
   /** Interrupts whatever runs in the session, then kills the tmux session. */
@@ -1677,6 +1832,7 @@ export class AppState extends EventEmitter<StateEvents> {
     for (const id of [...this.tailers.keys()]) this.transcriptClose(id)
     this.pty?.closeAll()
     this.attributionStore.close()
+    this.jobStore.close()
     await this.persistence.flush()
   }
 }

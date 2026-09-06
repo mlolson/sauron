@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import type { Preferences, ToolPaths } from '@shared/types'
+import type { Preferences, Project, ToolPaths } from '@shared/types'
 
-interface Props { preferences: Preferences; toolPaths: ToolPaths | null; onClose: () => void }
+interface Props { preferences: Preferences; toolPaths: ToolPaths | null; projects: Project[]; onClose: () => void }
 
 function validateConfig(content: string): string | null {
   try {
@@ -26,7 +26,7 @@ function validateConfig(content: string): string | null {
   }
 }
 
-export function PreferencesView({ preferences, toolPaths, onClose }: Props) {
+export function PreferencesView({ preferences, toolPaths, projects, onClose }: Props) {
   const [editor, setEditor] = useState<{ path: string; content: string; original: string } | null>(null)
   const [jsonError, setJsonError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -124,6 +124,19 @@ export function PreferencesView({ preferences, toolPaths, onClose }: Props) {
               <label className="pref-row check"><input type="checkbox" disabled checked={preferences.masterAutoStart} /><span>Start the supervisor agent when Sauron launches</span></label>
             </section>
             <section><h3>Terminal</h3><label className="pref-row"><span>Font size</span><input type="number" readOnly value={preferences.terminalFontSize} /></label><label className="pref-row"><span>Scrollback lines</span><input type="number" readOnly value={preferences.terminalScrollback} /></label></section>
+            <section>
+              <h3>Background agents</h3>
+              {projects.every((p) => !(p.backgroundJobs?.length)) ? (
+                <p className="muted small">None configured. Add them from a project's page or context menu.</p>
+              ) : projects.filter((p) => p.backgroundJobs?.length).map((p) => (
+                <div key={p.id} className="pref-group">
+                  <h4>{p.name}</h4>
+                  {p.backgroundJobs!.map((j) => (
+                    <label key={j.id} className="pref-row"><span>{j.name}{j.enabled ? '' : ' (disabled)'}</span><input readOnly value={`${j.agentId} · ${j.trigger.kind === 'cron' ? j.trigger.schedule : j.trigger.kind === 'commit' ? `after commits, ${j.trigger.cooldownMinutes} min cooldown` : 'manual'} · ${j.promptFile}`} /></label>
+                  ))}
+                </div>
+              ))}
+            </section>
             <section><h3>Diagnostics</h3><button onClick={() => window.sauron.revealLogs()}>Reveal Logs</button></section>
           </>
         )}

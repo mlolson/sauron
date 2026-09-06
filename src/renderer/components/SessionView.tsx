@@ -176,10 +176,14 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
       ) : (
         <div className="placeholder">
           <div className="big">■</div>
-          <h2>Session Closed</h2>
-          <p>{session.cliSessionId ? 'Resume starts a new terminal and continues this agent conversation.' : 'This terminal is gone.'}</p>
+          <h2>{session.background ? 'Background run finished' : 'Session Closed'}</h2>
+          <p>
+            {session.background
+              ? 'This run has ended. Its commits are in the Commits pane and on the project page under Review.'
+              : session.cliSessionId ? 'Resume starts a new terminal and continues this agent conversation.' : 'This terminal is gone.'}
+          </p>
           <div className="actions">
-            {session.cliSessionId && (
+            {session.cliSessionId && !session.background && (
               <button className="primary" onClick={() => void window.sauron.resumeSession(session.id)}>
                 Resume
               </button>

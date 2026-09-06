@@ -28,10 +28,13 @@ export class AppPaths {
   get binDir() { return join(this.binRoot, 'bin') }
   get socketFile() { return join(this.root, 'sauron.sock') }
   get attributionDatabase() { return join(this.root, 'attributions.sqlite') }
+  get jobsDatabase() { return join(this.root, 'jobs.sqlite') }
+  /** Per-run logs and prompts. */
+  get jobsDir() { return join(this.root, 'jobs') }
   get summaryPromptFile() { return join(this.root, 'summary-prompt.md') }
 
   async createLayout(): Promise<void> {
-    for (const dir of [this.root, this.statusDir, this.masterDir, this.sessionsDir, this.worktreesDir, this.binDir]) {
+    for (const dir of [this.root, this.statusDir, this.masterDir, this.sessionsDir, this.worktreesDir, this.binDir, this.jobsDir]) {
       await mkdir(dir, { recursive: true })
     }
   }

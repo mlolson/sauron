@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { RecentCommit, Session } from '@shared/types'
 import { relativeTime } from '@shared/time'
 import { CopyHashButton, DiffBody } from './CommitUI'
@@ -11,11 +11,11 @@ type Scope = 'session' | 'all'
  * Defaults to this session's own commits, which is the view only Sauron can offer: the
  * attribution store is what knows which agent made which commit.
  */
-export function CommitsPane({ session, projectId, onClose }: { session: Session; projectId: string; onClose: () => void }) {
+export function CommitsPane({ session, projectId, onClose, initialBranch, banner }: { session: Session; projectId: string; onClose: () => void; initialBranch?: string; banner?: ReactNode }) {
   const [scope, setScope] = useState<Scope>('session')
   // '' means every branch, which is what git log --all walks.
-  const [branch, setBranch] = useState('')
-  const [branchDraft, setBranchDraft] = useState('')
+  const [branch, setBranch] = useState(initialBranch ?? '')
+  const [branchDraft, setBranchDraft] = useState(initialBranch ?? '')
   const [branches, setBranches] = useState<string[]>([])
   const [commits, setCommits] = useState<RecentCommit[] | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
@@ -122,6 +122,7 @@ export function CommitsPane({ session, projectId, onClose }: { session: Session;
           </button>
         </div>
       </header>
+      {banner}
       <div className="commits-split">
         <nav className="commits-list">
           {error && <p className="muted pad">Cannot list commits: {error}</p>}

@@ -469,3 +469,32 @@ button:disabled { opacity: 0.5; }
 .markdown img { max-width: 100%; }
 .markdown a { color: var(--accent); }
 .markdown input[type="checkbox"] { margin-right: 6px; }
+
+/* Background agents and review */
+.job-list, .run-list { list-style: none; margin: 0; padding: 0; }
+.job-list li { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-top: 1px solid var(--border); }
+.job-list li:first-child { border-top: none; }
+.job-list .name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.run-list li { padding: 10px 4px; border-top: 1px solid var(--border); }
+.run-list li:first-child { border-top: none; }
+.run-list.recent li { padding: 6px 4px; }
+.run-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.run-head button { margin-left: auto; }
+.run-summary { margin: 6px 0 8px; white-space: pre-wrap; max-height: 7.5em; overflow: hidden; }
+.run-status { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 4px; background: rgba(128,128,128,0.2); color: var(--fg-muted); }
+.run-status.running { background: var(--bg-selected); color: var(--fg); }
+.run-status.failed { background: rgba(220,80,80,0.18); color: #e88; }
+.run-status.merged { background: rgba(80,180,100,0.18); color: #8d8; }
+/* Covers the content pane only: the sidebar stays, and the traffic lights stay over it
+   rather than over the pane's own header. */
+.review-pane { position: absolute; inset: 0; z-index: 40; }
+.review-pane .commits-pane { position: absolute; inset: 0; }
+.review-banner { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 12px 18px; border-bottom: 1px solid var(--border); background: var(--bg-card); }
+.review-banner .run-summary { max-height: 4.5em; }
+.review-banner .commit-actions { flex: none; display: flex; gap: 6px; }
+.review-banner .commit-actions button { white-space: nowrap; }
+.job-dialog { width: 520px; }
+.job-dialog .pref-row select, .job-dialog .pref-row input.text { flex: 1; }
+.log-modal { width: min(900px, 90vw); }
+.run-log { max-height: 60vh; overflow: auto; font-size: 11.5px; line-height: 1.45; background: rgba(127,127,127,0.12); padding: 10px 12px; border-radius: 8px; white-space: pre-wrap; user-select: text; -webkit-user-select: text; }
+.pref-group h4 { margin: 10px 0 4px; font-size: 12px; }

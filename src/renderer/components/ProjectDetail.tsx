@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
-import type { KeyDocument, Preferences, Project, RecentCommit, SelectionTarget, Session, SessionCommit, ToolPaths } from '@shared/types'
+import type { BackgroundJob, JobRun, KeyDocument, Preferences, Project, RecentCommit, SelectionTarget, Session, SessionCommit, ToolPaths } from '@shared/types'
+import { describeTrigger } from '@shared/jobs'
+import { JobDialog } from './JobDialog'
+import { CommitsPane } from './CommitsPane'
 import { isAlive } from '@shared/types'
 import type { Worktree } from '@shared/worktrees'
 import type { ProjectStatus, RefreshState } from '@shared/status'
@@ -25,10 +28,11 @@ interface Props {
   masterAlive: boolean
   hiddenExternal: string[]
   documents: KeyDocument[]
+  runs: JobRun[]
   onSelect: (t: SelectionTarget) => void
 }
 
-export function ProjectDetail({ project, sessions, toolPaths, preferences, worktrees, status, refresh, masterAlive, hiddenExternal, documents, onSelect }: Props) {
+export function ProjectDetail({ project, sessions, toolPaths, preferences, worktrees, status, refresh, masterAlive, hiddenExternal, documents, runs, onSelect }: Props) {
   const refreshing = refresh.inProgress === project.id
   const queued = refresh.queued.includes(project.id)
   const [showHidden, setShowHidden] = useState(false)
@@ -38,6 +42,31 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
   const [renaming, setRenaming] = useState<Session | null>(null)
   const [forkingToWorktree, setForkingToWorktree] = useState<Session | null>(null)
+  const [editingJob, setEditingJob] = useState<{ job: BackgroundJob | null } | null>(null)
+  const [reviewing, setReviewing] = useState<JobRun | null>(null)
+  const [logFor, setLogFor] = useState<{ run: JobRun; text: string | null } | null>(null)
+  const jobs = project.backgroundJobs ?? []
+  const jobName = (id: string) => jobs.find((j) => j.id === id)?.name ?? id
+  const saveJob = (job: BackgroundJob) => {
+    const next = jobs.some((j) => j.id === job.id) ? jobs.map((j) => (j.id === job.id ? job : j)) : [...jobs, job]
+    void window.sauron.saveProjectJobs(project.id, next)
+  }
+  const removeJob = (job: BackgroundJob) => {
+    if (confirm(`Remove the background agent "${job.name}"?\n\nPast runs and their branches are kept.`)) void window.sauron.saveProjectJobs(project.id, jobs.filter((j) => j.id !== job.id))
+  }
+  const mergeRun = (run: JobRun) => {
+    if (confirm(`Merge "${jobName(run.jobId)}" into the current branch?\n\n${run.commitCount} commit(s) from ${run.branch}. The worktree and branch are removed afterwards.`)) void window.sauron.mergeRun(run.id)
+  }
+  const discardRun = (run: JobRun) => {
+    if (confirm(`Discard this run of "${jobName(run.jobId)}"?\n\nIts branch and worktree are deleted. This cannot be undone.`)) void window.sauron.discardRun(run.id)
+  }
+  const showLog = async (run: JobRun) => {
+    setLogFor({ run, text: null })
+    const text = await window.sauron.runLog(run.id)
+    setLogFor((cur) => (cur?.run.id === run.id ? { run, text } : cur))
+  }
+  const awaiting = runs.filter((r) => r.status === 'needs_review')
+  const recent = runs.filter((r) => r.status !== 'needs_review').slice(0, 8)
   const managed = sessions.filter((s) => s.projectId === project.id && s.kind === 'managed')
   const mine = managed.filter(isAlive).sort(compareSessions)
   const resumable = managed.filter((s) => !isAlive(s))
@@ -237,8 +266,8 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
                   <span className="name-title">{s.displayName}</span>
                   <LastCommitLine commit={sessionCommits[s.id]} />
                 </span>
-                <span className="muted small">closed {relativeTime(s.lastActivityAt)}</span>
-                <button onClick={() => void window.sauron.resumeSession(s.id)}>Resume</button>
+                <span className="muted small">{s.background ? 'run finished' : 'closed'} {relativeTime(s.lastActivityAt)}</span>
+                {!s.background && <button onClick={() => void window.sauron.resumeSession(s.id)}>Resume</button>}
                 <button className="destructive" onClick={() => void window.sauron.forgetSession(s.id)}>
                   Forget
                 </button>
@@ -327,6 +356,82 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
 
       <section className="card">
         <div className="card-head">
+          <h2>Background agents</h2>
+          <span className="muted small">Run headless in their own worktree; results land in Review</span>
+          <button onClick={() => setEditingJob({ job: null })}>Add…</button>
+        </div>
+        {jobs.length === 0 ? (
+          <p className="muted">None configured. Add one to run cleanups, reviews, or any prompt on this project without watching it.</p>
+        ) : (
+          <ul className="job-list">
+            {jobs.map((job) => {
+              const running = runs.some((r) => r.jobId === job.id && r.status === 'running')
+              return (
+                <li key={job.id} className={job.enabled ? '' : 'muted'}>
+                  <span className="glyph"><ToolIcon tool={job.agentId} /></span>
+                  <span className="name">
+                    <span className="name-title">{job.name}{!job.enabled && <span className="tag" style={{ marginLeft: 8 }}>disabled</span>}</span>
+                    <span className="muted small">{describeTrigger(job)} · {job.promptFile}</span>
+                  </span>
+                  <button disabled={!job.enabled || running} title={running ? 'A run is in progress' : 'Start a run now'} onClick={() => void window.sauron.runJob(project.id, job.id)}>
+                    {running ? 'Running…' : 'Run now'}
+                  </button>
+                  <button onClick={() => setEditingJob({ job })}>Edit…</button>
+                  <button className="destructive" onClick={() => removeJob(job)}>Remove</button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
+
+      {(awaiting.length > 0 || recent.length > 0) && (
+        <section className="card">
+          <div className="card-head">
+            <h2>Review</h2>
+            <span className="muted small">{awaiting.length === 0 ? 'Nothing waiting' : `${awaiting.length} run${awaiting.length === 1 ? '' : 's'} waiting for a decision`}</span>
+          </div>
+          {awaiting.length > 0 && (
+            <ul className="run-list">
+              {awaiting.map((run) => (
+                <li key={run.id}>
+                  <div className="run-head">
+                    <strong>{jobName(run.jobId)}</strong>
+                    <span className="muted small">{run.commitCount} commit{run.commitCount === 1 ? '' : 's'} · finished {relativeTime(run.finishedAt ?? run.startedAt)} · <code>{run.branch}</code></span>
+                  </div>
+                  {run.summary && <p className="run-summary">{run.summary}</p>}
+                  <div className="commit-actions">
+                    <button className="primary" onClick={() => setReviewing(run)}>Review commits</button>
+                    <button onClick={() => mergeRun(run)}>Merge</button>
+                    <button onClick={() => void window.sauron.openRun(run.id)}>Open in session</button>
+                    <button onClick={() => void showLog(run)}>Log</button>
+                    <button className="destructive" onClick={() => discardRun(run)}>Discard</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {recent.length > 0 && (
+            <ul className="run-list recent">
+              {recent.map((run) => (
+                <li key={run.id}>
+                  <div className="run-head">
+                    <span className={`run-status ${run.status}`}>{run.status.replace('_', ' ')}</span>
+                    <span>{jobName(run.jobId)}</span>
+                    <span className="muted small">{run.status === 'running' ? `started ${relativeTime(run.startedAt)}` : relativeTime(run.finishedAt ?? run.startedAt)}</span>
+                    {run.status === 'running' && <button onClick={() => onSelect({ kind: 'session', id: run.sessionId })}>Watch</button>}
+                    {run.status !== 'running' && <button onClick={() => void showLog(run)}>Log</button>}
+                  </div>
+                  {run.status === 'failed' && run.summary && <p className="run-summary muted small">{run.summary}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      <section className="card">
+        <div className="card-head">
           <h2>Recent commits</h2>
           <span className="muted small">Most recent 20 across local branches</span>
         </div>
@@ -365,6 +470,46 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
           onClose={() => setForkingToWorktree(null)}
         />
       )}
+      {editingJob && (
+        <JobDialog agents={preferences.agents} existing={editingJob.job} taken={jobs.map((j) => j.id)} onSubmit={saveJob} onClose={() => setEditingJob(null)} />
+      )}
+      {logFor && (
+        <div className="modal-backdrop" onMouseDown={() => setLogFor(null)}>
+          <div className="modal log-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <header><h2>{jobName(logFor.run.jobId)} · log</h2></header>
+            <pre className="run-log">{logFor.text === null ? 'Loading…' : logFor.text || '(empty)'}</pre>
+            <div className="actions right"><button onClick={() => setLogFor(null)}>Close</button></div>
+          </div>
+        </div>
+      )}
+      {reviewing && (() => {
+        const session = sessions.find((s) => s.id === reviewing.sessionId)
+        if (!session) return null
+        return (
+          <div className="review-pane">
+            <CommitsPane
+              session={session}
+              projectId={project.id}
+              initialBranch={reviewing.branch}
+              onClose={() => setReviewing(null)}
+              banner={
+                <div className="review-banner">
+                  <div>
+                    <strong>{jobName(reviewing.jobId)}</strong>
+                    <span className="muted small"> · {reviewing.commitCount} commit{reviewing.commitCount === 1 ? '' : 's'} on <code>{reviewing.branch}</code></span>
+                    {reviewing.summary && <p className="run-summary">{reviewing.summary}</p>}
+                  </div>
+                  <div className="commit-actions">
+                    <button className="primary" onClick={() => { mergeRun(reviewing); setReviewing(null) }}>Merge</button>
+                    <button onClick={() => void window.sauron.openRun(reviewing.id)}>Open in session</button>
+                    <button className="destructive" onClick={() => { discardRun(reviewing); setReviewing(null) }}>Discard</button>
+                  </div>
+                </div>
+              }
+            />
+          </div>
+        )
+      })()}
     </div>
   )
 }

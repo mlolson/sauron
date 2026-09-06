@@ -12,6 +12,52 @@ export interface Project {
   archived?: boolean
   /** Manual adjustments to the key documents list (project-relative paths). */
   keyDocuments?: { included: string[]; excluded: string[] }
+  /** Background agents configured for this project. See docs/BACKGROUND_AGENTS.md. */
+  backgroundJobs?: BackgroundJob[]
+}
+
+export type JobTrigger =
+  | { kind: 'manual' }
+  | { kind: 'cron'; schedule: string }
+  | { kind: 'commit'; cooldownMinutes: number }
+
+/** A background agent's configuration: which agent, what prompt, when. */
+export interface BackgroundJob {
+  /** Stable, filesystem-safe identifier; also the branch prefix `sauron/bg/<id>/`. */
+  id: string
+  name: string
+  enabled: boolean
+  agentId: string
+  /** Markdown prompt; relative paths resolve beside config.json. Supports {projectName}, {projectPath}, {branch}. */
+  promptFile: string
+  trigger: JobTrigger
+  /** Do not run when the project has no new commits since the job last ran. */
+  skipIfUnchanged: boolean
+}
+
+export type JobRunStatus = 'running' | 'no_changes' | 'failed' | 'needs_review' | 'merged' | 'discarded'
+
+/** One execution of a background job. Written by the CLI runner, read by the app. */
+export interface JobRun {
+  id: string
+  jobId: string
+  projectId: string
+  /** The Sauron session the run is; also the tmux session's @sauron_session. */
+  sessionId: string
+  tmuxName: string
+  branch: string
+  worktreePath: string
+  /** The commit the branch was cut from; commits past it are the run's output. */
+  baseCommit: string
+  trigger: JobTrigger['kind']
+  startedAt: string
+  finishedAt: string | null
+  status: JobRunStatus
+  /** The agent's own account of what it did, from its final message. */
+  summary: string | null
+  exitCode: number | null
+  logPath: string
+  commitCount: number
 }
 
 export interface KeyDocument {
@@ -70,8 +116,8 @@ export const defaultPreferences: Preferences = {
   masterAutoStart: true,
   toolOverrides: { claude: '', codex: '', tmux: '', git: '' },
   agents: [
-    { id: 'claude', name: 'Claude', command: 'claude', args: ['--dangerously-skip-permissions'], forkCommand: ['--resume', '{sourceSessionId}', '--fork-session'] },
-    { id: 'codex', name: 'Codex', command: 'codex', args: ['--dangerously-bypass-approvals-and-sandbox'], forkCommand: ['fork', '{sourceSessionId}'] },
+    { id: 'claude', name: 'Claude', command: 'claude', args: ['--dangerously-skip-permissions'], forkCommand: ['--resume', '{sourceSessionId}', '--fork-session'], backgroundCommand: ['-p', '{prompt}', '--output-format', 'json'] },
+    { id: 'codex', name: 'Codex', command: 'codex', args: ['--dangerously-bypass-approvals-and-sandbox'], forkCommand: ['fork', '{sourceSessionId}'], backgroundCommand: ['exec', '{prompt}'] },
   ],
   supervisorAgentId: 'claude',
   supervisorArgs: [],
@@ -103,6 +149,11 @@ export interface AgentDefinition {
   args: string[]
   /** Optional arguments used to fork a conversation. */
   forkCommand?: string[]
+  /**
+   * Arguments that run the agent headless to completion on one prompt, appended after `args`.
+   * Supports the same placeholders. A profile without one cannot run background jobs.
+   */
+  backgroundCommand?: string[]
 }
 export type SessionKind = 'managed' | 'external'
 export type SessionState = 'running' | 'waitingForInput' | 'idle' | 'stopped'
@@ -127,6 +178,8 @@ export interface Session {
   stateSource: StateSource
   /** Manual position among a project's sessions. Absent until the user drags one. */
   sortIndex?: number
+  /** Present when this session is a background job run. */
+  background?: { jobId: string; runId: string }
 }
 
 export interface SessionsFile {
@@ -175,6 +228,8 @@ export interface Snapshot {
   documents: Record<string, KeyDocument[]>
   statuses: Record<string, ProjectStatus>
   refresh: RefreshState
+  /** Recent background runs per project id, newest first. */
+  runs: Record<string, JobRun[]>
   loaded: boolean
 }
 
@@ -320,6 +375,19 @@ export interface SauronApi {
    * the recent conversation, the session's commits, and the working tree state.
    */
   handoffSession(sessionId: string, tool: AgentTool): Promise<void>
+  // Background jobs (docs/BACKGROUND_AGENTS.md). Runs are started by the CLI runner; the app observes.
+  /** Replaces a project's background job list. */
+  saveProjectJobs(projectId: string, jobs: BackgroundJob[]): Promise<void>
+  /** Starts a run now, through the CLI runner. Errors surface as banners. */
+  runJob(projectId: string, jobId: string): Promise<void>
+  /** Merges a reviewed run into the project's current branch, then removes its worktree and branch. */
+  mergeRun(runId: string): Promise<void>
+  /** Removes a run's worktree and branch without merging. */
+  discardRun(runId: string): Promise<void>
+  /** Opens an interactive session in the run's worktree, optionally with an initial prompt. */
+  openRun(runId: string, prompt?: string): Promise<void>
+  /** The tail of a run's agent output. */
+  runLog(runId: string): Promise<string>
   /** The latest commit each session in this project made, keyed by session id. */
   lastCommitBySession(projectId: string): Promise<Record<string, SessionCommit>>
   revealInFinder(path: string): void
