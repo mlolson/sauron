@@ -240,8 +240,10 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
       <section className="card">
         <h2>Sessions</h2>
         {project.archived ? <p className="muted">This project is archived. Unarchive it from the sidebar menu to start new sessions.</p> : <NewSessionBar project={project} toolPaths={toolPaths} preferences={preferences} />}
+
+        <h3 className="subsection-title">Open <span className="count">{mine.length}</span></h3>
         {mine.length === 0 ? (
-          <p className="muted">No sessions yet. Use New Terminal to start one.</p>
+          <p className="muted">None. Use New Terminal to start one.</p>
         ) : (
           <ul className="session-list">
             {mine.map((s) => (
@@ -260,39 +262,37 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
             ))}
           </ul>
         )}
-      </section>
 
-      {resumable.length > 0 && (
-        <section className="card">
-          <h2>Closed, resumable</h2>
-          <ul className="session-list">
-            {resumable.map((s) => (
-              <li key={s.id} onContextMenu={(event) => openSessionMenu(event, s)}>
-                <span className="glyph"><ToolIcon tool={s.tool} /></span>
-                <span className="name">
-                  <span className="name-title">{s.displayName}</span>
-                  <LastCommitLine commit={sessionCommits[s.id]} />
-                </span>
-                <span className="muted small">{s.background ? 'run finished' : 'closed'} {relativeTime(s.lastActivityAt)}</span>
-                {!s.background && <button onClick={() => void window.sauron.resumeSession(s.id)}>Resume</button>}
-                <button className="destructive" onClick={() => void window.sauron.forgetSession(s.id)}>
-                  Forget
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+        {resumable.length > 0 && (
+          <>
+            <h3 className="subsection-title">Closed <span className="count">{resumable.length}</span></h3>
+            <ul className="session-list">
+              {resumable.map((s) => (
+                <li key={s.id} onContextMenu={(event) => openSessionMenu(event, s)}>
+                  <span className="glyph"><ToolIcon tool={s.tool} /></span>
+                  <span className="name">
+                    <span className="name-title">{s.displayName}</span>
+                    <LastCommitLine commit={sessionCommits[s.id]} />
+                  </span>
+                  <span className="muted small">{s.background ? 'run finished' : 'closed'} {relativeTime(s.lastActivityAt)}</span>
+                  {!s.background && <button onClick={() => void window.sauron.resumeSession(s.id)}>Resume</button>}
+                  <button className="destructive" onClick={() => void window.sauron.forgetSession(s.id)}>
+                    Forget
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
 
-      <section className="card">
-        <div className="card-head">
-          <h2>External Sessions</h2>
+        <h3 className="subsection-title">
+          External <span className="count">{external.length}</span>
           {hiddenExternal.length > 0 && (
             <button className="link" onClick={() => setShowHidden((v) => !v)}>
               {showHidden ? 'Hide hidden' : `${hiddenExternal.length} hidden`}
             </button>
           )}
-        </div>
+        </h3>
         {showHidden && hiddenExternal.length > 0 && (
           <ul className="session-list muted">
             {hiddenExternal.map((id) => (
@@ -334,32 +334,6 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
         )}
       </section>
 
-      <section className="card">
-        <h2>Worktrees</h2>
-        {worktrees.length === 0 ? (
-          <p className="muted">Loading…</p>
-        ) : (
-          <ul className="worktree-list">
-            {worktrees.map((wt) => {
-              const users = mine.filter((s) => s.worktreePath === wt.path && isAlive(s))
-              return (
-                <li key={wt.path}>
-                  <span className="branch">{wt.branch ?? <span className="muted">(detached)</span>}</span>
-                  <span className="path" title={wt.path}>{abbreviate(wt.path)}</span>
-                  {wt.isMain && <span className="tag">main checkout</span>}
-                  {wt.isSauron && <span className="tag accent">sauron</span>}
-                  {users.length > 0 && <span className="tag">in use: {users.map((u) => u.displayName).join(', ')}</span>}
-                  {!wt.isMain && (
-                    <button className="destructive" disabled={users.length > 0} title={users.length ? 'Stop the sessions using it first' : 'Remove this worktree'} onClick={() => void remove(wt)}>
-                      Remove
-                    </button>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </section>
 
       <section className="card">
         <div className="card-head">
@@ -438,6 +412,33 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
           )}
         </section>
       )}
+
+      <section className="card">
+        <h2>Worktrees</h2>
+        {worktrees.length === 0 ? (
+          <p className="muted">Loading…</p>
+        ) : (
+          <ul className="worktree-list">
+            {worktrees.map((wt) => {
+              const users = mine.filter((s) => s.worktreePath === wt.path && isAlive(s))
+              return (
+                <li key={wt.path}>
+                  <span className="branch">{wt.branch ?? <span className="muted">(detached)</span>}</span>
+                  <span className="path" title={wt.path}>{abbreviate(wt.path)}</span>
+                  {wt.isMain && <span className="tag">main checkout</span>}
+                  {wt.isSauron && <span className="tag accent">sauron</span>}
+                  {users.length > 0 && <span className="tag">in use: {users.map((u) => u.displayName).join(', ')}</span>}
+                  {!wt.isMain && (
+                    <button className="destructive" disabled={users.length > 0} title={users.length ? 'Stop the sessions using it first' : 'Remove this worktree'} onClick={() => void remove(wt)}>
+                      Remove
+                    </button>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
 
       <section className="card">
         <div className="card-head">
