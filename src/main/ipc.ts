@@ -129,6 +129,7 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
     await state.handoffSession(sessionId, tool)
   })
   handle('lastCommitBySession', (projectId) => state.lastCommitBySession(projectId))
+  handle('saveBackgroundAgents', async (templates) => state.saveBackgroundAgents(templates))
   handle('saveProjectJobs', async (projectId, jobs) => state.saveProjectJobs(projectId, jobs))
   handle('runJob', async (projectId, jobId) => state.runJob(projectId, jobId))
   handle('mergeRun', async (runId) => state.mergeRun(runId))

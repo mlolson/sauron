@@ -24,6 +24,7 @@
  *   sauron hook codex '<json>'      (Codex notify: JSON payload as the last argument)
  * Hooks identify the session via SAURON_SESSION_ID, set by Sauron on launch.
  */
+import type { JobTrigger } from '@shared/types'
 import { connect } from 'node:net'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -116,8 +117,8 @@ async function main(): Promise<void> {
     const { startRun, finishRun, defaultRoot } = await import('../main/services/job-runner')
     const root = defaultRoot()
     if (jp[0] === 'run') {
-      if (!jf.project || !jf.job) throw new Error('usage: sauron job run --project <name|id> --job <id> [--trigger manual|cron|commit]')
-      const trigger = (jf.trigger === 'cron' || jf.trigger === 'commit' ? jf.trigger : 'manual') as 'manual' | 'cron' | 'commit'
+      if (!jf.project || !jf.job) throw new Error('usage: sauron job run --project <name|id> --job <id> [--trigger manual|interval|cron|commit]')
+      const trigger = (jf.trigger === 'cron' || jf.trigger === 'commit' || jf.trigger === 'interval' ? jf.trigger : 'manual') as JobTrigger['kind']
       const run = await startRun(root, jf.project, jf.job, trigger)
       console.log(JSON.stringify({ id: run.id, sessionId: run.sessionId, tmuxName: run.tmuxName, branch: run.branch, worktreePath: run.worktreePath }, null, 2))
       return

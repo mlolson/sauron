@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeTrigger, expandArgs, expandJobPrompt, jobIdOfBranch, runBranchName, runOutcome, slugifyJobId, summarizeAgentOutput } from '../src/shared/jobs'
+import { describeTrigger, expandArgs, expandJobPrompt, jobIdOfBranch, migrateLegacyProjectJobs, resolveProjectJobs, runBranchName, runOutcome, slugifyJobId, summarizeAgentOutput } from '../src/shared/jobs'
 
 describe('run branches', () => {
   it('names branches by job and timestamp, and reads the job back', () => {
@@ -61,5 +61,46 @@ describe('ids and labels', () => {
     expect(describeTrigger({ ...base, trigger: { kind: 'manual' } })).toBe('run manually')
     expect(describeTrigger({ ...base, trigger: { kind: 'cron', schedule: '0 3 * * *' } })).toBe('on schedule 0 3 * * *')
     expect(describeTrigger({ ...base, trigger: { kind: 'commit', cooldownMinutes: 30 } })).toBe('after commits, at most every 30 min')
+  })
+})
+
+describe('describeTrigger for intervals', () => {
+  it('reads naturally for one unit and for several', () => {
+    expect(describeTrigger({ trigger: { kind: 'interval', every: 1, unit: 'days' } })).toBe('every day')
+    expect(describeTrigger({ trigger: { kind: 'interval', every: 1, unit: 'hours' } })).toBe('every hour')
+    expect(describeTrigger({ trigger: { kind: 'interval', every: 30, unit: 'minutes' } })).toBe('every 30 minutes')
+  })
+})
+
+describe('resolveProjectJobs', () => {
+  const tidy = { id: 'tidy', name: 'Tidy', agentId: 'claude', promptFile: 'tidy.md', trigger: { kind: 'interval', every: 1, unit: 'days' } as const, skipIfUnchanged: true }
+  const review = { id: 'review', name: 'Review', agentId: 'codex', promptFile: 'review.md', trigger: { kind: 'manual' } as const, skipIfUnchanged: false, autoMerge: true }
+
+  it('applies each attached template with the project override where there is one', () => {
+    const jobs = resolveProjectJobs({ backgroundJobs: [{ template: 'review', enabled: false }, { template: 'tidy', enabled: true, trigger: { kind: 'commit', cooldownMinutes: 5 } }] }, [tidy, review])
+    expect(jobs.map((j) => j.id)).toEqual(['review', 'tidy'])
+    expect(jobs[0]).toMatchObject({ enabled: false, customTrigger: false, trigger: { kind: 'manual' }, autoMerge: true })
+    expect(jobs[1]).toMatchObject({ enabled: true, customTrigger: true, trigger: { kind: 'commit', cooldownMinutes: 5 }, agentId: 'claude' })
+  })
+
+  it('drops attachments whose template is gone, and handles a project with none', () => {
+    expect(resolveProjectJobs({ backgroundJobs: [{ template: 'deleted', enabled: true }] }, [tidy])).toEqual([])
+    expect(resolveProjectJobs({}, [tidy])).toEqual([])
+  })
+})
+
+describe('migrateLegacyProjectJobs', () => {
+  it('hoists old per-project jobs into templates and leaves attachments', () => {
+    const project = { backgroundJobs: [{ id: 'tidy', name: 'Tidy', enabled: false, agentId: 'codex', promptFile: 't.md', trigger: { kind: 'cron', schedule: '0 3 * * *' }, skipIfUnchanged: true } as never] }
+    const result = migrateLegacyProjectJobs([project], [])
+    expect(result.migrated).toBe(1)
+    expect(result.templates).toEqual([{ id: 'tidy', name: 'Tidy', agentId: 'codex', promptFile: 't.md', trigger: { kind: 'cron', schedule: '0 3 * * *' }, skipIfUnchanged: true, autoMerge: undefined }])
+    expect(project.backgroundJobs).toEqual([{ template: 'tidy', enabled: false, trigger: { kind: 'cron', schedule: '0 3 * * *' } }])
+  })
+
+  it('leaves the new shape alone', () => {
+    const project = { backgroundJobs: [{ template: 'tidy', enabled: true }] }
+    expect(migrateLegacyProjectJobs([project], []).migrated).toBe(0)
+    expect(project.backgroundJobs).toEqual([{ template: 'tidy', enabled: true }])
   })
 })

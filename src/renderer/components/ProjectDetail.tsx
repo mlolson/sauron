@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { BackgroundJob, JobRun, KeyDocument, Preferences, Project, RecentCommit, SelectionTarget, Session, SessionCommit, ToolPaths } from '@shared/types'
-import { describeTrigger } from '@shared/jobs'
-import { JobDialog } from './JobDialog'
+import { describeTrigger, resolveProjectJobs } from '@shared/jobs'
+import { AgentPicker } from './AgentPicker'
+import { TriggerDialog } from './TriggerDialog'
 import { CommitsPane } from './CommitsPane'
 import { isAlive } from '@shared/types'
 import type { Worktree } from '@shared/worktrees'
@@ -42,17 +43,17 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
   const [renaming, setRenaming] = useState<Session | null>(null)
   const [forkingToWorktree, setForkingToWorktree] = useState<Session | null>(null)
-  const [editingJob, setEditingJob] = useState<{ job: BackgroundJob | null } | null>(null)
+  const [picking, setPicking] = useState(false)
+  const [editingTrigger, setEditingTrigger] = useState<BackgroundJob | null>(null)
   const [reviewing, setReviewing] = useState<JobRun | null>(null)
   const [logFor, setLogFor] = useState<{ run: JobRun; text: string | null } | null>(null)
-  const jobs = project.backgroundJobs ?? []
-  const jobName = (id: string) => jobs.find((j) => j.id === id)?.name ?? id
-  const saveJob = (job: BackgroundJob) => {
-    const next = jobs.some((j) => j.id === job.id) ? jobs.map((j) => (j.id === job.id ? job : j)) : [...jobs, job]
-    void window.sauron.saveProjectJobs(project.id, next)
+  const jobs = resolveProjectJobs(project, preferences.backgroundAgents)
+  const jobName = (id: string) => jobs.find((j) => j.id === id)?.name ?? preferences.backgroundAgents.find((t) => t.id === id)?.name ?? id
+  const setJobEnabled = (job: BackgroundJob, enabled: boolean) => {
+    void window.sauron.saveProjectJobs(project.id, (project.backgroundJobs ?? []).map((j) => (j.template === job.id ? { ...j, enabled } : j)))
   }
-  const removeJob = (job: BackgroundJob) => {
-    if (confirm(`Remove the background agent "${job.name}"?\n\nPast runs and their branches are kept.`)) void window.sauron.saveProjectJobs(project.id, jobs.filter((j) => j.id !== job.id))
+  const detachJob = (job: BackgroundJob) => {
+    if (confirm(`Detach "${job.name}" from ${project.name}?\n\nThe agent itself is kept, and so are past runs and their branches.`)) void window.sauron.saveProjectJobs(project.id, (project.backgroundJobs ?? []).filter((j) => j.template !== job.id))
   }
   const mergeRun = (run: JobRun) => {
     if (confirm(`Merge "${jobName(run.jobId)}" into the current branch?\n\n${run.commitCount} commit(s) from ${run.branch}. The worktree and branch are removed afterwards.`)) void window.sauron.mergeRun(run.id)
@@ -339,10 +340,10 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
         <div className="card-head">
           <h2>Background agents</h2>
           <span className="muted small">Run headless in their own worktree; results land in Review</span>
-          <button onClick={() => setEditingJob({ job: null })}>Add…</button>
+          <button onClick={() => setPicking(true)}>Add…</button>
         </div>
         {jobs.length === 0 ? (
-          <p className="muted">None configured. Add one to run cleanups, reviews, or any prompt on this project without watching it.</p>
+          <p className="muted">None attached. Add one to run cleanups, reviews, or any prompt on this project without watching it.</p>
         ) : (
           <ul className="job-list">
             {jobs.map((job) => {
@@ -352,13 +353,14 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
                   <span className="glyph"><ToolIcon tool={job.agentId} /></span>
                   <span className="name">
                     <span className="name-title">{job.name}{!job.enabled && <span className="tag" style={{ marginLeft: 8 }}>disabled</span>}</span>
-                    <span className="muted small">{describeTrigger(job)}{job.autoMerge ? ' · auto-merge' : ''} · {job.promptFile}</span>
+                    <span className="muted small">{describeTrigger(job)}{job.customTrigger ? ' (this project)' : ''}{job.autoMerge ? ' · auto-merge' : ''} · {job.promptFile}</span>
                   </span>
                   <button disabled={!job.enabled || running} title={running ? 'A run is in progress' : 'Start a run now'} onClick={() => void window.sauron.runJob(project.id, job.id)}>
                     {running ? 'Running…' : 'Run now'}
                   </button>
-                  <button onClick={() => setEditingJob({ job })}>Edit…</button>
-                  <button className="destructive" onClick={() => removeJob(job)}>Remove</button>
+                  <button title="When this agent runs for this project" onClick={() => setEditingTrigger(job)}>Trigger…</button>
+                  <button onClick={() => setJobEnabled(job, !job.enabled)}>{job.enabled ? 'Disable' : 'Enable'}</button>
+                  <button className="destructive" title="Stop running this agent here; the agent itself is kept" onClick={() => detachJob(job)}>Detach</button>
                 </li>
               )
             })}
@@ -480,8 +482,14 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
           onClose={() => setForkingToWorktree(null)}
         />
       )}
-      {editingJob && (
-        <JobDialog agents={preferences.agents} existing={editingJob.job} taken={jobs.map((j) => j.id)} onSubmit={saveJob} onClose={() => setEditingJob(null)} />
+      {picking && <AgentPicker project={project} templates={preferences.backgroundAgents} agents={preferences.agents} onClose={() => setPicking(false)} />}
+      {editingTrigger && (
+        <TriggerDialog
+          project={project}
+          job={editingTrigger}
+          defaultTrigger={preferences.backgroundAgents.find((t) => t.id === editingTrigger.id)?.trigger ?? { kind: 'manual' }}
+          onClose={() => setEditingTrigger(null)}
+        />
       )}
       {logFor && (
         <div className="modal-backdrop" onMouseDown={() => setLogFor(null)}>

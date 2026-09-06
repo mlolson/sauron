@@ -1,4 +1,4 @@
-import type { BackgroundJob, JobRunStatus } from './types'
+import type { BackgroundAgentTemplate, BackgroundJob, JobRunStatus, JobTrigger, Project } from './types'
 
 /** Pure helpers for background jobs, shared between the CLI runner and the app, and tested. */
 
@@ -55,18 +55,65 @@ export function slugifyJobId(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'job'
 }
 
-export function describeTrigger(job: BackgroundJob): string {
-  switch (job.trigger.kind) {
+export function describeTrigger(job: { trigger: JobTrigger }): string {
+  const t = job.trigger
+  switch (t.kind) {
     case 'manual':
       return 'run manually'
+    case 'interval':
+      return `every ${t.every === 1 ? t.unit.replace(/s$/, '') : `${t.every} ${t.unit}`}`
     case 'cron':
-      return `on schedule ${job.trigger.schedule}`
+      return `on schedule ${t.schedule}`
     case 'commit':
-      return `after commits, at most every ${job.trigger.cooldownMinutes} min`
+      return `after commits, at most every ${t.cooldownMinutes} min`
   }
+}
+
+export function intervalMs(trigger: { every: number; unit: 'minutes' | 'hours' | 'days' }): number {
+  const unit = trigger.unit === 'minutes' ? 60_000 : trigger.unit === 'hours' ? 3_600_000 : 86_400_000
+  return Math.max(1, trigger.every) * unit
+}
+
+/**
+ * The background agents that apply to a project: each attached template, with the project's
+ * trigger override when it has one. Attachments to templates that no longer exist are
+ * dropped, so a deleted template silently stops running rather than crashing the tick.
+ */
+export function resolveProjectJobs(project: Pick<Project, 'backgroundJobs'>, templates: BackgroundAgentTemplate[]): BackgroundJob[] {
+  const byId = new Map(templates.map((t) => [t.id, t]))
+  const out: BackgroundJob[] = []
+  for (const attached of project.backgroundJobs ?? []) {
+    const template = byId.get(attached.template)
+    if (!template) continue
+    out.push({ ...template, enabled: attached.enabled, trigger: attached.trigger ?? template.trigger, customTrigger: Boolean(attached.trigger) })
+  }
+  return out
 }
 
 /** Expands the agent-profile placeholders in an argument list. A known key with no value becomes empty; anything else is left as written. */
 export function expandArgs(args: string[], values: Record<string, string | undefined>): string[] {
   return args.map((arg) => arg.replace(/\{(prompt|cwd|sessionId|sourceSessionId|sauronBin)\}/g, (_m, key: string) => values[key] ?? ''))
+}
+
+/**
+ * Before background agents were shared, each project carried full job definitions. Hoists
+ * those into templates and leaves attachments behind. Returns the templates to save; the
+ * projects are rewritten in place. A no-op when nothing is in the old shape.
+ */
+export function migrateLegacyProjectJobs(projects: Pick<Project, 'backgroundJobs'>[], templates: BackgroundAgentTemplate[]): { templates: BackgroundAgentTemplate[]; migrated: number } {
+  const out = [...templates]
+  let migrated = 0
+  for (const project of projects) {
+    if (!project.backgroundJobs?.length) continue
+    project.backgroundJobs = project.backgroundJobs.map((entry) => {
+      const legacy = entry as unknown as Partial<BackgroundAgentTemplate> & { enabled?: boolean; template?: string }
+      if (typeof legacy.template === 'string' || typeof legacy.id !== 'string') return entry
+      migrated++
+      if (!out.some((t) => t.id === legacy.id)) {
+        out.push({ id: legacy.id, name: legacy.name ?? legacy.id, agentId: legacy.agentId ?? 'claude', promptFile: legacy.promptFile ?? '', trigger: legacy.trigger ?? { kind: 'manual' }, skipIfUnchanged: legacy.skipIfUnchanged ?? true, autoMerge: legacy.autoMerge })
+      }
+      return { template: legacy.id, enabled: legacy.enabled ?? true, trigger: legacy.trigger }
+    })
+  }
+  return { templates: out, migrated }
 }

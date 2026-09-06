@@ -8,8 +8,8 @@ import { StateDot } from './StateDot'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { RenameDialog } from './RenameDialog'
 import { WorktreeDialog } from './WorktreeDialog'
-import { JobDialog } from './JobDialog'
-import type { BackgroundJob } from '@shared/types'
+import { AgentPicker } from './AgentPicker'
+import { resolveProjectJobs } from '@shared/jobs'
 import { ToolIcon } from './ToolIcon'
 
 interface Props {
@@ -44,7 +44,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
       ...agents.map((agent) => ({ label: `New ${agent.name}`, disabled: !snapshot.toolPaths?.agents[agent.id], action: () => void window.sauron.launchSession(project.id, agent.id) } satisfies MenuItem)),
       { separator: true } satisfies MenuItem,
       { label: 'Add background agent…', action: () => setAddingJobTo(project) } satisfies MenuItem,
-      ...(project.backgroundJobs ?? []).filter((job) => job.enabled).map((job) => ({ label: `Run ${job.name}`, action: () => void window.sauron.runJob(project.id, job.id) } satisfies MenuItem)),
+      ...resolveProjectJobs(project, snapshot.preferences.backgroundAgents).filter((job) => job.enabled).map((job) => ({ label: `Run ${job.name}`, action: () => void window.sauron.runJob(project.id, job.id) } satisfies MenuItem)),
       { separator: true } satisfies MenuItem,
     ] : []),
     { label: 'Reveal in Finder', action: () => window.sauron.revealInFinder(project.path) },
@@ -395,11 +395,11 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
         />
       )}
       {addingJobTo && (
-        <JobDialog
+        <AgentPicker
+          // The snapshot's copy, so an attach made from the picker shows as "Attached" at once.
+          project={snapshot.projects.find((p) => p.id === addingJobTo.id) ?? addingJobTo}
+          templates={snapshot.preferences.backgroundAgents}
           agents={snapshot.preferences.agents}
-          existing={null}
-          taken={(addingJobTo.backgroundJobs ?? []).map((j) => j.id)}
-          onSubmit={(job: BackgroundJob) => void window.sauron.saveProjectJobs(addingJobTo.id, [...(addingJobTo.backgroundJobs ?? []), job])}
           onClose={() => setAddingJobTo(null)}
         />
       )}

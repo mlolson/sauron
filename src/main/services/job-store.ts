@@ -15,6 +15,8 @@ export class JobStore {
     if (this.db) return
     this.db = new DatabaseSync(this.path)
     this.db.exec(`
+      -- Several processes write here (runners, ticks, hooks and the app); wait for a lock rather than failing at once.
+      PRAGMA busy_timeout = 5000;
       PRAGMA journal_mode = WAL;
       CREATE TABLE IF NOT EXISTS runs (
         id TEXT PRIMARY KEY,
@@ -44,6 +46,11 @@ export class JobStore {
     `)
   }
 
+  /** job_state is keyed per project and job: one template attached to two projects is two jobs. */
+  static key(projectId: string, jobId: string): string {
+    return `${projectId}/${jobId}`
+  }
+
   insert(run: JobRun): void {
     this.requireDb().prepare(`
       INSERT INTO runs (id, job_id, project_id, session_id, tmux_name, branch, worktree_path, base_commit, trigger,
@@ -54,7 +61,7 @@ export class JobStore {
     this.requireDb().prepare(`
       INSERT INTO job_state (job_id, last_run_at) VALUES (?, ?)
       ON CONFLICT(job_id) DO UPDATE SET last_run_at = excluded.last_run_at
-    `).run(run.jobId, run.startedAt)
+    `).run(JobStore.key(run.projectId, run.jobId), run.startedAt)
   }
 
   finish(id: string, result: { status: JobRunStatus; summary: string | null; exitCode: number; commitCount: number; finishedAt: string }): void {
@@ -77,9 +84,9 @@ export class JobStore {
     return rows.map(toRun)
   }
 
-  /** A job's runs, newest first. */
-  forJob(jobId: string, limit = 20): JobRun[] {
-    const rows = this.requireDb().prepare('SELECT * FROM runs WHERE job_id = ? ORDER BY started_at DESC LIMIT ?').all(jobId, limit) as unknown as Row[]
+  /** A job's runs in one project, newest first. */
+  forJob(projectId: string, jobId: string, limit = 20): JobRun[] {
+    const rows = this.requireDb().prepare('SELECT * FROM runs WHERE project_id = ? AND job_id = ? ORDER BY started_at DESC LIMIT ?').all(projectId, jobId, limit) as unknown as Row[]
     return rows.map(toRun)
   }
 
@@ -88,9 +95,9 @@ export class JobStore {
     return rows.map(toRun)
   }
 
-  /** The in-progress run for a job, if any: one run per job at a time. */
-  running(jobId: string): JobRun | null {
-    const row = this.requireDb().prepare("SELECT * FROM runs WHERE job_id = ? AND status = 'running' ORDER BY started_at DESC LIMIT 1").get(jobId) as unknown as Row | undefined
+  /** The in-progress run for a job in a project, if any: one run per job per project at a time. */
+  running(projectId: string, jobId: string): JobRun | null {
+    const row = this.requireDb().prepare("SELECT * FROM runs WHERE project_id = ? AND job_id = ? AND status = 'running' ORDER BY started_at DESC LIMIT 1").get(projectId, jobId) as unknown as Row | undefined
     return row ? toRun(row) : null
   }
 
@@ -98,10 +105,11 @@ export class JobStore {
    * Claims the next run of a job if none started since `cutoff`. Two hooks racing on a burst
    * of commits both ask; SQLite serialises the writes, so exactly one is told yes.
    */
-  claim(jobId: string, now: string, cutoff: string): boolean {
+  claim(projectId: string, jobId: string, now: string, cutoff: string): boolean {
     const db = this.requireDb()
-    db.prepare('INSERT OR IGNORE INTO job_state (job_id, last_run_at) VALUES (?, NULL)').run(jobId)
-    const result = db.prepare('UPDATE job_state SET last_run_at = ? WHERE job_id = ? AND (last_run_at IS NULL OR last_run_at < ?)').run(now, jobId, cutoff)
+    const key = JobStore.key(projectId, jobId)
+    db.prepare('INSERT OR IGNORE INTO job_state (job_id, last_run_at) VALUES (?, NULL)').run(key)
+    const result = db.prepare('UPDATE job_state SET last_run_at = ? WHERE job_id = ? AND (last_run_at IS NULL OR last_run_at < ?)').run(now, key, cutoff)
     return Number(result.changes) > 0
   }
 
@@ -110,8 +118,8 @@ export class JobStore {
     return Boolean(this.requireDb().prepare('SELECT 1 FROM runs WHERE session_id = ? LIMIT 1').get(sessionId))
   }
 
-  lastRunAt(jobId: string): string | null {
-    const row = this.requireDb().prepare('SELECT last_run_at FROM job_state WHERE job_id = ?').get(jobId) as { last_run_at: string | null } | undefined
+  lastRunAt(projectId: string, jobId: string): string | null {
+    const row = this.requireDb().prepare('SELECT last_run_at FROM job_state WHERE job_id = ?').get(JobStore.key(projectId, jobId)) as { last_run_at: string | null } | undefined
     return row?.last_run_at ?? null
   }
 

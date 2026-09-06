@@ -12,21 +12,28 @@ export interface Project {
   archived?: boolean
   /** Manual adjustments to the key documents list (project-relative paths). */
   keyDocuments?: { included: string[]; excluded: string[] }
-  /** Background agents configured for this project. See docs/BACKGROUND_AGENTS.md. */
-  backgroundJobs?: BackgroundJob[]
+  /** Background agents attached to this project, by template id. See docs/BACKGROUND_AGENTS.md. */
+  backgroundJobs?: ProjectJob[]
 }
+
+export type IntervalUnit = 'minutes' | 'hours' | 'days'
 
 export type JobTrigger =
   | { kind: 'manual' }
+  /** Every N minutes/hours/days, measured from when the last run began. */
+  | { kind: 'interval'; every: number; unit: IntervalUnit }
+  /** A cron expression, for schedules an interval cannot say (e.g. weekdays at 03:00). */
   | { kind: 'cron'; schedule: string }
   | { kind: 'commit'; cooldownMinutes: number }
 
-/** A background agent's configuration: which agent, what prompt, when. */
-export interface BackgroundJob {
+/**
+ * A background agent, defined once and attachable to any number of projects: which agent
+ * profile, what prompt, and a default trigger.
+ */
+export interface BackgroundAgentTemplate {
   /** Stable, filesystem-safe identifier; also the branch prefix `sauron/bg/<id>/`. */
   id: string
   name: string
-  enabled: boolean
   agentId: string
   /** Markdown prompt; relative paths resolve beside config.json. Supports {projectName}, {projectPath}, {branch}. */
   promptFile: string
@@ -39,6 +46,20 @@ export interface BackgroundJob {
    * safety story for an agent that ran unattended.
    */
   autoMerge?: boolean
+}
+
+/** A template attached to a project, optionally with its own trigger. */
+export interface ProjectJob {
+  template: string
+  enabled: boolean
+  trigger?: JobTrigger
+}
+
+/** A template as it applies to one project: what the runner, tick and hook work from. */
+export interface BackgroundJob extends BackgroundAgentTemplate {
+  enabled: boolean
+  /** True when the project overrides the template's trigger. */
+  customTrigger: boolean
 }
 
 export type JobRunStatus = 'running' | 'no_changes' | 'failed' | 'needs_review' | 'merged' | 'discarded'
@@ -114,6 +135,8 @@ export interface Preferences {
   worktreeBase: string
   terminalFontSize: number
   terminalScrollback: number
+  /** Background agents, defined once here and attached to projects. */
+  backgroundAgents: BackgroundAgentTemplate[]
 }
 
 export const defaultPreferences: Preferences = {
@@ -133,6 +156,7 @@ export const defaultPreferences: Preferences = {
   worktreeBase: '',
   terminalFontSize: 13,
   terminalScrollback: 50_000,
+  backgroundAgents: [],
 }
 
 export interface AppConfig {
@@ -384,8 +408,10 @@ export interface SauronApi {
    */
   handoffSession(sessionId: string, tool: AgentTool): Promise<void>
   // Background jobs (docs/BACKGROUND_AGENTS.md). Runs are started by the CLI runner; the app observes.
-  /** Replaces a project's background job list. */
-  saveProjectJobs(projectId: string, jobs: BackgroundJob[]): Promise<void>
+  /** Replaces the global list of background agent templates. */
+  saveBackgroundAgents(templates: BackgroundAgentTemplate[]): Promise<void>
+  /** Replaces a project's attached background agents. */
+  saveProjectJobs(projectId: string, jobs: ProjectJob[]): Promise<void>
   /** Starts a run now, through the CLI runner. Errors surface as banners. */
   runJob(projectId: string, jobId: string): Promise<void>
   /** Merges a reviewed run into the project's current branch, then removes its worktree and branch. */

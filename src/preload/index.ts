@@ -69,6 +69,7 @@ const api: SauronApi = {
   onTranscriptAppend: (sessionId, cb) => subscribe<TranscriptEntry[]>(`transcript:append:${sessionId}`, cb),
   handoffSession: (sessionId, tool) => ipcRenderer.invoke('handoffSession', sessionId, tool),
   lastCommitBySession: (projectId) => ipcRenderer.invoke('lastCommitBySession', projectId),
+  saveBackgroundAgents: (templates) => ipcRenderer.invoke('saveBackgroundAgents', templates),
   saveProjectJobs: (projectId, jobs) => ipcRenderer.invoke('saveProjectJobs', projectId, jobs),
   runJob: (projectId, jobId) => ipcRenderer.invoke('runJob', projectId, jobId),
   mergeRun: (runId) => ipcRenderer.invoke('mergeRun', runId),

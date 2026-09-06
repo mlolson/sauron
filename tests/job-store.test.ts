@@ -21,11 +21,16 @@ describe('JobStore', () => {
     const store = new JobStore(join(dir, 'jobs.sqlite')); store.open()
     store.insert(run())
     expect(store.get('r1')).toEqual(run())
-    expect(store.lastRunAt('cleanup')).toBe('2026-09-05T00:00:00.000Z')
-    expect(store.running('cleanup')?.id).toBe('r1')
+    expect(store.lastRunAt('p1', 'cleanup')).toBe('2026-09-05T00:00:00.000Z')
+    expect(store.running('p1', 'cleanup')?.id).toBe('r1')
+    // The same agent attached to another project is a separate job.
+    expect(store.running('p2', 'cleanup')).toBeNull()
+    expect(store.lastRunAt('p2', 'cleanup')).toBeNull()
     store.finish('r1', { status: 'needs_review', summary: 'Tidied.', exitCode: 0, commitCount: 2, finishedAt: '2026-09-05T00:05:00.000Z' })
     expect(store.get('r1')).toMatchObject({ status: 'needs_review', summary: 'Tidied.', exitCode: 0, commitCount: 2 })
-    expect(store.running('cleanup')).toBeNull()
+    expect(store.running('p1', 'cleanup')).toBeNull()
+    expect(store.forJob('p1', 'cleanup').map((r) => r.id)).toEqual(['r1'])
+    expect(store.forJob('p2', 'cleanup')).toEqual([])
     store.setStatus('r1', 'merged')
     expect(store.get('r1')?.status).toBe('merged')
     store.close()
@@ -53,12 +58,14 @@ describe('claims and run sessions', () => {
     const store = new JobStore(join(dir, 'jobs.sqlite')); store.open()
     const now = '2026-09-05T12:00:00.000Z'
     const cutoff = '2026-09-05T11:30:00.000Z'
-    expect(store.claim('cleanup', now, cutoff)).toBe(true)
+    expect(store.claim('p1', 'cleanup', now, cutoff)).toBe(true)
     // A second hook racing on the same burst is refused: last_run_at is now past the cutoff.
-    expect(store.claim('cleanup', now, cutoff)).toBe(false)
-    expect(store.lastRunAt('cleanup')).toBe(now)
+    expect(store.claim('p1', 'cleanup', now, cutoff)).toBe(false)
+    expect(store.lastRunAt('p1', 'cleanup')).toBe(now)
+    // Another project attaching the same agent claims independently.
+    expect(store.claim('p2', 'cleanup', now, cutoff)).toBe(true)
     // Once the cooldown has passed the cutoff moves, and a claim succeeds again.
-    expect(store.claim('cleanup', '2026-09-05T13:00:00.000Z', '2026-09-05T12:30:00.000Z')).toBe(true)
+    expect(store.claim('p1', 'cleanup', '2026-09-05T13:00:00.000Z', '2026-09-05T12:30:00.000Z')).toBe(true)
     store.close()
   })
 

@@ -494,7 +494,10 @@ button:disabled { opacity: 0.5; }
 .review-banner .run-summary { max-height: 4.5em; }
 .review-banner .commit-actions { flex: none; display: flex; gap: 6px; }
 .review-banner .commit-actions button { white-space: nowrap; }
-.job-dialog { width: 520px; }
+.job-dialog { width: 560px; }
+.interval-fields { display: flex; gap: 8px; align-items: center; }
+.interval-fields input.text { width: 90px; margin: 0; }
+.job-list.picker li button.link { padding: 2px 6px; }
 .job-dialog .pref-row select, .job-dialog .pref-row input.text { flex: 1; }
 .log-modal { width: min(900px, 90vw); }
 .run-log { max-height: 60vh; overflow: auto; font-size: 11.5px; line-height: 1.45; background: rgba(127,127,127,0.12); padding: 10px 12px; border-radius: 8px; white-space: pre-wrap; user-select: text; -webkit-user-select: text; }

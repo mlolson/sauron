@@ -10,6 +10,8 @@ export class AttributionStore {
     if (this.db) return
     this.db = new DatabaseSync(this.path)
     this.db.exec(`
+      -- Several processes write here (the app and post-commit hooks); wait for a lock rather than failing at once.
+      PRAGMA busy_timeout = 5000;
       PRAGMA journal_mode = WAL;
       CREATE TABLE IF NOT EXISTS commit_attributions (
         project_id TEXT NOT NULL,

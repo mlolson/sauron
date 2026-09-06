@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { cooldownCutoff, dueCommitJobs, dueCronJobs } from '../src/shared/triggers'
+import { cooldownCutoff, dueCommitJobs, dueCronJobs, dueIntervalJobs } from '../src/shared/triggers'
 import type { BackgroundJob } from '../src/shared/types'
 
 const job = (id: string, over: Partial<BackgroundJob> = {}): BackgroundJob => ({
-  id, name: id, enabled: true, agentId: 'claude', promptFile: 'p.md', trigger: { kind: 'commit', cooldownMinutes: 30 }, skipIfUnchanged: false, ...over,
+  id, name: id, enabled: true, agentId: 'claude', promptFile: 'p.md', trigger: { kind: 'commit', cooldownMinutes: 30 }, skipIfUnchanged: false, customTrigger: false, ...over,
 })
 const now = new Date('2026-09-05T12:00:00Z')
 const minutesAgo = (m: number) => new Date(now.getTime() - m * 60_000).toISOString()
@@ -61,5 +61,29 @@ describe('dueCronJobs', () => {
   it('skips disabled jobs, other kinds, and unparseable schedules', () => {
     const jobs = [cron('off', '* * * * *', { enabled: false }), cron('bad', 'not a schedule'), job('commit')]
     expect(dueCronJobs(jobs, { running: new Set(), lastRunAt: new Map() }, local)).toHaveLength(0)
+  })
+})
+
+describe('dueIntervalJobs', () => {
+  const daily = (id: string, over: Partial<BackgroundJob> = {}) => job(id, { trigger: { kind: 'interval', every: 1, unit: 'days' }, ...over })
+
+  it('runs a never-run interval job at once, with a cutoff one interval back', () => {
+    const due = dueIntervalJobs([daily('a')], { running: new Set(), lastRunAt: new Map() }, now)
+    expect(due.map((d) => d.job.id)).toEqual(['a'])
+    expect(due[0]!.cutoff.toISOString()).toBe('2026-09-04T12:00:00.000Z')
+  })
+
+  it('waits until the spacing has elapsed since the last run began', () => {
+    const state = (last: string) => ({ running: new Set<string>(), lastRunAt: new Map([['a', last]]) })
+    expect(dueIntervalJobs([daily('a')], state(minutesAgo(23 * 60)), now)).toHaveLength(0)
+    expect(dueIntervalJobs([daily('a')], state(minutesAgo(24 * 60)), now)).toHaveLength(1)
+    const hourly = job('h', { trigger: { kind: 'interval', every: 2, unit: 'hours' } })
+    expect(dueIntervalJobs([hourly], { running: new Set(), lastRunAt: new Map([['h', minutesAgo(119)]]) }, now)).toHaveLength(0)
+    expect(dueIntervalJobs([hourly], { running: new Set(), lastRunAt: new Map([['h', minutesAgo(120)]]) }, now)).toHaveLength(1)
+  })
+
+  it('ignores disabled, running and non-interval jobs', () => {
+    const jobs = [daily('off', { enabled: false }), daily('busy'), job('commit'), job('cron', { trigger: { kind: 'cron', schedule: '* * * * *' } }), daily('yes')]
+    expect(dueIntervalJobs(jobs, { running: new Set(['busy']), lastRunAt: new Map() }, now).map((d) => d.job.id)).toEqual(['yes'])
   })
 })

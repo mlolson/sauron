@@ -4,7 +4,7 @@ import { openSync, statSync, readFileSync, writeFileSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { AttributionStore } from './attribution-store'
-import { dueCommitJobs, cooldownCutoff, dueCronJobs } from '@shared/triggers'
+import { dueCommitJobs, cooldownCutoff, dueCronJobs, dueIntervalJobs } from '@shared/triggers'
 import { findExecutable } from './cli-resolver'
 import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises'
 import { join, resolve as resolvePath, isAbsolute } from 'node:path'
@@ -17,10 +17,10 @@ import { runCommand } from './command'
 import { ensureClaudeTrusts } from './claude-config'
 import { claudeHookSettings, codexNotifyConfig } from '@shared/hooks'
 import { claudeTranscriptPath } from '@shared/transcripts'
-import { expandArgs, expandJobPrompt, runBranchName, runOutcome, summarizeAgentOutput } from '@shared/jobs'
+import { expandArgs, expandJobPrompt, resolveProjectJobs, runBranchName, runOutcome, summarizeAgentOutput } from '@shared/jobs'
 import { shellQuote, tmuxSessionName, TMUX_OPTION_PROJECT, TMUX_OPTION_SESSION, TMUX_OPTION_TITLE, TMUX_OPTION_TOOL } from '@shared/tmux-args'
 import { defaultPreferences, SauronError } from '@shared/types'
-import type { AgentDefinition, AppConfig, BackgroundJob, JobRun, JobTrigger, Preferences, Project } from '@shared/types'
+import type { AgentDefinition, AppConfig, BackgroundAgentTemplate, BackgroundJob, JobRun, JobTrigger, Preferences, Project } from '@shared/types'
 import { homedir } from 'node:os'
 
 /**
@@ -38,6 +38,20 @@ interface Loaded {
   paths: AppPaths
   config: AppConfig
   agents: AgentDefinition[]
+  templates: BackgroundAgentTemplate[]
+}
+
+/** A project's background agents as they apply to it. */
+function jobsOf(loaded: Loaded, project: Project): BackgroundJob[] {
+  return resolveProjectJobs(project, loaded.templates)
+}
+
+/** What the trigger rules need to know about a project's jobs, read once per project. */
+function triggerState(store: JobStore, projectId: string, jobs: BackgroundJob[]) {
+  return {
+    running: new Set(jobs.filter((j) => store.running(projectId, j.id)).map((j) => j.id)),
+    lastRunAt: new Map(jobs.map((j) => [j.id, store.lastRunAt(projectId, j.id)]).filter((e): e is [string, string] => typeof e[1] === 'string')),
+  }
 }
 
 async function load(root: string): Promise<Loaded> {
@@ -50,14 +64,14 @@ async function load(root: string): Promise<Loaded> {
     const builtIn = defaultPreferences.agents.find((d) => d.id === agent.id)
     return agent.backgroundCommand || !builtIn?.backgroundCommand ? agent : { ...agent, backgroundCommand: builtIn.backgroundCommand }
   })
-  return { paths, config, agents }
+  return { paths, config, agents, templates: config.preferences?.backgroundAgents ?? [] }
 }
 
-function findJob(config: AppConfig, projectId: string, jobId: string): { project: Project; job: BackgroundJob } {
-  const project = config.projects.find((p) => p.id === projectId || p.name === projectId)
+function findJob(loaded: Loaded, projectId: string, jobId: string): { project: Project; job: BackgroundJob } {
+  const project = loaded.config.projects.find((p) => p.id === projectId || p.name === projectId)
   if (!project) throw new SauronError('invalid_state', `Unknown project ${projectId}.`)
-  const job = project.backgroundJobs?.find((j) => j.id === jobId)
-  if (!job) throw new SauronError('invalid_state', `Project ${project.name} has no background job "${jobId}".`)
+  const job = jobsOf(loaded, project).find((j) => j.id === jobId)
+  if (!job) throw new SauronError('invalid_state', `Project ${project.name} has no background agent "${jobId}" attached.`)
   return { project, job }
 }
 
@@ -83,8 +97,9 @@ async function notifyApp(socketPath: string): Promise<void> {
  * and a wrapper that reports back through `sauron job finish` when the agent exits.
  */
 export async function startRun(root: string, projectId: string, jobId: string, trigger: JobTrigger['kind']): Promise<JobRun> {
-  const { paths, config, agents } = await load(root)
-  const { project, job } = findJob(config, projectId, jobId)
+  const loaded = await load(root)
+  const { paths, config, agents } = loaded
+  const { project, job } = findJob(loaded, projectId, jobId)
   if (!job.enabled) throw new SauronError('invalid_state', `Job "${job.name}" is disabled.`)
   const profile = agents.find((a) => a.id === job.agentId)
   if (!profile?.backgroundCommand?.length) throw new SauronError('invalid_state', `Agent "${job.agentId}" has no background command configured.`)
@@ -92,7 +107,7 @@ export async function startRun(root: string, projectId: string, jobId: string, t
   const store = new JobStore(paths.jobsDatabase)
   store.open()
   try {
-    const running = store.running(job.id)
+    const running = store.running(project.id, job.id)
     if (running) throw new SauronError('invalid_state', `Job "${job.name}" is already running (started ${running.startedAt}).`)
 
     const overrides: Partial<Preferences['toolOverrides']> = config.preferences?.toolOverrides ?? {}
@@ -151,23 +166,6 @@ export async function startRun(root: string, projectId: string, jobId: string, t
 
     const tmux = new TmuxService(tools.tmux, sessionEnvironment(tools.path))
     const tmuxName = tmuxSessionName(`bg-${job.id}`, sessionId)
-    await tmux.newSession({
-      name: tmuxName,
-      workingDir: worktreePath,
-      environment: {
-        PATH: `${paths.binDir}:${tools.path}`,
-        TERM: 'xterm-256color',
-        COLORTERM: 'truecolor',
-        SAURON_SESSION_ID: sessionId,
-        SAURON_SOCKET: paths.socketFile,
-      },
-      command: ['/bin/bash', script],
-    })
-    await tmux.setOption(tmuxName, TMUX_OPTION_SESSION, sessionId)
-    await tmux.setOption(tmuxName, TMUX_OPTION_PROJECT, project.id)
-    await tmux.setOption(tmuxName, TMUX_OPTION_TITLE, `${job.name} (run)`)
-    await tmux.setOption(tmuxName, TMUX_OPTION_TOOL, profile.id)
-
     const run: JobRun = {
       id: runId,
       jobId: job.id,
@@ -186,12 +184,39 @@ export async function startRun(root: string, projectId: string, jobId: string, t
       logPath,
       commitCount: 0,
     }
+    // Recorded before the agent starts: a run that exists only as a tmux session would work
+    // unobserved and could never be reviewed. If the spawn fails the record says so.
     store.insert(run)
+    try {
+      await spawnAgent(tmux, tmuxName, script, worktreePath, sessionId, project.id, job.name, profile.id, paths, tools.path)
+    } catch (error) {
+      store.finish(runId, { status: 'failed', summary: `Could not start the agent: ${(error as Error).message}`, exitCode: -1, commitCount: 0, finishedAt: new Date().toISOString() })
+      throw error
+    }
     await notifyApp(paths.socketFile)
     return run
   } finally {
     store.close()
   }
+}
+
+async function spawnAgent(tmux: TmuxService, tmuxName: string, script: string, worktreePath: string, sessionId: string, projectId: string, jobName: string, toolId: string, paths: AppPaths, path: string): Promise<void> {
+  await tmux.newSession({
+    name: tmuxName,
+    workingDir: worktreePath,
+    environment: {
+      PATH: `${paths.binDir}:${path}`,
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+      SAURON_SESSION_ID: sessionId,
+      SAURON_SOCKET: paths.socketFile,
+    },
+    command: ['/bin/bash', script],
+  })
+  await tmux.setOption(tmuxName, TMUX_OPTION_SESSION, sessionId)
+  await tmux.setOption(tmuxName, TMUX_OPTION_PROJECT, projectId)
+  await tmux.setOption(tmuxName, TMUX_OPTION_TITLE, `${jobName} (run)`)
+  await tmux.setOption(tmuxName, TMUX_OPTION_TOOL, toolId)
 }
 
 /**
@@ -217,7 +242,8 @@ export async function mergeRunIntoProject(git: string, worktreeBase: string, pro
 
 /** Records how a run ended. Called by the wrapper script when the agent exits. */
 export async function finishRun(root: string, runId: string, exitCode: number): Promise<JobRun> {
-  const { paths, config, agents } = await load(root)
+  const loaded = await load(root)
+  const { paths, config, agents } = loaded
   const store = new JobStore(paths.jobsDatabase)
   store.open()
   try {
@@ -240,7 +266,7 @@ export async function finishRun(root: string, runId: string, exitCode: number): 
     let summary = summarizeAgentOutput(output) || null
     store.finish(runId, { status, summary, exitCode, commitCount, finishedAt: new Date().toISOString() })
     const project = config.projects.find((p) => p.id === run.projectId)
-    const job = project?.backgroundJobs?.find((j) => j.id === run.jobId)
+    const job = project ? jobsOf(loaded, project).find((j) => j.id === run.jobId) : undefined
     if (status === 'needs_review' && project && job?.autoMerge) {
       const result = await mergeRunIntoProject(tools.git, config.preferences?.worktreeBase || paths.worktreesDir, project, run, job.name)
       if (result.merged) {
@@ -283,7 +309,8 @@ async function projectForDirectory(config: AppConfig, cwd: string): Promise<{ pr
  * quick and quiet — the commit has already happened and nothing here may disturb it.
  */
 export async function handleCommit(root: string, input: { hash: string; cwd: string; session: string | null; socketPath: string }): Promise<{ started: string[] }> {
-  const { paths, config } = await load(root)
+  const loaded = await load(root)
+  const { paths, config } = loaded
   const located = await projectForDirectory(config, input.cwd)
   if (!located) return { started: [] }
   const { project, isMainCheckout } = located
@@ -310,16 +337,13 @@ export async function handleCommit(root: string, input: { hash: string; cwd: str
   store.open()
   try {
     if (input.session && store.isRunSession(input.session)) return { started: [] }
-    const jobs = project.backgroundJobs ?? []
+    const jobs = jobsOf(loaded, project)
     const now = new Date()
-    const state = {
-      running: new Set(jobs.filter((j) => store.running(j.id)).map((j) => j.id)),
-      lastRunAt: new Map(jobs.map((j) => [j.id, store.lastRunAt(j.id)]).filter((e): e is [string, string] => typeof e[1] === 'string')),
-    }
+    const state = triggerState(store, project.id, jobs)
     const started: string[] = []
     for (const job of dueCommitJobs(jobs, state, now)) {
       if (job.trigger.kind !== 'commit') continue
-      if (!store.claim(job.id, now.toISOString(), cooldownCutoff({ ...job, trigger: job.trigger }, now))) continue
+      if (!store.claim(project.id, job.id, now.toISOString(), cooldownCutoff({ ...job, trigger: job.trigger }, now))) continue
       spawnRunner(paths, project.id, job.id, 'commit')
       started.push(job.id)
     }
@@ -377,7 +401,8 @@ async function sendToApp(socketPath: string, payload: Record<string, unknown>): 
  * SQLite reads, and no shell.
  */
 export async function tick(root: string, now = new Date()): Promise<{ started: string[]; skipped: string[] }> {
-  const { paths, config } = await load(root)
+  const loaded = await load(root)
+  const { paths, config } = loaded
   trimLog(join(paths.jobsDir, 'tick.log'))
   const store = new JobStore(paths.jobsDatabase)
   store.open()
@@ -386,21 +411,23 @@ export async function tick(root: string, now = new Date()): Promise<{ started: s
   try {
     for (const project of config.projects) {
       if (project.archived) continue
-      const jobs = project.backgroundJobs ?? []
-      const state = {
-        running: new Set(jobs.filter((j) => store.running(j.id)).map((j) => j.id)),
-        lastRunAt: new Map(jobs.map((j) => [j.id, store.lastRunAt(j.id)]).filter((e): e is [string, string] => typeof e[1] === 'string')),
-      }
-      for (const { job, scheduledAt } of dueCronJobs(jobs, state, now)) {
-        // The claim's cutoff is the scheduled minute itself: it succeeds only if no run
-        // started at or after it, which is exactly "once per slot".
-        if (!store.claim(job.id, now.toISOString(), scheduledAt.toISOString())) continue
+      const jobs = jobsOf(loaded, project)
+      const state = triggerState(store, project.id, jobs)
+      // Cron: the claim's cutoff is the scheduled minute, so a slot starts at most one run.
+      // Interval: the cutoff is now minus the spacing, so the claim enforces the spacing too.
+      const due = [
+        ...dueCronJobs(jobs, state, now).map(({ job, scheduledAt }) => ({ job, cutoff: scheduledAt })),
+        ...dueIntervalJobs(jobs, state, now),
+      ]
+      for (const { job, cutoff } of due) {
+        const scheduledAt = cutoff
+        if (!store.claim(project.id, job.id, now.toISOString(), cutoff.toISOString())) continue
         if (job.skipIfUnchanged && !(await changedSinceLastRun(config, store, project, job.id))) {
           skipped.push(`${project.name}/${job.id}`)
           console.log(`${now.toISOString()} skipped ${project.name}/${job.id}: no commits since its last run`)
           continue
         }
-        spawnRunner(paths, project.id, job.id, 'cron')
+        spawnRunner(paths, project.id, job.id, job.trigger.kind)
         started.push(`${project.name}/${job.id}`)
         console.log(`${now.toISOString()} started ${project.name}/${job.id} for ${scheduledAt.toISOString()}`)
       }
@@ -428,7 +455,7 @@ function trimLog(path: string, maxBytes = 512 * 1024, keepBytes = 64 * 1024): vo
 
 /** Whether the main checkout's HEAD moved since the job's last run began. Never run: yes. */
 async function changedSinceLastRun(config: AppConfig, store: JobStore, project: Project, jobId: string): Promise<boolean> {
-  const last = store.forJob(jobId, 1)[0]
+  const last = store.forJob(project.id, jobId, 1)[0]
   if (!last) return true
   // launchd's PATH is minimal; find git the way the app does, without a login shell.
   const git = config.preferences?.toolOverrides?.git || findExecutable('git', `${process.env.PATH ?? ''}:/opt/homebrew/bin:/usr/local/bin:/usr/bin`)

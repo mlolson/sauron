@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { describeTrigger } from '@shared/jobs'
 import type { Preferences, Project, ToolPaths } from '@shared/types'
 
 interface Props { preferences: Preferences; toolPaths: ToolPaths | null; projects: Project[]; schedulerLoaded: boolean | null; onClose: () => void }
@@ -127,16 +128,12 @@ export function PreferencesView({ preferences, toolPaths, projects, schedulerLoa
             <section>
               <h3>Background agents</h3>
               <label className="pref-row"><span>Scheduler (launchd, every minute)</span><input readOnly value={schedulerLoaded === null ? 'not checked yet' : schedulerLoaded ? 'loaded — cron jobs run with the app closed' : 'not loaded; see the error banner'} /></label>
-              {projects.every((p) => !(p.backgroundJobs?.length)) ? (
-                <p className="muted small">None configured. Add them from a project's page or context menu.</p>
-              ) : projects.filter((p) => p.backgroundJobs?.length).map((p) => (
-                <div key={p.id} className="pref-group">
-                  <h4>{p.name}</h4>
-                  {p.backgroundJobs!.map((j) => (
-                    <label key={j.id} className="pref-row"><span>{j.name}{j.enabled ? '' : ' (disabled)'}</span><input readOnly value={`${j.agentId} · ${j.trigger.kind === 'cron' ? j.trigger.schedule : j.trigger.kind === 'commit' ? `after commits, ${j.trigger.cooldownMinutes} min cooldown` : 'manual'}${j.autoMerge ? ' · auto-merge' : ''} · ${j.promptFile}`} /></label>
-                  ))}
-                </div>
-              ))}
+              {preferences.backgroundAgents.length === 0 ? (
+                <p className="muted small">None defined. Create them from a project's Add background agent… button or context menu.</p>
+              ) : preferences.backgroundAgents.map((t) => {
+                const attachedTo = projects.filter((p) => p.backgroundJobs?.some((j) => j.template === t.id)).map((p) => p.name)
+                return <label key={t.id} className="pref-row"><span>{t.name}</span><input readOnly value={`${t.agentId} · ${describeTrigger(t)}${t.autoMerge ? ' · auto-merge' : ''} · ${attachedTo.length ? `attached to ${attachedTo.join(', ')}` : 'not attached'}`} /></label>
+              })}
             </section>
             <section><h3>Diagnostics</h3><button onClick={() => window.sauron.revealLogs()}>Reveal Logs</button></section>
           </>

@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
-import type { AgentDefinition, AgentTool, AppError, BackgroundJob, JobRun, LaunchOptions, Preferences, Project, RecentCommit, Session, SelectionTarget, SessionCommit, Snapshot, TmuxClient, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
+import type { AgentDefinition, AgentTool, AppError, BackgroundAgentTemplate, BackgroundJob, JobRun, JobTrigger, LaunchOptions, Preferences, Project, ProjectJob, RecentCommit, Session, SelectionTarget, SessionCommit, Snapshot, TmuxClient, ToolPaths, WorktreeRemovalCheck } from '@shared/types'
 import { defaultPreferences } from '@shared/types'
 import { compareSessions } from '@shared/session-order'
 import { claudeHookSettings, codexNotifyConfig, looksLikeApprovalPrompt, transitionForHook, type HookEvent } from '@shared/hooks'
@@ -38,6 +38,8 @@ import { PtyService } from './services/pty'
 import { AttributionStore } from './services/attribution-store'
 import { JobStore } from './services/job-store'
 import { mergeRunIntoProject, runTranscriptPath } from './services/job-runner'
+import { migrateLegacyProjectJobs, resolveProjectJobs } from '@shared/jobs'
+import { parseCron } from '@shared/cron'
 import { installTick } from './services/launchd'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -208,7 +210,12 @@ export class AppState extends EventEmitter<StateEvents> {
         toolOverrides: { ...defaultPreferences.toolOverrides, ...savedPreferences?.toolOverrides },
       }
       await this.ensureSummaryPromptFile(legacySummaryPrompt)
-      if (config.version < CONFIG_VERSION) this.persistConfig()
+      const legacyJobs = migrateLegacyProjectJobs(this.projects, this.preferences.backgroundAgents)
+      if (legacyJobs.migrated > 0) {
+        this.preferences.backgroundAgents = legacyJobs.templates
+        console.log(`Moved ${legacyJobs.migrated} per-project background job(s) into shared background agents.`)
+      }
+      if (config.version < CONFIG_VERSION || legacyJobs.migrated > 0) this.persistConfig()
       this.notifier.muted = this.preferences.notificationsMuted
       const file = await this.persistence.loadSessions()
       this.sessions = file.sessions
@@ -963,7 +970,7 @@ export class AppState extends EventEmitter<StateEvents> {
       const project = this.project(projectId)
       if (!project) continue
       for (const run of list) {
-        const job = project.backgroundJobs?.find((j) => j.id === run.jobId)
+        const job = this.projectJobs(project).find((j) => j.id === run.jobId)
         const tool = job?.agentId ?? 'shell'
         const existing = this.sessions.find((s) => s.id === run.sessionId)
         const finished = run.status !== 'running'
@@ -998,16 +1005,34 @@ export class AppState extends EventEmitter<StateEvents> {
     this.changed()
   }
 
-  async saveProjectJobs(projectId: string, jobs: BackgroundJob[]): Promise<void> {
+  /** The background agents that apply to a project, with its trigger overrides applied. */
+  projectJobs(project: Project): BackgroundJob[] {
+    return resolveProjectJobs(project, this.preferences.backgroundAgents)
+  }
+
+  async saveBackgroundAgents(templates: BackgroundAgentTemplate[]): Promise<void> {
+    const ids = new Set<string>()
+    for (const t of templates) {
+      if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(t.id)) throw new SauronError('invalid_state', `Id "${t.id}" must be lowercase letters, digits and hyphens.`)
+      if (ids.has(t.id)) throw new SauronError('invalid_state', `Two background agents share the id "${t.id}".`)
+      ids.add(t.id)
+      if (!t.name.trim()) throw new SauronError('invalid_state', 'A background agent needs a name.')
+      if (!this.agentDefinition(t.agentId)?.backgroundCommand?.length) throw new SauronError('invalid_state', `Agent profile "${t.agentId}" has no background command, so it cannot run in the background.`)
+      if (!t.promptFile.trim()) throw new SauronError('invalid_state', `"${t.name}" needs a prompt file.`)
+      validateTrigger(t.trigger)
+    }
+    this.setPreferences({ backgroundAgents: templates })
+  }
+
+  async saveProjectJobs(projectId: string, jobs: ProjectJob[]): Promise<void> {
     const project = this.project(projectId)
     if (!project) throw new SauronError('invalid_state', `Unknown project ${projectId}`)
-    const ids = new Set<string>()
+    const seen = new Set<string>()
     for (const job of jobs) {
-      if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(job.id)) throw new SauronError('invalid_state', `Job id "${job.id}" must be lowercase letters, digits and hyphens.`)
-      if (ids.has(job.id)) throw new SauronError('invalid_state', `Two jobs share the id "${job.id}".`)
-      ids.add(job.id)
-      if (!this.agentDefinition(job.agentId)?.backgroundCommand?.length) throw new SauronError('invalid_state', `Agent "${job.agentId}" has no background command, so it cannot run jobs.`)
-      if (!job.promptFile.trim()) throw new SauronError('invalid_state', `Job "${job.name}" needs a prompt file.`)
+      if (!this.preferences.backgroundAgents.some((t) => t.id === job.template)) throw new SauronError('invalid_state', `No background agent with id "${job.template}" exists.`)
+      if (seen.has(job.template)) throw new SauronError('invalid_state', `"${job.template}" is attached twice.`)
+      seen.add(job.template)
+      if (job.trigger) validateTrigger(job.trigger)
     }
     project.backgroundJobs = jobs
     this.persistConfig()
@@ -1045,7 +1070,7 @@ export class AppState extends EventEmitter<StateEvents> {
   async mergeRun(runId: string): Promise<void> {
     const { run, project, git } = this.runContext(runId)
     if (run.status !== 'needs_review') throw new SauronError('invalid_state', `Run is ${run.status.replace('_', ' ')}, not awaiting review.`)
-    const job = project.backgroundJobs?.find((j) => j.id === run.jobId)
+    const job = this.projectJobs(project).find((j) => j.id === run.jobId)
     const result = await mergeRunIntoProject(git, this.preferences.worktreeBase || this.paths.worktreesDir, project, run, job?.name ?? run.jobId)
     if (!result.merged) throw new SauronError('command_failed', `Not merged: ${result.reason}. Open the run in a session to resolve it, then merge again.`)
     this.jobStore.setStatus(run.id, 'merged')
@@ -1067,7 +1092,7 @@ export class AppState extends EventEmitter<StateEvents> {
   /** An interactive agent in the run's worktree, to continue or to resolve a conflict. */
   async openRun(runId: string, prompt?: string): Promise<void> {
     const { run, project } = this.runContext(runId)
-    const job = project.backgroundJobs?.find((j) => j.id === run.jobId)
+    const job = this.projectJobs(project).find((j) => j.id === run.jobId)
     const tool = job?.agentId ?? this.preferences.supervisorAgentId
     await this.launchSession(project.id, tool, { title: `${job?.name ?? run.jobId} (review)`, worktreePath: run.worktreePath, prompt })
   }
@@ -1843,5 +1868,18 @@ export class AppState extends EventEmitter<StateEvents> {
     this.attributionStore.close()
     this.jobStore.close()
     await this.persistence.flush()
+  }
+}
+
+/** Rejects a trigger the tick could not honour, before it is saved. */
+function validateTrigger(trigger: JobTrigger): void {
+  if (trigger.kind === 'interval' && (!Number.isInteger(trigger.every) || trigger.every < 1)) throw new SauronError('invalid_state', 'An interval needs a whole number of at least 1.')
+  if (trigger.kind === 'commit' && (!Number.isFinite(trigger.cooldownMinutes) || trigger.cooldownMinutes < 0)) throw new SauronError('invalid_state', 'A cooldown cannot be negative.')
+  if (trigger.kind === 'cron') {
+    try {
+      parseCron(trigger.schedule)
+    } catch (error) {
+      throw new SauronError('invalid_state', (error as Error).message)
+    }
   }
 }

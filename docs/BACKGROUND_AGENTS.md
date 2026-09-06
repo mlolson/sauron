@@ -11,8 +11,8 @@ Status: Agreed
 
 A background agent is an agent that runs a task for a project without anyone watching it:
 code cleanup, documentation cleanup, a security review, dependency updates. It is
-configured per project with a trigger — a cron schedule, or "after a commit, with a
-cooldown" — and its output is a branch that the user reviews and either merges or discards.
+defined once, attached to projects with a trigger — every N hours or days, a cron
+schedule, or "after a commit, with a cooldown" — and its output is a branch that the user reviews and either merges or discards.
 
 Two properties shape the whole design:
 
@@ -25,7 +25,8 @@ Two properties shape the whole design:
 
 - Configure background agents per project, in Preferences and from the project's context
   menu and overview page.
-- Triggers: cron schedule; after a commit with a cooldown; run now.
+- Triggers: an interval (every N minutes/hours/days); a cron schedule; after a commit with a
+  cooldown; run now.
 - Runs happen with the app closed.
 - Every run's output lands on its own branch in its own worktree.
 - A review queue: see what a run produced, read the agent's summary, inspect commits and
@@ -43,7 +44,9 @@ Two properties shape the whole design:
 
 ## 2. Concepts
 
-**Job** — the configuration: which agent, what prompt, what trigger. Belongs to a project.
+**Background agent** — defined once: which agent profile, what prompt, a default trigger.
+
+**Job** — a background agent attached to a project, with that project's trigger.
 
 **Run** — one execution of a job: a worktree, a branch, a session, and a result.
 
@@ -136,7 +139,7 @@ jobs_runs (
   summary,                -- the agent's final message
   exit_code, log_path
 )
-job_state (job_id, last_run_at, last_trigger_commit)
+job_state (job_id, last_run_at)   -- job_id is "<project id>/<agent id>": one row per attachment
 ```
 
 The app reconciles runs into its session list on load and on change, the way it already
@@ -237,39 +240,56 @@ project, with a distinct glyph, so they can be watched while in progress.
 
 ## 7. Configuration
 
-Per project, in `config.json`, editable in Preferences:
+A background agent is defined **once**, in `preferences.backgroundAgents`, and **attached** to
+any number of projects. Each attachment is enabled or disabled on its own and may override the
+agent's default trigger; a template attached to two projects is two independent jobs with
+their own run history and spacing. Editable in the app from **Add background agent…** on a
+project (a picker over the defined agents, with **Create background agent…** for the CRUD
+flow) and per project on its page (**Trigger…**, Enable/Disable, Detach).
 
 ```json
 {
-  "backgroundJobs": [
+  "preferences": {
+    "backgroundAgents": [
+      {
+        "id": "security-review",
+        "name": "Security review",
+        "agentId": "claude",
+        "promptFile": "jobs/security-review.md",
+        "trigger": { "kind": "interval", "every": 1, "unit": "days" },
+        "skipIfUnchanged": true
+      },
+      {
+        "id": "docs-cleanup",
+        "name": "Documentation cleanup",
+        "agentId": "codex",
+        "promptFile": "jobs/docs-cleanup.md",
+        "trigger": { "kind": "commit", "cooldownMinutes": 30 },
+        "skipIfUnchanged": false
+      }
+    ]
+  },
+  "projects": [
     {
-      "id": "security-review",
-      "name": "Security review",
-      "enabled": true,
-      "agentId": "claude",
-      "promptFile": "jobs/security-review.md",
-      "trigger": { "kind": "cron", "schedule": "0 3 * * *" },
-      "skipIfUnchanged": true
-    },
-    {
-      "id": "docs-cleanup",
-      "name": "Documentation cleanup",
-      "enabled": true,
-      "agentId": "codex",
-      "promptFile": "jobs/docs-cleanup.md",
-      "trigger": { "kind": "commit", "cooldownMinutes": 30 },
-      "skipIfUnchanged": false
+      "name": "sauron",
+      "backgroundJobs": [
+        { "template": "security-review", "enabled": true },
+        { "template": "docs-cleanup", "enabled": true, "trigger": { "kind": "cron", "schedule": "0 3 * * 1-5" } }
+      ]
     }
   ]
 }
 ```
 
+Triggers: `manual`; `interval` (every N minutes, hours or days, counted from when the last run
+began, first run as soon as it is attached; evaluated by the tick); `cron` (a five-field
+expression, for schedules an interval cannot say); `commit` (with a cooldown). Configs from
+before agents were shared, with full job definitions inside projects, are hoisted into
+templates on the next app load.
+
 Prompts are Markdown files, like the supervisor's summary prompt, with the same placeholder
 convention (`{projectName}`, `{projectPath}`, `{branch}`), so a long set of instructions is a
 file rather than a JSON string. Relative paths resolve beside `config.json`.
-
-Entry points for creating a job: Preferences; **Add background agent…** on the project's
-context menu; the same on the project overview page.
 
 ---
 

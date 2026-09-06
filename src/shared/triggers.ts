@@ -1,5 +1,6 @@
 import type { BackgroundJob } from './types'
 import { parseCron, previousFireTime } from './cron'
+import { intervalMs } from './jobs'
 
 /** Pure trigger evaluation, shared by the hook path and tested without git or a database. */
 
@@ -68,6 +69,23 @@ export function dueCronJobs(jobs: BackgroundJob[], state: TriggerState, now: Dat
     if (!scheduledAt) continue
     if (last && new Date(last).getTime() >= scheduledAt.getTime()) continue
     due.push({ job, scheduledAt })
+  }
+  return due
+}
+
+/**
+ * Interval jobs whose spacing has elapsed since their last run began. A job that has never
+ * run is due at once: "every day" starting now is what someone attaching it expects. The
+ * instant returned is the claim's cutoff.
+ */
+export function dueIntervalJobs(jobs: BackgroundJob[], state: TriggerState, now: Date): { job: BackgroundJob; cutoff: Date }[] {
+  const due: { job: BackgroundJob; cutoff: Date }[] = []
+  for (const job of jobs) {
+    if (!job.enabled || job.trigger.kind !== 'interval' || state.running.has(job.id)) continue
+    const cutoff = new Date(now.getTime() - intervalMs(job.trigger))
+    const last = state.lastRunAt.get(job.id)
+    if (last && new Date(last).getTime() > cutoff.getTime()) continue
+    due.push({ job, cutoff })
   }
   return due
 }
