@@ -133,7 +133,7 @@ export function PreferencesView({ preferences, toolPaths, projects, schedulerLoa
                 <div key={p.id} className="pref-group">
                   <h4>{p.name}</h4>
                   {p.backgroundJobs!.map((j) => (
-                    <label key={j.id} className="pref-row"><span>{j.name}{j.enabled ? '' : ' (disabled)'}</span><input readOnly value={`${j.agentId} · ${j.trigger.kind === 'cron' ? j.trigger.schedule : j.trigger.kind === 'commit' ? `after commits, ${j.trigger.cooldownMinutes} min cooldown` : 'manual'} · ${j.promptFile}`} /></label>
+                    <label key={j.id} className="pref-row"><span>{j.name}{j.enabled ? '' : ' (disabled)'}</span><input readOnly value={`${j.agentId} · ${j.trigger.kind === 'cron' ? j.trigger.schedule : j.trigger.kind === 'commit' ? `after commits, ${j.trigger.cooldownMinutes} min cooldown` : 'manual'}${j.autoMerge ? ' · auto-merge' : ''} · ${j.promptFile}`} /></label>
                   ))}
                 </div>
               ))}

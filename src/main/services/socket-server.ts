@@ -107,6 +107,9 @@ export class SocketServer {
           .map(({ id, projectId, tool, kind, displayName, tmuxName, state: st, workingDir, cliSessionId, transcriptPath, lastActivityAt }) => ({ id, projectId, tool, kind, displayName, tmuxName, state: st, workingDir, cliSessionId, transcriptPath, lastActivityAt }))
       }
       case 'jobs.changed': {
+        // A finished run may have created, merged away, or removed a worktree; refresh those
+        // quietly first, then let refreshRuns broadcast the whole snapshot once.
+        await Promise.all(state.projects.map((p) => state.refreshWorktrees(p.id, false)))
         await state.refreshRuns()
         return null
       }

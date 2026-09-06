@@ -20,6 +20,7 @@ export function JobDialog({ agents, existing, taken, onSubmit, onClose }: {
   const [cooldown, setCooldown] = useState(existing?.trigger.kind === 'commit' ? existing.trigger.cooldownMinutes : 30)
   const [enabled, setEnabled] = useState(existing?.enabled ?? true)
   const [skipIfUnchanged, setSkipIfUnchanged] = useState(existing?.skipIfUnchanged ?? true)
+  const [autoMerge, setAutoMerge] = useState(existing?.autoMerge ?? false)
   const first = useRef<HTMLInputElement>(null)
   useEffect(() => first.current?.focus(), [])
 
@@ -29,7 +30,7 @@ export function JobDialog({ agents, existing, taken, onSubmit, onClose }: {
   const submit = () => {
     if (!valid) return
     const trigger: JobTrigger = kind === 'cron' ? { kind, schedule: schedule.trim() } : kind === 'commit' ? { kind, cooldownMinutes: Math.max(0, cooldown) } : { kind }
-    onSubmit({ id, name: name.trim(), enabled, agentId, promptFile: promptFile.trim(), trigger, skipIfUnchanged })
+    onSubmit({ id, name: name.trim(), enabled, agentId, promptFile: promptFile.trim(), trigger, skipIfUnchanged, autoMerge })
     onClose()
   }
 
@@ -63,6 +64,13 @@ export function JobDialog({ agents, existing, taken, onSubmit, onClose }: {
         {kind !== 'manual' && <p className="muted small">Scheduled and commit triggers arrive in a later phase; the job can be run now from the project page.</p>}
         <label className="pref-row check"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /><span>Enabled</span></label>
         <label className="pref-row check"><input type="checkbox" checked={skipIfUnchanged} onChange={(e) => setSkipIfUnchanged(e.target.checked)} /><span>Skip when the project has no new commits since the last run</span></label>
+        <label className="pref-row check"><input type="checkbox" checked={autoMerge} onChange={(e) => setAutoMerge(e.target.checked)} /><span>Merge automatically, without review</span></label>
+        {autoMerge && (
+          <p className="muted small">
+            Only when the merge is clean and the main checkout has no uncommitted changes; otherwise the run waits in Review as usual. The
+            agent ran unattended with permission prompts bypassed — enable this only for jobs whose output you would accept unread.
+          </p>
+        )}
         <div className="actions right">
           <button onClick={onClose}>Cancel</button>
           <button className="primary" disabled={!valid} onClick={submit}>{existing ? 'Save' : 'Add'}</button>

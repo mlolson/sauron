@@ -133,6 +133,7 @@ button.icon-button { width: 26px; height: 26px; padding: 0; font-size: 16px; lin
   padding: 1px 7px;
 }
 .badge.waiting { background: var(--orange); color: #000; font-weight: 600; }
+.badge.review { background: var(--accent); color: #fff; font-weight: 600; }
 .sidebar-toolbar { gap: 6px; }
 .icon-button.muted { opacity: 0.6; }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }

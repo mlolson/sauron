@@ -37,7 +37,7 @@ import { TmuxService } from './services/tmux'
 import { PtyService } from './services/pty'
 import { AttributionStore } from './services/attribution-store'
 import { JobStore } from './services/job-store'
-import { runTranscriptPath } from './services/job-runner'
+import { mergeRunIntoProject, runTranscriptPath } from './services/job-runner'
 import { installTick } from './services/launchd'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -1043,19 +1043,11 @@ export class AppState extends EventEmitter<StateEvents> {
    * working tree, so a conflict is reported rather than left half-applied.
    */
   async mergeRun(runId: string): Promise<void> {
-    const { run, project, git, worktrees } = this.runContext(runId)
+    const { run, project, git } = this.runContext(runId)
     if (run.status !== 'needs_review') throw new SauronError('invalid_state', `Run is ${run.status.replace('_', ' ')}, not awaiting review.`)
     const job = project.backgroundJobs?.find((j) => j.id === run.jobId)
-    const head = await runCommand(git, ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: project.path })
-    const current = head.code === 0 ? head.stdout.trim() : 'HEAD'
-    const probe = await runCommand(git, ['merge-tree', '--write-tree', current, run.branch], { cwd: project.path })
-    if (probe.code !== 0) {
-      throw new SauronError('command_failed', `${run.branch} conflicts with ${current}. Open the run and resolve it in a session, then merge again.`)
-    }
-    const merge = await runCommand(git, ['merge', '--no-ff', '-m', `Merge background run: ${job?.name ?? run.jobId}`, run.branch], { cwd: project.path })
-    if (merge.code !== 0) throw new SauronError('command_failed', `git merge: ${merge.stderr.trim() || merge.stdout.trim()}`)
-    await worktrees.remove(project.path, run.worktreePath, true).catch((error) => this.report(error, { projectId: project.id }))
-    await runCommand(git, ['branch', '-d', run.branch], { cwd: project.path })
+    const result = await mergeRunIntoProject(git, this.preferences.worktreeBase || this.paths.worktreesDir, project, run, job?.name ?? run.jobId)
+    if (!result.merged) throw new SauronError('command_failed', `Not merged: ${result.reason}. Open the run in a session to resolve it, then merge again.`)
     this.jobStore.setStatus(run.id, 'merged')
     await this.refreshRuns()
     await this.refreshWorktrees(project.id)

@@ -1,6 +1,6 @@
 # Sauron — Background Agents and the Review Queue
 
-Version: 0.4 (phases 1–3 shipped)
+Version: 1.0 (all four phases shipped)
 Date: 2026-09-05
 Owner: Matt Olson
 Status: Agreed
@@ -34,7 +34,7 @@ Two properties shape the whole design:
 
 ### 1.2 Non-goals for v1
 
-- Auto-merge, even for "safe" jobs. Everything goes through review.
+- Auto-merge by default. It exists as a per-job opt-in (§6.4), off unless switched on.
 - A cross-project review inbox. Review lives on the project page.
 - Notifications when a run finishes. Notifications are a separate, undesigned feature.
 - Running background agents on another machine.
@@ -218,6 +218,15 @@ the agent's own summary of what it did and the run's log. Actions:
 The main checkout may have moved between the run starting and the review; that is the
 conflict case above, not a separate state.
 
+### 6.4 Auto-merge, opted into per job
+
+A job may be marked `autoMerge`. When such a run finishes with commits, the runner itself
+attempts the merge — the same code the Merge button uses — and only if it is clean *and*
+the main checkout has no uncommitted changes. Anything else leaves the run in Review with a
+note saying why it was not merged. The job editor spells out the trade: the agent ran
+unattended with permission prompts bypassed, so this is for jobs whose output you would
+accept unread.
+
 ### 6.3 Where it appears
 
 A **Review** section on the project overview page listing runs awaiting a decision, and a
@@ -286,7 +295,10 @@ context menu; the same on the project overview page.
 3. **Cron**, via the launchd tick. — *Shipped; skip-if-unchanged with it, verified: the
    tick started a job, skipped it the next minute with nothing changed, and started it
    again after a commit.*
-4. Badges, re-run, and — only if wanted — an opt-in auto-merge for specific jobs.
+4. Badges, re-run, and an opt-in auto-merge for specific jobs. — *Shipped: a badge on the
+   project's sidebar row counts runs awaiting review; Re-run appears wherever a run is
+   listed; auto-merge is per job and verified to land a clean run on main unattended, and to
+   refuse a conflicting one and a dirty checkout.*
 
 ---
 

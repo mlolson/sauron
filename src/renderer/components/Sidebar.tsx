@@ -187,6 +187,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
           const externalOpen = expandedExternal.has(project.id)
           const alive = managed.length
           const waiting = [...managed, ...externals].filter((s) => s.state === 'waitingForInput').length
+          const awaitingReview = (snapshot.runs[project.id] ?? []).filter((r) => r.status === 'needs_review').length
           return (
             <div key={project.id}>
               <Row
@@ -217,6 +218,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                 {(snapshot.refresh.inProgress === project.id || snapshot.refresh.queued.includes(project.id)) && (
                   <span className="spinner" title={snapshot.refresh.inProgress === project.id ? 'Refreshing summary' : 'Refresh queued'} />
                 )}
+                {awaitingReview > 0 && <span className="badge review" title="Background runs waiting for review">{awaitingReview}</span>}
                 {waiting > 0 && <span className="badge waiting" title="Sessions waiting for input">{waiting}</span>}
                 {alive > 0 && <span className="badge">{alive}</span>}
               </Row>

@@ -33,6 +33,12 @@ export interface BackgroundJob {
   trigger: JobTrigger
   /** Do not run when the project has no new commits since the job last ran. */
   skipIfUnchanged: boolean
+  /**
+   * Merge a finished run into the project's current branch without review, when the merge is
+   * clean and the main checkout has no uncommitted changes. Off by default: review is the
+   * safety story for an agent that ran unattended.
+   */
+  autoMerge?: boolean
 }
 
 export type JobRunStatus = 'running' | 'no_changes' | 'failed' | 'needs_review' | 'merged' | 'discarded'

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { openSync } from 'node:fs'
+import { openSync, statSync, readFileSync, writeFileSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { AttributionStore } from './attribution-store'
@@ -194,6 +194,27 @@ export async function startRun(root: string, projectId: string, jobId: string, t
   }
 }
 
+/**
+ * Merges a reviewed run into its project's current branch with --no-ff, then removes the
+ * run's worktree and branch. Shared by the app's Merge button and by auto-merge in the
+ * runner, so the two cannot drift. Refuses, without touching anything, when the merge would
+ * conflict or the main checkout has uncommitted changes.
+ */
+export async function mergeRunIntoProject(git: string, worktreeBase: string, project: Project, run: JobRun, jobName: string): Promise<{ merged: true } | { merged: false; reason: string }> {
+  const dirty = await runCommand(git, ['status', '--porcelain'], { cwd: project.path })
+  if (dirty.code === 0 && dirty.stdout.trim()) return { merged: false, reason: 'the main checkout has uncommitted changes' }
+  const head = await runCommand(git, ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: project.path })
+  const current = head.code === 0 ? head.stdout.trim() : 'HEAD'
+  const probe = await runCommand(git, ['merge-tree', '--write-tree', current, run.branch], { cwd: project.path })
+  if (probe.code !== 0) return { merged: false, reason: `${run.branch} conflicts with ${current}` }
+  const merge = await runCommand(git, ['merge', '--no-ff', '-m', `Merge background run: ${jobName}`, run.branch], { cwd: project.path })
+  if (merge.code !== 0) return { merged: false, reason: `git merge: ${merge.stderr.trim() || merge.stdout.trim()}` }
+  const worktrees = new WorktreeService(git, worktreeBase)
+  await worktrees.remove(project.path, run.worktreePath, true).catch(() => undefined)
+  await runCommand(git, ['branch', '-d', run.branch], { cwd: project.path })
+  return { merged: true }
+}
+
 /** Records how a run ended. Called by the wrapper script when the agent exits. */
 export async function finishRun(root: string, runId: string, exitCode: number): Promise<JobRun> {
   const { paths, config, agents } = await load(root)
@@ -216,7 +237,20 @@ export async function finishRun(root: string, runId: string, exitCode: number): 
       await worktrees.remove(run.worktreePath.replace(/\/[^/]+$/, ''), run.worktreePath, true).catch(() => undefined)
       await runCommand(tools.git, ['branch', '-D', run.branch], { cwd: config.projects.find((p) => p.id === run.projectId)?.path ?? run.worktreePath })
     }
-    store.finish(runId, { status, summary: summarizeAgentOutput(output) || null, exitCode, commitCount, finishedAt: new Date().toISOString() })
+    let summary = summarizeAgentOutput(output) || null
+    store.finish(runId, { status, summary, exitCode, commitCount, finishedAt: new Date().toISOString() })
+    const project = config.projects.find((p) => p.id === run.projectId)
+    const job = project?.backgroundJobs?.find((j) => j.id === run.jobId)
+    if (status === 'needs_review' && project && job?.autoMerge) {
+      const result = await mergeRunIntoProject(tools.git, config.preferences?.worktreeBase || paths.worktreesDir, project, run, job.name)
+      if (result.merged) {
+        store.setStatus(runId, 'merged')
+      } else {
+        // Left for review, and the reviewer is told why it was not merged for them.
+        summary = `${summary ?? ''}\n\n(Not merged automatically: ${result.reason}.)`.trim()
+        store.finish(runId, { status, summary, exitCode, commitCount, finishedAt: new Date().toISOString() })
+      }
+    }
     await notifyApp(paths.socketFile)
     return store.get(runId)!
   } finally {
@@ -344,6 +378,7 @@ async function sendToApp(socketPath: string, payload: Record<string, unknown>): 
  */
 export async function tick(root: string, now = new Date()): Promise<{ started: string[]; skipped: string[] }> {
   const { paths, config } = await load(root)
+  trimLog(join(paths.jobsDir, 'tick.log'))
   const store = new JobStore(paths.jobsDatabase)
   store.open()
   const started: string[] = []
@@ -374,6 +409,21 @@ export async function tick(root: string, now = new Date()): Promise<{ started: s
     store.close()
   }
   return { started, skipped }
+}
+
+/**
+ * Keeps the tick log bounded. Electron's runtime writes a line of stderr on every launch, one
+ * a minute here, and launchd reopens the file for each tick, so truncating between ticks is
+ * safe. The tail is kept so recent actions stay readable.
+ */
+function trimLog(path: string, maxBytes = 512 * 1024, keepBytes = 64 * 1024): void {
+  try {
+    if (statSync(path).size <= maxBytes) return
+    const tail = readFileSync(path, 'utf8').slice(-keepBytes)
+    writeFileSync(path, tail.slice(tail.indexOf('\n') + 1), 'utf8')
+  } catch {
+    // no log yet, or unreadable: nothing to trim
+  }
 }
 
 /** Whether the main checkout's HEAD moved since the job's last run began. Never run: yes. */

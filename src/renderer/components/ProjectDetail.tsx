@@ -65,6 +65,13 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
     const text = await window.sauron.runLog(run.id)
     setLogFor((cur) => (cur?.run.id === run.id ? { run, text } : cur))
   }
+  const rerun = (run: JobRun) => {
+    const job = jobs.find((j) => j.id === run.jobId)
+    if (!job) return alert(`The job "${run.jobId}" no longer exists, so it cannot be re-run.`)
+    if (!job.enabled) return alert(`"${job.name}" is disabled. Enable it to run it again.`)
+    void window.sauron.runJob(project.id, job.id)
+  }
+  const jobRunning = (jobId: string) => runs.some((r) => r.jobId === jobId && r.status === 'running')
   const awaiting = runs.filter((r) => r.status === 'needs_review')
   const recent = runs.filter((r) => r.status !== 'needs_review').slice(0, 8)
   const managed = sessions.filter((s) => s.projectId === project.id && s.kind === 'managed')
@@ -371,7 +378,7 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
                   <span className="glyph"><ToolIcon tool={job.agentId} /></span>
                   <span className="name">
                     <span className="name-title">{job.name}{!job.enabled && <span className="tag" style={{ marginLeft: 8 }}>disabled</span>}</span>
-                    <span className="muted small">{describeTrigger(job)} · {job.promptFile}</span>
+                    <span className="muted small">{describeTrigger(job)}{job.autoMerge ? ' · auto-merge' : ''} · {job.promptFile}</span>
                   </span>
                   <button disabled={!job.enabled || running} title={running ? 'A run is in progress' : 'Start a run now'} onClick={() => void window.sauron.runJob(project.id, job.id)}>
                     {running ? 'Running…' : 'Run now'}
@@ -405,6 +412,7 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
                     <button onClick={() => mergeRun(run)}>Merge</button>
                     <button onClick={() => void window.sauron.openRun(run.id)}>Open in session</button>
                     <button onClick={() => void showLog(run)}>Log</button>
+                    <button disabled={jobRunning(run.jobId)} onClick={() => rerun(run)}>Re-run</button>
                     <button className="destructive" onClick={() => discardRun(run)}>Discard</button>
                   </div>
                 </li>
@@ -421,6 +429,7 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
                     <span className="muted small">{run.status === 'running' ? `started ${relativeTime(run.startedAt)}` : relativeTime(run.finishedAt ?? run.startedAt)}</span>
                     {run.status === 'running' && <button onClick={() => onSelect({ kind: 'session', id: run.sessionId })}>Watch</button>}
                     {run.status !== 'running' && <button onClick={() => void showLog(run)}>Log</button>}
+                    {run.status !== 'running' && <button disabled={jobRunning(run.jobId)} onClick={() => rerun(run)}>Re-run</button>}
                   </div>
                   {run.status === 'failed' && run.summary && <p className="run-summary muted small">{run.summary}</p>}
                 </li>
@@ -502,6 +511,7 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
                   <div className="commit-actions">
                     <button className="primary" onClick={() => { mergeRun(reviewing); setReviewing(null) }}>Merge</button>
                     <button onClick={() => void window.sauron.openRun(reviewing.id)}>Open in session</button>
+                    <button disabled={jobRunning(reviewing.jobId)} onClick={() => rerun(reviewing)}>Re-run</button>
                     <button className="destructive" onClick={() => { discardRun(reviewing); setReviewing(null) }}>Discard</button>
                   </div>
                 </div>

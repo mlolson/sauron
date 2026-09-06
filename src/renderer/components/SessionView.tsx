@@ -18,8 +18,13 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
   // Where this session actually runs, and the checkout that directory belongs to.
   const cwd = session.worktreePath ?? session.workingDir
   const worktree = session.projectId ? snapshot.worktrees[session.projectId]?.find((w) => w.path === cwd) : undefined
-  const branch = worktree?.branch ?? null
-  const worktreeLabel = worktree?.isMain ? 'main checkout' : cwd.split('/').pop() ?? cwd
+  // A background run's worktree is removed once the run is merged or discarded; its record
+  // still knows the branch, and "detached" would be the wrong story to tell.
+  const run = session.background && session.projectId ? snapshot.runs[session.projectId]?.find((r) => r.id === session.background?.runId) : undefined
+  const branch = worktree?.branch ?? run?.branch ?? null
+  const worktreeLabel = worktree
+    ? worktree.isMain ? 'main checkout' : cwd.split('/').pop() ?? cwd
+    : run && run.status !== 'running' && run.status !== 'needs_review' ? `removed (${run.status.replace('_', ' ')})` : cwd.split('/').pop() ?? cwd
   const alive = isAlive(session)
   const external = session.kind === 'external'
   const forkable = Boolean(snapshot.preferences.agents.find((agent) => agent.id === session.tool)?.forkCommand?.length && session.cliSessionId)
