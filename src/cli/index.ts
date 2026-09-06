@@ -138,11 +138,15 @@ async function main(): Promise<void> {
   let payload: Record<string, unknown>
   switch (command) {
     case 'commit-hook': {
-      // Called by the post-commit hook. Quiet on every failure: a commit must never be
-      // disrupted because Sauron is not running or the session is unknown.
-      const session = process.env.SAURON_SESSION_ID
-      if (!session || !flags.hash || !flags.cwd) return
-      await request({ cmd: 'commits.record', session, cwd: flags.cwd, hash: flags.hash }).catch(() => undefined)
+      // Called by the post-commit hook for every commit in a registered project. Quiet on every
+      // failure: a commit must never be disrupted because Sauron is not running.
+      if (!flags.hash || !flags.cwd) return
+      try {
+        const { handleCommit, defaultRoot } = await import('../main/services/job-runner')
+        await handleCommit(defaultRoot(), { hash: flags.hash, cwd: flags.cwd, session: process.env.SAURON_SESSION_ID ?? null, socketPath })
+      } catch {
+        // nothing to report to: the hook discards output, and the commit already succeeded
+      }
       return
     }
     case 'hook': {

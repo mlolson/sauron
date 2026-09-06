@@ -1,6 +1,6 @@
 # Sauron — Background Agents and the Review Queue
 
-Version: 0.2 (decisions agreed; phase 1 in progress)
+Version: 0.3 (phases 1 and 2 shipped)
 Date: 2026-09-05
 Owner: Matt Olson
 Status: Agreed
@@ -166,7 +166,13 @@ Evaluated by the post-commit hook. A commit counts only if:
 - **Skip if unchanged** (per-job option, default on for cron): no run when the project has
   no commits since the job's last run. A nightly review of an untouched repository is pure
   token spend.
-- A burst of commits produces one run, not several: the cooldown starts when the run does.
+- A burst of commits produces one run, not several: the cooldown starts when the run does,
+  and however short the cooldown, two runs of one job are never started within 60 seconds of
+  each other. The hook claims the run in SQLite before spawning the runner, so two hooks
+  racing on the same burst cannot both win.
+- Commits made by hand count too. The hook runs the CLI for every commit in a registered
+  project, not only those made inside a session; attribution is recorded only when there is
+  a session to attribute to. When the app is closed the hook writes attribution directly.
 
 ---
 
@@ -262,8 +268,9 @@ context menu; the same on the project overview page.
 
 1. **Pipeline end to end, no scheduling.** Job model, the CLI runner, "Run now", runs as
    sessions, the Review section with Merge and Discard. This alone is useful: "run a
-   security review on this project" becomes one click.
-2. **Commit trigger**, evaluated by the hook, working with the app closed.
+   security review on this project" becomes one click. — *Shipped.*
+2. **Commit trigger**, evaluated by the hook, working with the app closed. — *Shipped;
+   verified with the app running and with it closed.*
 3. **Cron**, via the launchd tick.
 4. Badges, skip-if-unchanged, re-run, and — only if wanted — an opt-in auto-merge for
    specific jobs.

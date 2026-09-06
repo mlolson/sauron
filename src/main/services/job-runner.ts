@@ -1,4 +1,10 @@
 import { randomUUID } from 'node:crypto'
+import { spawn } from 'node:child_process'
+import { openSync } from 'node:fs'
+import { realpath } from 'node:fs/promises'
+import { dirname } from 'node:path'
+import { AttributionStore } from './attribution-store'
+import { dueCommitJobs, cooldownCutoff } from '@shared/triggers'
 import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises'
 import { join, resolve as resolvePath, isAbsolute } from 'node:path'
 import { AppPaths, writeJsonAtomic } from './persistence'
@@ -215,6 +221,118 @@ export async function finishRun(root: string, runId: string, exitCode: number): 
   } finally {
     store.close()
   }
+}
+
+/**
+ * The project a directory belongs to, and whether it is the project's main checkout rather
+ * than one of its worktrees. Resolved through git so a worktree anywhere maps back to its
+ * repository; `git` is looked up on PATH, which inside a hook always has it.
+ */
+async function projectForDirectory(config: AppConfig, cwd: string): Promise<{ project: Project; isMainCheckout: boolean } | null> {
+  const top = await runCommand('git', ['rev-parse', '--show-toplevel'], { cwd })
+  const common = await runCommand('git', ['rev-parse', '--git-common-dir'], { cwd })
+  if (top.code !== 0 || common.code !== 0) return null
+  const mainRepo = await realpath(dirname(resolvePath(cwd, common.stdout.trim()))).catch(() => null)
+  const toplevel = await realpath(top.stdout.trim()).catch(() => null)
+  if (!mainRepo || !toplevel) return null
+  for (const project of config.projects) {
+    const path = await realpath(project.path).catch(() => null)
+    if (path === mainRepo) return { project, isMainCheckout: toplevel === mainRepo }
+  }
+  return null
+}
+
+/**
+ * The post-commit hook's work: attribute the commit, then start any commit-triggered jobs
+ * that are due. Runs for every commit in a registered project, app or no app, and must be
+ * quick and quiet — the commit has already happened and nothing here may disturb it.
+ */
+export async function handleCommit(root: string, input: { hash: string; cwd: string; session: string | null; socketPath: string }): Promise<{ started: string[] }> {
+  const { paths, config } = await load(root)
+  const located = await projectForDirectory(config, input.cwd)
+  if (!located) return { started: [] }
+  const { project, isMainCheckout } = located
+
+  if (input.session) {
+    // The app records attribution itself when it is running (and refreshes summaries on the
+    // back of it); when it is not, write the row directly so nothing is lost.
+    const recorded = await sendToApp(input.socketPath, { cmd: 'commits.record', session: input.session, cwd: input.cwd, hash: input.hash })
+    if (!recorded) {
+      const attribution = new AttributionStore(paths.attributionDatabase)
+      attribution.open()
+      try {
+        attribution.set(project.id, input.hash, input.session)
+      } finally {
+        attribution.close()
+      }
+    }
+  }
+
+  // Triggers: only the main checkout, and never a background run's own commit — a cleanup
+  // job that committed would otherwise trigger itself forever.
+  if (!isMainCheckout) return { started: [] }
+  const store = new JobStore(paths.jobsDatabase)
+  store.open()
+  try {
+    if (input.session && store.isRunSession(input.session)) return { started: [] }
+    const jobs = project.backgroundJobs ?? []
+    const now = new Date()
+    const state = {
+      running: new Set(jobs.filter((j) => store.running(j.id)).map((j) => j.id)),
+      lastRunAt: new Map(jobs.map((j) => [j.id, store.lastRunAt(j.id)]).filter((e): e is [string, string] => typeof e[1] === 'string')),
+    }
+    const started: string[] = []
+    for (const job of dueCommitJobs(jobs, state, now)) {
+      if (job.trigger.kind !== 'commit') continue
+      if (!store.claim(job.id, now.toISOString(), cooldownCutoff({ ...job, trigger: job.trigger }, now))) continue
+      spawnRunner(paths, project.id, job.id, 'commit')
+      started.push(job.id)
+    }
+    return { started }
+  } finally {
+    store.close()
+  }
+}
+
+/**
+ * Starts `sauron job run` detached so the hook returns at once. git sets GIT_DIR and friends
+ * in a hook's environment, which would point every git call the runner makes at the wrong
+ * repository; they are stripped. Output goes to a log beside the runs'.
+ */
+function spawnRunner(paths: AppPaths, projectId: string, jobId: string, trigger: JobTrigger['kind']): void {
+  const env: Record<string, string> = {}
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith('GIT_') && k !== 'SAURON_SESSION_ID') env[k] = v
+  const log = openSync(join(paths.jobsDir, 'triggers.log'), 'a')
+  const child = spawn(join(paths.binDir, 'sauron'), ['job', 'run', '--project', projectId, '--job', jobId, '--trigger', trigger], {
+    detached: true,
+    stdio: ['ignore', log, log],
+    env,
+  })
+  child.unref()
+}
+
+async function sendToApp(socketPath: string, payload: Record<string, unknown>): Promise<boolean> {
+  const { connect } = await import('node:net')
+  return new Promise<boolean>((done) => {
+    const socket = connect(socketPath)
+    let ok = false
+    const finish = () => {
+      socket.destroy()
+      done(ok)
+    }
+    socket.setTimeout(1500, finish)
+    socket.on('connect', () => socket.write(JSON.stringify(payload) + '\n'))
+    socket.on('data', (data) => {
+      try {
+        ok = Boolean((JSON.parse(String(data)) as { ok?: unknown }).ok)
+      } catch {
+        ok = false
+      }
+      finish()
+    })
+    socket.on('error', finish)
+    socket.on('close', finish)
+  })
 }
 
 /** Where a Claude run's transcript will be, for the app to adopt. */

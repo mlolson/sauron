@@ -88,6 +88,22 @@ export class JobStore {
     return row ? toRun(row) : null
   }
 
+  /**
+   * Claims the next run of a job if none started since `cutoff`. Two hooks racing on a burst
+   * of commits both ask; SQLite serialises the writes, so exactly one is told yes.
+   */
+  claim(jobId: string, now: string, cutoff: string): boolean {
+    const db = this.requireDb()
+    db.prepare('INSERT OR IGNORE INTO job_state (job_id, last_run_at) VALUES (?, NULL)').run(jobId)
+    const result = db.prepare('UPDATE job_state SET last_run_at = ? WHERE job_id = ? AND (last_run_at IS NULL OR last_run_at < ?)').run(now, jobId, cutoff)
+    return Number(result.changes) > 0
+  }
+
+  /** Whether a Sauron session id belongs to a background run. */
+  isRunSession(sessionId: string): boolean {
+    return Boolean(this.requireDb().prepare('SELECT 1 FROM runs WHERE session_id = ? LIMIT 1').get(sessionId))
+  }
+
   lastRunAt(jobId: string): string | null {
     const row = this.requireDb().prepare('SELECT last_run_at FROM job_state WHERE job_id = ?').get(jobId) as { last_run_at: string | null } | undefined
     return row?.last_run_at ?? null

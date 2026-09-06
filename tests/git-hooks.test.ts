@@ -47,24 +47,26 @@ describe('post-commit hook', () => {
     expect(await readFile(hook, 'utf8')).toContain('echo theirs')
   })
 
-  it('reports only when a session made the commit, and never fails the commit', async () => {
+  it('reports every commit, with or without a session, and never fails the commit', async () => {
     const log = join(repo, 'calls.log')
     const fakeCli = join(repo, 'fake-sauron')
-    await writeFile(fakeCli, `#!/bin/sh\necho "$@" >> ${JSON.stringify(log)}\nexit 1\n`, 'utf8')
+    await writeFile(fakeCli, `#!/bin/sh\necho "session=\${SAURON_SESSION_ID:-none} $@" >> ${JSON.stringify(log)}\nexit 1\n`, 'utf8')
     await chmod(fakeCli, 0o755)
     await installPostCommitHook(GIT, repo, fakeCli)
 
-    // Explicitly cleared: the test process may itself be running inside a Sauron session.
+    // A commit made by hand still reaches the CLI: it may trigger a background job. The test
+    // process may itself be inside a Sauron session, so the variable is cleared explicitly.
     const { SAURON_SESSION_ID: _unset, ...outside } = process.env
     execFileSync(GIT, ['-C', repo, '-c', 'user.email=a@b', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'outside'], { env: outside })
-    expect(existsSync(log)).toBe(false)
+    const first = git('rev-parse', 'HEAD').trim()
+    expect(await readFile(log, 'utf8')).toContain(`session=none commit-hook --hash ${first}`)
 
     execFileSync(GIT, ['-C', repo, '-c', 'user.email=a@b', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'inside'], {
       env: { ...process.env, SAURON_SESSION_ID: 'session-1' },
     })
     const head = git('rev-parse', 'HEAD').trim()
-    // The CLI exited 1 and the commit still succeeded.
-    expect(await readFile(log, 'utf8')).toContain(`--hash ${head}`)
+    // The CLI exited 1 both times and both commits still succeeded.
+    expect(await readFile(log, 'utf8')).toContain(`session=session-1 commit-hook --hash ${head}`)
   })
 
   it('quotes paths containing spaces', () => {

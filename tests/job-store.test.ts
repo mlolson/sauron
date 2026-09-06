@@ -46,3 +46,28 @@ describe('JobStore', () => {
     b.close()
   })
 })
+
+describe('claims and run sessions', () => {
+  it('lets exactly one caller claim a run inside the cooldown window', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sauron-jobs-')); dirs.push(dir)
+    const store = new JobStore(join(dir, 'jobs.sqlite')); store.open()
+    const now = '2026-09-05T12:00:00.000Z'
+    const cutoff = '2026-09-05T11:30:00.000Z'
+    expect(store.claim('cleanup', now, cutoff)).toBe(true)
+    // A second hook racing on the same burst is refused: last_run_at is now past the cutoff.
+    expect(store.claim('cleanup', now, cutoff)).toBe(false)
+    expect(store.lastRunAt('cleanup')).toBe(now)
+    // Once the cooldown has passed the cutoff moves, and a claim succeeds again.
+    expect(store.claim('cleanup', '2026-09-05T13:00:00.000Z', '2026-09-05T12:30:00.000Z')).toBe(true)
+    store.close()
+  })
+
+  it('knows which session ids belong to runs', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sauron-jobs-')); dirs.push(dir)
+    const store = new JobStore(join(dir, 'jobs.sqlite')); store.open()
+    store.insert(run({ sessionId: 'run-session' }))
+    expect(store.isRunSession('run-session')).toBe(true)
+    expect(store.isRunSession('someone-else')).toBe(false)
+    store.close()
+  })
+})
