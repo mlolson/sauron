@@ -56,7 +56,7 @@ export function AgentsView({ templates, agents, projects, onClose }: {
                     <span className="muted small">{names.length ? `Attached to ${names.join(', ')}` : 'Not attached to any project'}</span>
                   </span>
                   <button onClick={() => setEditing({ template })}>Edit…</button>
-                  <button className="destructive" onClick={() => remove(template)}>Delete</button>
+                  <button className="destructive" disabled={template.builtIn} title={template.builtIn ? 'Ships with Sauron; detach it from projects instead' : undefined} onClick={() => remove(template)}>Delete</button>
                 </li>
               )
             })}

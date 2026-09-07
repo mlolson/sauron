@@ -9,7 +9,7 @@ It's not quite and IDE, and it's not quite a terminal. I therefore call it a "te
 
 * **Unopinionated**: Sauron doesn't provide any frameworks, skills, or other instructions for your agents. Agents run in regular tmux sessions, Sauron simply keeps track of them. Sauron is also not opinionated about which harness or inference provider you use. Anything that runs in a terminal is supported.
 
-* **Organized around projects**: Agents are organized around the projects that they are working on. A supervisor agent maintains an up to date summary of the status of each project: recent updates, blockers, and TODO's. Come back to a project after a week or a month and immediately know where to pick it up.
+* **Organized around projects**: Agents are organized around the projects that they are working on. A background agent keeps an up to date summary of the status of each project, written into the project's own `.sauron/status.json`: recent updates, blockers, and TODO's. Come back to a project after a week or a month and immediately know where to pick it up.
 
 * **Persistent sessions** Because sessions are running in tmux, they are persistent. You can quit the app or reboot your laptop and the sessions will still be there. 
 
@@ -50,10 +50,20 @@ agent with it. No model in the loop; it takes a fraction of a second.
 in parallel cannot step on each other. The session header shows which branch and checkout a
 session is in, and updates within seconds when it changes.
 
+**Background agents.** Define an agent once (an agent profile, a prompt file, a default
+trigger) and attach it to any project. Triggers: manual, every N minutes/hours/days, a cron
+expression, or after commits with a cooldown. Runs happen with the app closed, in a fresh
+worktree whose output waits in a review queue, or directly in the main checkout for agents
+that only read the repository. See `docs/BACKGROUND_AGENTS.md`.
+
+**Project summarizer.** A built-in background agent, attached to every project by default,
+that rewrites the project's status after commits (5 minute cooldown) or on **Refresh**. The
+status lives in `<project>/.sauron/status.json`, ignored by git through `.git/info/exclude`,
+so any agent working in the checkout can read it. See `docs/PROJECT_SUMMARIZER.md`.
+
 **Supervisor agent.** A long-lived agent with its own generated home directory and
-instructions. Chat with it, ask it to start or message workers, or click **Refresh** on a
-project to have it rewrite the status summary. Summaries also refresh automatically after
-commits. Right-click it to restart, pause summaries, or disable it entirely.
+instructions. Chat with it, ask it to start or message workers, or ask it about any project.
+Right-click it to restart or disable it.
 
 
 ## Stack
@@ -104,8 +114,10 @@ scripts/sauron fork --session <id>
 scripts/sauron handoff --session <id> --tool <profile>
 scripts/sauron rename --session <id> --title "..."
 scripts/sauron worktrees --project <name|id> [remove --path <dir> [--force]]
-scripts/sauron status refresh --project <name|id>   # ask the supervisor to rewrite the summary
+scripts/sauron status refresh --project <name|id>   # run the Project summarizer now
 scripts/sauron status set --project <name|id> --summary "..." [--details "..."] [--update "..."] [--todo "..."]
+scripts/sauron status get|set ...                # also work with the app closed, straight from the project's status file
+scripts/sauron job run|list|merge|discard ...    # background agent runs; `sauron tick` is what launchd calls every minute
 scripts/sauron master                            # start the supervisor
 scripts/sauron select --project <name|id> | --session <id> | --document <path>
 ```
@@ -132,12 +144,10 @@ permission prompts; remove those arguments in Preferences if you want the CLIs t
 The supervisor agent is selected separately in Preferences. Its extra arguments can select a
 model (for example `--model opus` for a Claude profile).
 
-Post-commit summary automation is configured with `supervisorProjectSummaryAfterCommit` and
-`supervisorProjectSummaryAfterCommitCooldownMinutes` (default 5); the supervisor's context menu
-toggles the same setting as **Pause summaries**. Refreshes are triggered only by commits the
-post-commit hook reports from inside a Sauron session. `supervisorProjectSummaryPromptFile`
-points to the Markdown prompt template (relative paths resolve beside `config.json`) and supports
-`{projectName}`, `{projectId}`, `{projectPath}`, and `{previousSummaryUpdatedAt}` placeholders.
+The Project summarizer's prompt is `jobs/project-summarizer.md` beside `config.json`, seeded on
+first launch and then yours to edit. It supports `{projectName}`, `{projectId}`, `{projectPath}`,
+`{branch}`, `{jobName}` and `{previousSummaryUpdatedAt}`. Its trigger and cooldown are edited like
+any background agent's, globally in Preferences or per project with **Configure…**.
 
 ## How commit attribution works
 

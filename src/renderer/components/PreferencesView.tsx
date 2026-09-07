@@ -7,14 +7,11 @@ interface Props { preferences: Preferences; toolPaths: ToolPaths | null; project
 
 function validateConfig(content: string): string | null {
   try {
-    const value = JSON.parse(content) as { projects?: unknown; preferences?: { agents?: unknown; supervisorProjectSummaryAfterCommit?: unknown; supervisorProjectSummaryAfterCommitCooldownMinutes?: unknown; supervisorProjectSummaryPromptFile?: unknown } } | null
+    const value = JSON.parse(content) as { projects?: unknown; preferences?: { agents?: unknown } } | null
     if (!value || typeof value !== 'object') return 'Config must be a JSON object.'
     if (!Array.isArray(value.projects)) return 'Config must contain a projects array.'
     if (!value.preferences || typeof value.preferences !== 'object') return 'Config must contain a preferences object.'
     if (!Array.isArray(value.preferences.agents)) return 'preferences.agents must be an array.'
-    if (typeof value.preferences.supervisorProjectSummaryAfterCommit !== 'boolean') return 'supervisorProjectSummaryAfterCommit must be a boolean.'
-    if (typeof value.preferences.supervisorProjectSummaryAfterCommitCooldownMinutes !== 'number') return 'supervisorProjectSummaryAfterCommitCooldownMinutes must be a number.'
-    if (typeof value.preferences.supervisorProjectSummaryPromptFile !== 'string' || !value.preferences.supervisorProjectSummaryPromptFile.trim()) return 'supervisorProjectSummaryPromptFile must be a non-empty string.'
     for (const item of value.preferences.agents) {
       const agent = item as { id?: unknown; name?: unknown; command?: unknown; args?: unknown; forkCommand?: unknown } | null
       if (!agent || typeof agent.id !== 'string' || !agent.id || typeof agent.name !== 'string' || typeof agent.command !== 'string' || !Array.isArray(agent.args) || !agent.args.every((arg) => typeof arg === 'string')) {
@@ -121,9 +118,6 @@ export function PreferencesView({ preferences, toolPaths, projects, schedulerLoa
               <label className="pref-row check"><input type="checkbox" disabled checked={!preferences.notificationsMuted} /><span>Show notifications when a session needs input or finishes</span></label>
               <label className="pref-row"><span>Supervisor agent</span><input readOnly value={preferences.supervisorAgentId} /></label>
               <label className="pref-row"><span>Supervisor arguments</span><input readOnly value={preferences.supervisorArgs.join(' ')} /></label>
-              <label className="pref-row check"><input type="checkbox" disabled checked={preferences.supervisorProjectSummaryAfterCommit} /><span>Generate a project summary after commits</span></label>
-              <label className="pref-row"><span>Post-commit summary cooldown (minutes)</span><input type="number" readOnly value={preferences.supervisorProjectSummaryAfterCommitCooldownMinutes} /></label>
-              <label className="pref-row"><span>Project summary prompt file</span><input readOnly value={preferences.supervisorProjectSummaryPromptFile} /></label>
               <label className="pref-row check"><input type="checkbox" disabled checked={preferences.masterAutoStart} /><span>Start the supervisor agent when Sauron launches</span></label>
             </section>
             <section><h3>Terminal</h3><label className="pref-row"><span>Font size</span><input type="number" readOnly value={preferences.terminalFontSize} /></label><label className="pref-row"><span>Scrollback lines</span><input type="number" readOnly value={preferences.terminalScrollback} /></label></section>

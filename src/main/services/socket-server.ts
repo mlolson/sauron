@@ -187,7 +187,7 @@ export class SocketServer {
       case 'status.refresh': {
         const project = this.findProject(req.project)
         if (!project) throw new Error(`unknown project ${req.project}`)
-        state.requestRefresh(project.id)
+        await state.requestRefresh(project.id)
         return null
       }
       case 'master.start': {

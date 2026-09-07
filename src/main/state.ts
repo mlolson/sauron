@@ -13,9 +13,9 @@ import { Notifier } from './services/notifier'
 import { TranscriptIndexer, TranscriptTailer, type TranscriptFile } from './services/transcripts'
 import { projectForCwd } from '@shared/transcripts'
 import type { TranscriptEntry, TranscriptPage } from '@shared/transcript-types'
-import { defaultProjectSummaryPrompt, MASTER_SESSION_ID, firstSentence, type ProjectStatus } from '@shared/status'
+import { defaultProjectSummarizerPrompt, MASTER_SESSION_ID, firstSentence, type ProjectStatus } from '@shared/status'
 import { StatusStore } from './services/status-store'
-import { MasterHome, RefreshScheduler } from './services/master'
+import { MasterHome } from './services/master'
 import { ensureClaudeTrusts } from './services/claude-config'
 import { GitWatcher } from './services/git-watcher'
 import { listKeyDocuments, readDocument, relativeInside, writeDocument } from './services/documents'
@@ -39,7 +39,7 @@ import { PtyService } from './services/pty'
 import { AttributionStore } from './services/attribution-store'
 import { JobStore } from './services/job-store'
 import { mergeRunIntoProject, runTranscriptPath } from './services/job-runner'
-import { migrateLegacyProjectJobs, resolveProjectJobs } from '@shared/jobs'
+import { PROJECT_SUMMARIZER_ID, attachToAllProjects, ensureBuiltInTemplates, migrateLegacyProjectJobs, resolveProjectJobs } from '@shared/jobs'
 import { parseCron } from '@shared/cron'
 import { installTick } from './services/launchd'
 
@@ -78,9 +78,7 @@ export class AppState extends EventEmitter<StateEvents> {
   private transcriptTimer: NodeJS.Timeout | null = null
   readonly statusStore: StatusStore
   private gitWatchers = new Map<string, GitWatcher>()
-  private automaticRefreshAt = new Map<string, number>()
   readonly masterHome: MasterHome
-  readonly refresh: RefreshScheduler
   readonly attributionStore: AttributionStore
   readonly jobStore: JobStore
   /** Recent background runs per project, refreshed from the job store on change. */
@@ -99,17 +97,11 @@ export class AppState extends EventEmitter<StateEvents> {
       if (master && master.tool !== 'claude' && master.tool !== 'codex') {
         this.updateSession(MASTER_SESSION_ID, (session) => { session.state = 'idle' })
       }
-      this.refresh.markDone()
       this.changed()
     })
     this.masterHome = new MasterHome(persistence.paths.masterDir)
     this.attributionStore = new AttributionStore(persistence.paths.attributionDatabase)
     this.jobStore = new JobStore(persistence.paths.jobsDatabase)
-    this.refresh = new RefreshScheduler({
-      isMasterIdle: () => this.masterSession()?.state === 'idle',
-      send: (projectId) => this.sendRefreshPrompt(projectId),
-      onChange: () => this.changed(),
-    })
   }
 
   get paths() {
@@ -132,7 +124,6 @@ export class AppState extends EventEmitter<StateEvents> {
       preferences: this.preferences,
       documents: this.documents,
       statuses: this.statusStore.statuses,
-      refresh: { queued: this.refresh.queued, inProgress: this.refresh.inProgress },
       runs: this.runs,
       schedulerLoaded: this.schedulerLoaded,
       loaded: this.loaded,
@@ -168,14 +159,20 @@ export class AppState extends EventEmitter<StateEvents> {
         supervisorAutoSummariesAfterCommit?: boolean
         supervisorSummaryCooldownMinutes?: number
         supervisorProjectSummaryPrompt?: string
+        supervisorProjectSummaryAfterCommit?: boolean
+        supervisorProjectSummaryAfterCommitCooldownMinutes?: number
+        supervisorProjectSummaryPromptFile?: string
         externalRecentHours?: number
       }
       const {
         supervisorAutoSummariesActiveProjects: _removedActiveSummary,
         externalRecentHours: _removedExternalCutoff,
-        supervisorAutoSummariesAfterCommit: legacySummaryAfterCommit,
-        supervisorSummaryCooldownMinutes: legacySummaryCooldown,
-        supervisorProjectSummaryPrompt: legacySummaryPrompt,
+        supervisorAutoSummariesAfterCommit: _removedLegacyAfterCommit,
+        supervisorSummaryCooldownMinutes: _removedLegacyCooldown,
+        supervisorProjectSummaryPrompt: _removedSummaryPrompt,
+        supervisorProjectSummaryAfterCommit: _removedSummaryAfterCommit,
+        supervisorProjectSummaryAfterCommitCooldownMinutes: _removedSummaryCooldown,
+        supervisorProjectSummaryPromptFile: _removedSummaryPromptFile,
         ...cleanPreferences
       } = legacyPreferences
       let migratedAgents = savedPreferences?.agents ?? [
@@ -205,18 +202,21 @@ export class AppState extends EventEmitter<StateEvents> {
         ...cleanPreferences,
         agents: migratedAgents,
         supervisorArgs: savedPreferences?.supervisorArgs ?? [],
-        supervisorProjectSummaryAfterCommit: cleanPreferences.supervisorProjectSummaryAfterCommit ?? legacySummaryAfterCommit ?? true,
-        supervisorProjectSummaryAfterCommitCooldownMinutes: cleanPreferences.supervisorProjectSummaryAfterCommitCooldownMinutes ?? legacySummaryCooldown ?? 5,
-        supervisorProjectSummaryPromptFile: cleanPreferences.supervisorProjectSummaryPromptFile ?? 'summary-prompt.md',
         toolOverrides: { ...defaultPreferences.toolOverrides, ...savedPreferences?.toolOverrides },
       }
-      await this.ensureSummaryPromptFile(legacySummaryPrompt)
       const legacyJobs = migrateLegacyProjectJobs(this.projects, this.preferences.backgroundAgents)
       if (legacyJobs.migrated > 0) {
         this.preferences.backgroundAgents = legacyJobs.templates
         console.log(`Moved ${legacyJobs.migrated} per-project background job(s) into shared background agents.`)
       }
-      if (config.version < CONFIG_VERSION || legacyJobs.migrated > 0) this.persistConfig()
+      const builtIns = ensureBuiltInTemplates(this.preferences.backgroundAgents)
+      this.preferences.backgroundAgents = builtIns.templates
+      await this.ensureSummarizerPromptFile()
+      // Summaries used to be the supervisor's job; from version 7 the summarizer is attached to
+      // every project. Only at the upgrade, so detaching it later sticks.
+      const attached = config.version < 7 ? attachToAllProjects(this.projects, PROJECT_SUMMARIZER_ID) : 0
+      if (attached > 0) console.log(`Attached the Project summarizer to ${attached} project(s).`)
+      if (config.version < CONFIG_VERSION || legacyJobs.migrated > 0 || builtIns.added > 0 || attached > 0) this.persistConfig()
       this.notifier.muted = this.preferences.notificationsMuted
       const file = await this.persistence.loadSessions()
       this.sessions = file.sessions
@@ -274,13 +274,10 @@ export class AppState extends EventEmitter<StateEvents> {
     const before = this.preferences
     this.preferences = { ...before, ...prefs, toolOverrides: { ...before.toolOverrides, ...prefs.toolOverrides } }
     this.notifier.muted = this.preferences.notificationsMuted
-    // Disabling is not just a flag: the running agent has to go, and any queued summary work
-    // with it, or the app would keep waiting on an agent that will never answer.
+    // Disabling is not just a flag: the running agent has to go too.
     if (before.supervisorEnabled && !this.preferences.supervisorEnabled) {
-      for (const project of this.projects) this.refresh.remove(project.id)
       void this.stopMaster().catch((error) => this.report(error, { sessionId: MASTER_SESSION_ID }))
     }
-    void this.ensureSummaryPromptFile().catch((error) => this.report(error))
     this.persistConfig()
     this.changed()
     const toolsChanged =
@@ -308,9 +305,6 @@ export class AppState extends EventEmitter<StateEvents> {
     if (!Array.isArray(config.projects)) throw new SauronError('persistence', 'Config must contain a projects array.')
     if (!config.preferences || typeof config.preferences !== 'object') throw new SauronError('persistence', 'Config must contain a preferences object.')
     if (!Array.isArray(config.preferences.agents)) throw new SauronError('persistence', 'preferences.agents must be an array.')
-    if (typeof config.preferences.supervisorProjectSummaryAfterCommit !== 'boolean') throw new SauronError('persistence', 'supervisorProjectSummaryAfterCommit must be a boolean.')
-    if (typeof config.preferences.supervisorProjectSummaryAfterCommitCooldownMinutes !== 'number' || config.preferences.supervisorProjectSummaryAfterCommitCooldownMinutes < 0) throw new SauronError('persistence', 'supervisorProjectSummaryAfterCommitCooldownMinutes must be a non-negative number.')
-    if (typeof config.preferences.supervisorProjectSummaryPromptFile !== 'string' || !config.preferences.supervisorProjectSummaryPromptFile.trim()) throw new SauronError('persistence', 'supervisorProjectSummaryPromptFile must be a non-empty string.')
     for (const agent of config.preferences.agents) {
       if (!agent || typeof agent.id !== 'string' || !agent.id || typeof agent.name !== 'string' || typeof agent.command !== 'string' || !Array.isArray(agent.args) || !agent.args.every((arg) => typeof arg === 'string')) {
         throw new SauronError('persistence', 'Every agent needs string id, name, command, and a string args array.')
@@ -328,7 +322,6 @@ export class AppState extends EventEmitter<StateEvents> {
       toolOverrides: { ...defaultPreferences.toolOverrides, ...config.preferences.toolOverrides },
     }
     this.notifier.muted = this.preferences.notificationsMuted
-    await this.ensureSummaryPromptFile()
     this.persistConfig()
     await this.persistence.flush()
     await this.refreshTools()
@@ -419,7 +412,6 @@ export class AppState extends EventEmitter<StateEvents> {
       if (!projectId) return
     }
     this.attributionStore.set(projectId, hash, sessionId)
-    this.maybeCommitSummaryRefresh(projectId)
     this.changed()
   }
 
@@ -520,7 +512,11 @@ export class AppState extends EventEmitter<StateEvents> {
       await this.refreshWorktrees(project.id)
       await this.refreshDocuments(project.id)
       await this.syncGitWatchers()
-      this.refresh.enqueue(project.id)
+      // Every project gets the summarizer, and a first summary right away.
+      attachToAllProjects([project], PROJECT_SUMMARIZER_ID)
+      this.persistConfig()
+      this.changed()
+      void this.runJob(project.id, PROJECT_SUMMARIZER_ID).catch((error) => this.report(error, { projectId: project.id }))
     } catch (error) {
       this.report(error)
     }
@@ -534,7 +530,6 @@ export class AppState extends EventEmitter<StateEvents> {
     const project = this.project(id)
     if (project) void this.uninstallCommitHook(project)
     this.projects = this.projects.filter((p) => p.id !== id)
-    this.refresh.remove(id)
     this.persistConfig()
     this.changed()
     void this.regenerateMasterHome()
@@ -548,7 +543,6 @@ export class AppState extends EventEmitter<StateEvents> {
     if (archived) {
       const live = this.sessionsFor(id).filter((session) => session.kind === 'managed' && isAlive(session))
       for (const session of live) await this.closeSession(session.id)
-      this.refresh.remove(id)
     }
     project.archived = archived
     this.persistConfig()
@@ -577,18 +571,6 @@ export class AppState extends EventEmitter<StateEvents> {
       this.gitWatchers.set(project.id, watcher)
       await watcher.start()
     }
-  }
-
-  private maybeCommitSummaryRefresh(projectId: string): void {
-    const enabled = this.preferences.supervisorProjectSummaryAfterCommit
-    const project = this.project(projectId)
-    if (!enabled || !project || project.archived) return
-    const cooldown = Math.max(0, this.preferences.supervisorProjectSummaryAfterCommitCooldownMinutes) * 60_000
-    const lastRequest = this.automaticRefreshAt.get(projectId) ?? 0
-    const lastSummary = new Date(this.statusStore.statuses[projectId]?.updatedAt ?? 0).getTime()
-    if (Date.now() - Math.max(lastRequest, Number.isFinite(lastSummary) ? lastSummary : 0) < cooldown) return
-    this.automaticRefreshAt.set(projectId, Date.now())
-    this.refresh.enqueue(projectId)
   }
 
   // MARK: Session helpers
@@ -1096,7 +1078,6 @@ export class AppState extends EventEmitter<StateEvents> {
     this.jobStore.setStatus(run.id, 'merged')
     await this.refreshRuns()
     await this.refreshWorktrees(project.id)
-    this.maybeCommitSummaryRefresh(project.id)
   }
 
   async discardRun(runId: string): Promise<void> {
@@ -1269,7 +1250,6 @@ export class AppState extends EventEmitter<StateEvents> {
     if (!this.toolPaths?.git) throw new SauronError('executable_not_found', 'git was not found on PATH.')
     if (!message.trim()) throw new SauronError('invalid_state', 'A commit message is required.')
     await commitPath(this.toolPaths.git, project.path, rel, message.trim())
-    this.maybeCommitSummaryRefresh(projectId)
     this.changed()
   }
 
@@ -1356,7 +1336,7 @@ export class AppState extends EventEmitter<StateEvents> {
     this.notifier.setBadge(this.waitingCount())
     if (sessionId === MASTER_SESSION_ID) {
       if (transition.state === 'idle') {
-        void this.nudgeMasterReload().then(() => this.refresh.markDone())
+        void this.nudgeMasterReload()
       }
       // The master's own turn-complete is noise; only prompts for input matter.
       if (event.event === 'Stop') return
@@ -1654,73 +1634,27 @@ export class AppState extends EventEmitter<StateEvents> {
     await this.startMaster()
   }
 
-  private summaryPromptPath(): string {
-    const configured = this.preferences.supervisorProjectSummaryPromptFile
-    return isAbsolute(configured) ? configured : resolve(this.paths.root, configured)
-  }
-
-  private async ensureSummaryPromptFile(legacyPrompt?: string): Promise<void> {
-    const path = this.summaryPromptPath()
+  /** Seeds the summarizer's prompt file once; after that it is the user's to edit. */
+  private async ensureSummarizerPromptFile(): Promise<void> {
+    const template = this.preferences.backgroundAgents.find((t) => t.id === PROJECT_SUMMARIZER_ID)
+    if (!template) return
+    const path = isAbsolute(template.promptFile) ? template.promptFile : resolve(this.paths.root, template.promptFile)
     await mkdir(dirname(path), { recursive: true })
     try {
-      const existing = await readFile(path, 'utf8')
-      if (existing.includes('Follow the "Status refresh" procedure in AGENTS.md')) {
-        await writeFile(path, defaultProjectSummaryPrompt, 'utf8')
-      }
+      await writeFile(path, defaultProjectSummarizerPrompt, { encoding: 'utf8', flag: 'wx' })
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      const initial = legacyPrompt?.includes('Follow the "Status refresh" procedure in AGENTS.md')
-        ? defaultProjectSummaryPrompt
-        : legacyPrompt?.trim() || defaultProjectSummaryPrompt
-      await writeFile(path, initial, { encoding: 'utf8', flag: 'wx' })
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
     }
   }
 
-  private async masterPromptFor(projectId: string): Promise<string | null> {
+  /** Refresh is a run of the Project summarizer, so it works like any background agent. */
+  async requestRefresh(projectId: string): Promise<void> {
     const project = this.project(projectId)
-    if (!project) return null
-    const previous = this.statusStore.statuses[projectId]
-    const cutoff = previous?.updatedAt ?? 'none (this is the first summary)'
-    const values: Record<string, string> = {
-      projectName: project.name,
-      projectId: project.id,
-      projectPath: project.path,
-      previousSummaryUpdatedAt: cutoff,
+    if (!project) return
+    if (!this.projectJobs(project).some((j) => j.id === PROJECT_SUMMARIZER_ID)) {
+      throw new SauronError('invalid_state', 'The Project summarizer is not attached to this project. Add it from Background agents.')
     }
-    const template = await readFile(this.summaryPromptPath(), 'utf8')
-    return template.replace(
-      /\{(projectName|projectId|projectPath|previousSummaryUpdatedAt)\}/g,
-      (_match, key: string) => values[key]!,
-    )
-  }
-
-  private async sendRefreshPrompt(projectId: string): Promise<boolean> {
-    const master = this.masterSession()
-    try {
-      const prompt = await this.masterPromptFor(projectId)
-      if (!master?.tmuxName || !isAlive(master) || !prompt || !this.tmux) return false
-      await this.tmux.sendText(master.tmuxName, prompt)
-      this.updateSession(MASTER_SESSION_ID, (s) => {
-        s.state = 'running'
-      })
-      return true
-    } catch (error) {
-      this.report(error, { sessionId: MASTER_SESSION_ID })
-      return false
-    }
-  }
-
-  requestRefresh(projectId: string): void {
-    if (!this.project(projectId)) return
-    if (!this.preferences.supervisorEnabled) {
-      this.report(new SauronError('invalid_state', 'The supervisor agent is disabled, so summaries cannot be refreshed.'), { projectId })
-      return
-    }
-    const master = this.masterSession()
-    if (!master || !isAlive(master)) {
-      this.report(new SauronError('invalid_state', 'The supervisor agent is not running. Start it to refresh summaries.'), { projectId })
-    }
-    this.refresh.enqueue(projectId)
+    await this.runJob(projectId, PROJECT_SUMMARIZER_ID)
   }
 
   /** Types text into a running managed session. Refused while the agent is mid-turn. */
@@ -1752,7 +1686,6 @@ export class AppState extends EventEmitter<StateEvents> {
     }
     const status: ProjectStatus = { projectId, summary: firstSentence(summary), recentUpdates, todos, details, updatedAt: new Date().toISOString(), headCommit, source }
     await this.statusStore.write(project.path, status)
-    this.refresh.markDone(projectId)
     this.changed()
     return status
   }

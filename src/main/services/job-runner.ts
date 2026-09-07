@@ -5,6 +5,7 @@ import { realpath } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { AttributionStore } from './attribution-store'
 import { dueCommitJobs, cooldownCutoff, dueCronJobs, dueIntervalJobs } from '@shared/triggers'
+import { readStatusFile } from './status-file'
 import { findExecutable } from './cli-resolver'
 import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises'
 import { join, resolve as resolvePath, isAbsolute } from 'node:path'
@@ -138,7 +139,15 @@ export async function startRun(root: string, projectId: string, jobId: string, t
 
     const promptPath = isAbsolute(job.promptFile) ? job.promptFile : resolvePath(paths.root, job.promptFile)
     const template = await readFile(promptPath, 'utf8')
-    const prompt = expandJobPrompt(template, { projectName: project.name, projectPath: project.path, branch: current, jobName: job.name })
+    const previous = await readStatusFile(project.id, project.path).catch(() => null)
+    const prompt = expandJobPrompt(template, {
+      projectName: project.name,
+      projectId: project.id,
+      projectPath: project.path,
+      branch: current,
+      jobName: job.name,
+      previousSummaryUpdatedAt: previous?.updatedAt ?? 'none (this is the first summary)',
+    })
 
     const sauronBin = join(paths.binDir, 'sauron')
     const values = { prompt, cwd, sessionId, sauronBin }

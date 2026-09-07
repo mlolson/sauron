@@ -15,8 +15,42 @@ export function jobIdOfBranch(branch: string): string | null {
 }
 
 /** Fills the prompt template. Unknown placeholders are left as written, so they are visible. */
-export function expandJobPrompt(template: string, ctx: { projectName: string; projectPath: string; branch: string; jobName: string }): string {
-  return template.replace(/\{(projectName|projectPath|branch|jobName)\}/g, (_m, key: keyof typeof ctx) => ctx[key])
+export function expandJobPrompt(template: string, ctx: { projectName: string; projectPath: string; branch: string; jobName: string; projectId?: string; previousSummaryUpdatedAt?: string }): string {
+  return template.replace(/\{(projectName|projectPath|branch|jobName|projectId|previousSummaryUpdatedAt)\}/g, (m, key: keyof typeof ctx) => ctx[key] ?? m)
+}
+
+export const PROJECT_SUMMARIZER_ID = 'project-summarizer'
+
+/** The built-in summarizer as it ships. Runs in the main checkout so it can write the project's own status file. */
+export function projectSummarizerTemplate(): BackgroundAgentTemplate {
+  return {
+    id: PROJECT_SUMMARIZER_ID,
+    name: 'Project summarizer',
+    agentId: 'claude',
+    promptFile: 'jobs/project-summarizer.md',
+    workspace: 'main',
+    trigger: { kind: 'commit', cooldownMinutes: 5 },
+    skipIfUnchanged: true,
+    builtIn: true,
+  }
+}
+
+/** Adds any built-in template that is missing, keeping a user's edits to one that exists. */
+export function ensureBuiltInTemplates(templates: BackgroundAgentTemplate[]): { templates: BackgroundAgentTemplate[]; added: number } {
+  const builtIns = [projectSummarizerTemplate()]
+  const missing = builtIns.filter((b) => !templates.some((t) => t.id === b.id))
+  return { templates: missing.length ? [...missing, ...templates] : templates, added: missing.length }
+}
+
+/** Attaches a template to every project that lacks it. Returns how many were attached. Projects are changed in place. */
+export function attachToAllProjects(projects: Pick<Project, 'backgroundJobs'>[], templateId: string): number {
+  let attached = 0
+  for (const project of projects) {
+    if (project.backgroundJobs?.some((j) => j.template === templateId)) continue
+    project.backgroundJobs = [...(project.backgroundJobs ?? []), { template: templateId, enabled: true }]
+    attached++
+  }
+  return attached
 }
 
 /** What a finished run is, from how the agent exited and what it left on the branch. */

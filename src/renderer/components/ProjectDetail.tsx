@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { BackgroundJob, JobRun, KeyDocument, Preferences, Project, RecentCommit, SelectionTarget, Session, SessionCommit, ToolPaths } from '@shared/types'
-import { describeTrigger, describeWorkspace, resolveProjectJobs } from '@shared/jobs'
+import { PROJECT_SUMMARIZER_ID, describeTrigger, describeWorkspace, resolveProjectJobs } from '@shared/jobs'
 import { AgentPicker } from './AgentPicker'
 import { TriggerDialog } from './TriggerDialog'
 import { CommitsPane } from './CommitsPane'
 import { isAlive } from '@shared/types'
 import type { Worktree } from '@shared/worktrees'
-import type { ProjectStatus, RefreshState } from '@shared/status'
+import type { ProjectStatus } from '@shared/status'
 import { StateDot } from './StateDot'
 import { abbreviate, handoffItems, importExternalSession } from './Sidebar'
 import { compareSessions } from '@shared/session-order'
@@ -25,17 +25,16 @@ interface Props {
   preferences: Preferences
   worktrees: Worktree[]
   status: ProjectStatus | undefined
-  refresh: RefreshState
-  masterAlive: boolean
   hiddenExternal: string[]
   documents: KeyDocument[]
   runs: JobRun[]
   onSelect: (t: SelectionTarget) => void
 }
 
-export function ProjectDetail({ project, sessions, toolPaths, preferences, worktrees, status, refresh, masterAlive, hiddenExternal, documents, runs, onSelect }: Props) {
-  const refreshing = refresh.inProgress === project.id
-  const queued = refresh.queued.includes(project.id)
+export function ProjectDetail({ project, sessions, toolPaths, preferences, worktrees, status, hiddenExternal, documents, runs, onSelect }: Props) {
+  // Refresh is a run of the Project summarizer background agent.
+  const refreshing = runs.some((r) => r.jobId === PROJECT_SUMMARIZER_ID && r.status === 'running')
+  const summarizerAttached = (project.backgroundJobs ?? []).some((j) => j.template === PROJECT_SUMMARIZER_ID)
   const [showHidden, setShowHidden] = useState(false)
   const [commits, setCommits] = useState<RecentCommit[] | null>(null)
   const [sessionCommits, setSessionCommits] = useState<Record<string, SessionCommit>>({})
@@ -162,11 +161,11 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
           <h2>Status</h2>
           <span className="muted small">
             {status ? `updated ${relativeTime(status.updatedAt)}` : ''}
-            {refreshing ? ' · refreshing…' : queued ? ' · refresh queued' : ''}
+            {refreshing ? ' · refreshing…' : ''}
           </span>
           <button
-            disabled={refreshing || queued}
-            title={masterAlive ? 'Ask the supervisor agent to rewrite this summary' : 'Start the supervisor agent first'}
+            disabled={refreshing || !summarizerAttached}
+            title={summarizerAttached ? 'Run the Project summarizer on this project now' : 'Attach the Project summarizer under Background agents first'}
             onClick={() => void window.sauron.refreshStatus(project.id)}
           >
             Refresh
@@ -206,7 +205,7 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
             {status.details && <pre className="details">{status.details}</pre>}
           </>
         ) : (
-          <p className="muted">{masterAlive ? 'No summary yet. Click Refresh to have the supervisor agent write one.' : 'No summary yet. Start the supervisor agent to generate one.'}</p>
+          <p className="muted">{summarizerAttached ? 'No summary yet. Click Refresh to have the Project summarizer write one; it also runs after commits.' : 'No summary yet. Attach the Project summarizer under Background agents to get one.'}</p>
         )}
       </section>
 

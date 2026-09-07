@@ -32,7 +32,7 @@ export function JobDialog({ agents, existing, taken, onSubmit, onClose }: {
   const valid = name.trim() && agentId && promptFile.trim() && !idTaken && (trigger.kind !== 'cron' || trigger.schedule) && (trigger.kind !== 'interval' || trigger.every >= 1)
   const submit = () => {
     if (!valid) return
-    onSubmit({ id, name: name.trim(), agentId, promptFile: promptFile.trim(), trigger, workspace, skipIfUnchanged, autoMerge })
+    onSubmit({ id, name: name.trim(), agentId, promptFile: promptFile.trim(), trigger, workspace, skipIfUnchanged, autoMerge, builtIn: existing?.builtIn })
     onClose()
   }
 

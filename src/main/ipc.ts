@@ -114,7 +114,7 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
   handle('restartMaster', () => state.restartMaster())
   handle('refreshStatus', async (projectId) => state.requestRefresh(projectId))
   handle('refreshAllStatuses', async () => {
-    for (const p of state.projects) state.requestRefresh(p.id)
+    for (const p of state.projects) await state.requestRefresh(p.id).catch((error) => state.report(error, { projectId: p.id }))
   })
 
   handle('transcriptOpen', async (sessionId) => {

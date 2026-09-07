@@ -1,6 +1,6 @@
 import type { Worktree } from './worktrees'
 import type { TranscriptEntry, TranscriptPage } from './transcript-types'
-import type { ProjectStatus, RefreshState } from './status'
+import type { ProjectStatus } from './status'
 
 export interface Project {
   id: string
@@ -49,6 +49,8 @@ export interface BackgroundAgentTemplate {
   workspace?: JobWorkspace
   /** Do not run when the project has no new commits since the job last ran. */
   skipIfUnchanged: boolean
+  /** Ships with Sauron and is re-created if deleted; its id is fixed. The project summarizer. */
+  builtIn?: boolean
   /**
    * Merge a finished run into the project's current branch without review, when the merge is
    * clean and the main checkout has no uncommitted changes. Off by default: review is the
@@ -139,12 +141,6 @@ export interface Preferences {
   supervisorAgentId: string
   /** Extra command-line arguments for the supervisor (for example: --model opus). */
   supervisorArgs: string[]
-  /** Refresh summaries after commits observed by Sauron's git proxy. */
-  supervisorProjectSummaryAfterCommit: boolean
-  /** Minimum time between automatic refresh requests for one project. */
-  supervisorProjectSummaryAfterCommitCooldownMinutes: number
-  /** Summary prompt file; relative paths resolve beside config.json. */
-  supervisorProjectSummaryPromptFile: string
   /** Base directory for Sauron-created worktrees; empty means the default under Application Support. */
   worktreeBase: string
   terminalFontSize: number
@@ -164,9 +160,6 @@ export const defaultPreferences: Preferences = {
   ],
   supervisorAgentId: 'claude',
   supervisorArgs: [],
-  supervisorProjectSummaryAfterCommit: true,
-  supervisorProjectSummaryAfterCommitCooldownMinutes: 5,
-  supervisorProjectSummaryPromptFile: 'summary-prompt.md',
   worktreeBase: '',
   terminalFontSize: 13,
   terminalScrollback: 50_000,
@@ -179,7 +172,7 @@ export interface AppConfig {
   preferences?: Preferences
 }
 
-export const CONFIG_VERSION = 6
+export const CONFIG_VERSION = 7
 
 /** What the session was started with. A plain shell may later run an agent; hooks update this. */
 export type AgentTool = string
@@ -271,7 +264,6 @@ export interface Snapshot {
   preferences: Preferences
   documents: Record<string, KeyDocument[]>
   statuses: Record<string, ProjectStatus>
-  refresh: RefreshState
   /** Recent background runs per project id, newest first. */
   runs: Record<string, JobRun[]>
   /** Whether the launchd agent that evaluates cron jobs is loaded; null before the app has tried. */

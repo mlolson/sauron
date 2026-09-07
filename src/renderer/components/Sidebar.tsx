@@ -9,7 +9,7 @@ import { ContextMenu, type MenuItem } from './ContextMenu'
 import { RenameDialog } from './RenameDialog'
 import { WorktreeDialog } from './WorktreeDialog'
 import { AgentPicker } from './AgentPicker'
-import { resolveProjectJobs } from '@shared/jobs'
+import { PROJECT_SUMMARIZER_ID, resolveProjectJobs } from '@shared/jobs'
 import { TriggerDialog } from './TriggerDialog'
 import type { BackgroundJob, JobRun } from '@shared/types'
 import { ToolIcon } from './ToolIcon'
@@ -153,20 +153,14 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
           const enabled = snapshot.preferences.supervisorEnabled
           const running = Boolean(master && isAlive(master))
           // The old menu offered Rename/Fork/Close, none of which the supervisor supports.
-          // Summaries after a commit are the only refresh Sauron starts on its own; asking for
-          // one by hand still works while paused.
-          const summaries = snapshot.preferences.supervisorProjectSummaryAfterCommit
           const menu: MenuItem[] = enabled
             ? [
                 { label: 'Restart', action: () => void window.sauron.restartMaster() },
-                summaries
-                  ? { label: 'Pause summaries', action: () => void window.sauron.setPreferences({ supervisorProjectSummaryAfterCommit: false }) }
-                  : { label: 'Resume summaries', action: () => void window.sauron.setPreferences({ supervisorProjectSummaryAfterCommit: true }) },
                 {
                   label: 'Disable',
                   destructive: true,
                   action: () => {
-                    if (!running || confirm('Disable the supervisor agent?\n\nIt will be stopped, and project summaries will stop refreshing.')) {
+                    if (!running || confirm('Disable the supervisor agent?\n\nIt will be stopped.')) {
                       void window.sauron.setPreferences({ supervisorEnabled: false })
                     }
                   },
@@ -185,8 +179,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
               <span className={`label ${enabled ? '' : 'muted'}`}>
                 <span className="name">Supervisor Agent</span>
                 <span className="sub">
-                  {!enabled ? 'disabled' : running ? (snapshot.refresh.inProgress ? 'refreshing a summary' : 'ready') : 'not running'}
-                  {enabled && !summaries && ' · summaries paused'}
+                  {!enabled ? 'disabled' : running ? 'ready' : 'not running'}
                 </span>
               </span>
               {enabled && master && <StateDot state={master.state} />}
@@ -239,9 +232,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   <span className="name">{project.name}</span>
                   <span className="sub" title={snapshot.statuses[project.id]?.summary}>{snapshot.statuses[project.id]?.summary ?? abbreviate(project.path)}</span>
                 </span>
-                {(snapshot.refresh.inProgress === project.id || snapshot.refresh.queued.includes(project.id)) && (
-                  <span className="spinner" title={snapshot.refresh.inProgress === project.id ? 'Refreshing summary' : 'Refresh queued'} />
-                )}
+                {runs.some((r) => r.jobId === PROJECT_SUMMARIZER_ID && r.status === 'running') && <span className="spinner" title="Refreshing summary" />}
                 {awaitingReview > 0 && <span className="badge review" title="Background runs waiting for review">{awaitingReview}</span>}
                 {waiting > 0 && <span className="badge waiting" title="Sessions waiting for input">{waiting}</span>}
                 {alive > 0 && <span className="badge">{alive}</span>}

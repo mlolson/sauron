@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeTrigger, expandArgs, expandJobPrompt, jobIdOfBranch, migrateLegacyProjectJobs, resolveProjectJobs, runBranchName, runOutcome, slugifyJobId, summarizeAgentOutput } from '../src/shared/jobs'
+import { describeTrigger, expandArgs, expandJobPrompt, jobIdOfBranch, attachToAllProjects, ensureBuiltInTemplates, migrateLegacyProjectJobs, projectSummarizerTemplate, resolveProjectJobs, runBranchName, runOutcome, slugifyJobId, summarizeAgentOutput } from '../src/shared/jobs'
 
 describe('run branches', () => {
   it('names branches by job and timestamp, and reads the job back', () => {
@@ -115,5 +115,32 @@ describe('resolveProjectJobs workspaces', () => {
     expect(resolveProjectJobs({ backgroundJobs: [{ template: 'sum', enabled: true }] }, [t])[0]?.workspace).toBe('main')
     expect(resolveProjectJobs({ backgroundJobs: [{ template: 'sum', enabled: true, workspace: 'worktree' }] }, [t])[0]?.workspace).toBe('worktree')
     expect(resolveProjectJobs({ backgroundJobs: [{ template: 'sum', enabled: true }] }, [{ ...t, workspace: undefined }])[0]?.workspace).toBe('worktree')
+  })
+})
+
+describe('built-in templates', () => {
+  it('adds the summarizer when missing and keeps an edited one', () => {
+    const fresh = ensureBuiltInTemplates([])
+    expect(fresh.added).toBe(1)
+    expect(fresh.templates[0]).toMatchObject({ id: 'project-summarizer', workspace: 'main', builtIn: true, trigger: { kind: 'commit', cooldownMinutes: 5 } })
+    const edited = { ...projectSummarizerTemplate(), agentId: 'codex' }
+    const again = ensureBuiltInTemplates([edited])
+    expect(again.added).toBe(0)
+    expect(again.templates).toEqual([edited])
+  })
+
+  it('attaches to every project that lacks it, once', () => {
+    const projects = [{ backgroundJobs: [{ template: 'project-summarizer', enabled: false }] }, { backgroundJobs: [{ template: 'tidy', enabled: true }] }, {}] as { backgroundJobs?: { template: string; enabled: boolean }[] }[]
+    expect(attachToAllProjects(projects, 'project-summarizer')).toBe(2)
+    expect(projects[0]!.backgroundJobs).toEqual([{ template: 'project-summarizer', enabled: false }])
+    expect(projects[1]!.backgroundJobs).toEqual([{ template: 'tidy', enabled: true }, { template: 'project-summarizer', enabled: true }])
+    expect(attachToAllProjects(projects, 'project-summarizer')).toBe(0)
+  })
+})
+
+describe('expandJobPrompt extras', () => {
+  it('fills the summarizer placeholders and leaves unknown ones alone', () => {
+    expect(expandJobPrompt('{projectId} since {previousSummaryUpdatedAt} {other}', { projectName: 'n', projectPath: '/p', branch: 'b', jobName: 'j', projectId: 'id1', previousSummaryUpdatedAt: 'never' })).toBe('id1 since never {other}')
+    expect(expandJobPrompt('{projectId}', { projectName: 'n', projectPath: '/p', branch: 'b', jobName: 'j' })).toBe('{projectId}')
   })
 })
