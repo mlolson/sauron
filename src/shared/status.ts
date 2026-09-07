@@ -58,7 +58,6 @@ export function firstSentence(text: string): string {
 
 export interface MasterContext {
   projects: { id: string; name: string; path: string }[]
-  statusDir: string
   sauronBin: string
   claudeTranscriptRoot: string
   codexSessionRoot: string
@@ -130,8 +129,9 @@ Do not use \`sauron stop\` unless the user asks you to stop a session.
 
 ## Where things are
 
-- Status files: \`${ctx.statusDir}/<project id>.json\` with keys \`summary\`, \`details\`, \`updatedAt\`, \`headCommit\`.
-  Prefer \`sauron status set\`; it fills in \`updatedAt\` and \`headCommit\` for you.
+- Status files: \`<project path>/.sauron/status.json\` with keys \`summary\`, \`recentUpdates\`, \`todos\`, \`details\`,
+  \`updatedAt\`, \`headCommit\`. Ignored by git; not present in linked worktrees, so use the project's
+  main path. Prefer \`sauron status set\`; it fills in \`updatedAt\` and \`headCommit\` for you.
 - Claude Code transcripts: \`${ctx.claudeTranscriptRoot}/<encoded project path>/<session id>.jsonl\`
   (the encoded path replaces every non-alphanumeric character with \`-\`). Each line is JSON;
   \`user\` and \`assistant\` records carry the conversation. \`sauron sessions\` shows the transcript

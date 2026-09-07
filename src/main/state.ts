@@ -32,6 +32,7 @@ import { commitPath, commitSummaries, commitsByHash, gitCommitDiff, gitToplevel,
 import { readTranscriptEntries } from './services/transcripts'
 import { renderHandoff } from '@shared/handoff'
 import { installPostCommitHook, removePostCommitHook } from './services/git-hooks'
+import { ensureSauronExcluded, migrateLegacyStatusFile } from './services/status-file'
 import { resolveTools, sessionEnvironment } from './services/cli-resolver'
 import { TmuxService } from './services/tmux'
 import { PtyService } from './services/pty'
@@ -93,7 +94,7 @@ export class AppState extends EventEmitter<StateEvents> {
 
   constructor(public readonly persistence: Persistence) {
     super()
-    this.statusStore = new StatusStore(persistence.paths.statusDir, () => {
+    this.statusStore = new StatusStore(() => {
       const master = this.masterSession()
       if (master && master.tool !== 'claude' && master.tool !== 'codex') {
         this.updateSession(MASTER_SESSION_ID, (session) => { session.state = 'idle' })
@@ -101,7 +102,7 @@ export class AppState extends EventEmitter<StateEvents> {
       this.refresh.markDone()
       this.changed()
     })
-    this.masterHome = new MasterHome(persistence.paths.masterDir, persistence.paths.statusDir)
+    this.masterHome = new MasterHome(persistence.paths.masterDir)
     this.attributionStore = new AttributionStore(persistence.paths.attributionDatabase)
     this.jobStore = new JobStore(persistence.paths.jobsDatabase)
     this.refresh = new RefreshScheduler({
@@ -236,7 +237,8 @@ export class AppState extends EventEmitter<StateEvents> {
     this.indexer.start()
     await this.rescanTranscripts()
     this.transcriptTimer = setInterval(() => void this.rescanTranscripts(), 30_000)
-    await this.statusStore.start()
+    await this.migrateStatusFiles()
+    await this.statusStore.sync(this.projects)
     await this.syncGitWatchers()
     await this.syncCommitHooks()
     await this.regenerateMasterHome()
@@ -452,13 +454,27 @@ export class AppState extends EventEmitter<StateEvents> {
     await Promise.all(this.projects.map((project) => this.installCommitHook(project)))
   }
 
+  /** Per-project git setup: the post-commit hook, and `.sauron/` kept out of the index. */
   private async installCommitHook(project: Project): Promise<void> {
     const git = this.toolPaths?.git
     if (!git || !this.sauronBin) return
     try {
       await installPostCommitHook(git, project.path, this.sauronBin)
+      await ensureSauronExcluded(git, project.path)
     } catch (error) {
       this.report(error, { projectId: project.id })
+    }
+  }
+
+  /** Status used to live in one central directory; each file moves into its project once. */
+  private async migrateStatusFiles(): Promise<void> {
+    for (const project of this.projects) {
+      try {
+        const moved = await migrateLegacyStatusFile(join(this.paths.statusDir, `${project.id}.json`), project.path)
+        if (moved) console.log(`moved status for ${project.name} into ${project.path}/.sauron/status.json`)
+      } catch (error) {
+        this.report(error, { projectId: project.id })
+      }
     }
   }
 
@@ -500,6 +516,7 @@ export class AppState extends EventEmitter<StateEvents> {
       this.select({ kind: 'project', id: project.id })
       await this.regenerateMasterHome()
       await this.installCommitHook(project)
+      await this.statusStore.sync(this.projects)
       await this.refreshWorktrees(project.id)
       await this.refreshDocuments(project.id)
       await this.syncGitWatchers()
@@ -522,6 +539,7 @@ export class AppState extends EventEmitter<StateEvents> {
     this.changed()
     void this.regenerateMasterHome()
     void this.syncGitWatchers()
+    void this.statusStore.sync(this.projects)
   }
 
   async archiveProject(id: string, archived: boolean): Promise<void> {
@@ -1733,7 +1751,7 @@ export class AppState extends EventEmitter<StateEvents> {
       if (r.code === 0) headCommit = r.stdout.trim()
     }
     const status: ProjectStatus = { projectId, summary: firstSentence(summary), recentUpdates, todos, details, updatedAt: new Date().toISOString(), headCommit, source }
-    await this.statusStore.write(status)
+    await this.statusStore.write(project.path, status)
     this.refresh.markDone(projectId)
     this.changed()
     return status

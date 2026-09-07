@@ -7,10 +7,7 @@ import type { Project } from '@shared/types'
 
 /** The supervisor agent's home directory: a generated CLAUDE.md plus whatever the user adds. */
 export class MasterHome {
-  constructor(
-    readonly dir: string,
-    private readonly statusDir: string,
-  ) {}
+  constructor(readonly dir: string) {}
 
   get claudeMdPath(): string {
     return join(this.dir, 'CLAUDE.md')
@@ -25,7 +22,6 @@ export class MasterHome {
     await mkdir(this.dir, { recursive: true })
     const md = renderMasterClaudeMd({
       projects: projects.map(({ id, name, path }) => ({ id, name, path })),
-      statusDir: this.statusDir,
       sauronBin,
       claudeTranscriptRoot: join(homedir(), '.claude', 'projects'),
       codexSessionRoot: join(homedir(), '.codex', 'sessions'),

@@ -54,7 +54,7 @@ function triggerState(store: JobStore, projectId: string, jobs: BackgroundJob[])
   }
 }
 
-async function load(root: string): Promise<Loaded> {
+export async function load(root: string): Promise<Loaded> {
   const paths = new AppPaths(root)
   await paths.createLayout()
   const config = JSON.parse(await readFile(paths.configFile, 'utf8')) as AppConfig

@@ -247,12 +247,45 @@ async function main(): Promise<void> {
       console.error('usage: sauron <ping|projects|sessions|launch|stop|resume|send|status|master|select|worktrees|fork|handoff|job|tick|hook|commit-hook|raw> [options]')
       process.exit(2)
   }
-  const response = await request(payload)
+  let response: { ok: boolean; result?: unknown; error?: string }
+  try {
+    response = await request(payload)
+  } catch (error) {
+    // Status lives in the project, so reading and writing it does not need the app: a
+    // background run with Sauron closed still lands its summary.
+    if (command === 'status' && (sub === 'get' || sub === 'set')) response = { ok: true, result: await statusOffline(sub, flags, lists) }
+    else throw error
+  }
   if (!response.ok) {
     console.error('error:', response.error)
     process.exit(1)
   }
   console.log(JSON.stringify(response.result, null, 2))
+}
+
+async function statusOffline(sub: 'get' | 'set', flags: Record<string, string>, lists: Record<string, string[]>): Promise<unknown> {
+  const { defaultRoot, load } = await import('../main/services/job-runner')
+  const { readStatusFile, writeStatusFile } = await import('../main/services/status-file')
+  const { firstSentence } = await import('@shared/status')
+  const { config } = await load(defaultRoot())
+  const project = config.projects.find((p) => p.id === flags.project || p.name === flags.project)
+  if (!project) throw new Error(`unknown project ${flags.project}`)
+  if (sub === 'get') return readStatusFile(project.id, project.path)
+  if (!flags.summary?.trim()) throw new Error('summary is required')
+  const { execFile } = await import('node:child_process')
+  const headCommit = await new Promise<string | null>((resolve) => execFile('git', ['rev-parse', 'HEAD'], { cwd: project.path }, (err, out) => resolve(err ? null : out.trim())))
+  const status = {
+    projectId: project.id,
+    summary: firstSentence(flags.summary),
+    recentUpdates: lists.update ?? [],
+    todos: lists.todo ?? [],
+    details: flags.details?.trim() ? flags.details : null,
+    updatedAt: new Date().toISOString(),
+    headCommit,
+    source: 'master' as const,
+  }
+  await writeStatusFile(project.path, status)
+  return status
 }
 
 main().catch((e) => {

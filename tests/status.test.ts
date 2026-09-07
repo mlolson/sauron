@@ -20,7 +20,6 @@ describe('renderMasterClaudeMd', () => {
   it('lists projects and tool paths', () => {
     const md = renderMasterClaudeMd({
       projects: [{ id: 'p1', name: 'sauron', path: '/code/sauron' }],
-      statusDir: '/as/status',
       sauronBin: '/as/bin/sauron',
       claudeTranscriptRoot: '/home/.claude/projects',
       codexSessionRoot: '/home/.codex/sessions',
