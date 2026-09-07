@@ -145,11 +145,10 @@ On the first load after upgrade, each `status/<project id>.json` is moved into i
 }
 ```
 
-- **Built in:** created on load if absent, and re-created if deleted (so a project can
-  always attach it). Everything but `id` and `builtIn` is editable; the prompt file is
-  seeded from Sauron's default and then left alone, exactly like the supervisor's
-  `summary-prompt.md` today. Deleting it from the template pane detaches it everywhere and
-  it reappears unattached.
+- **Built in:** created on load if absent, so a project can always attach it; the template
+  pane does not offer Delete for it (detach it from projects instead). Everything but `id`
+  and `builtIn` is editable; the prompt file is seeded from Sauron's default and then left
+  alone, exactly like the supervisor's `summary-prompt.md` before it.
 - **Attached by default:** to every project on add, and to existing projects on migration.
   Disable or detach per project as usual.
 - **Prompt:** today's summary prompt with two changes: it works in the current directory
