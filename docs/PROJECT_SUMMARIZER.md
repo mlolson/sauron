@@ -1,9 +1,9 @@
 # Sauron — Project Summarizer and the `.sauron/` Status File
 
-Version: 0.1 (proposed)
+Version: 1.0 (all three phases shipped)
 Date: 2026-09-07
 Owner: Matt Olson
-Status: Draft, decisions 1–4 agreed in conversation
+Status: Agreed
 
 ---
 
@@ -190,15 +190,18 @@ workers, and that can answer "where is everything". Changes:
 
 1. **Workspaces.** `workspace` on templates and attachments, `main` runs in the runner and
    `finishRun`, the `done` status, the editor label, one-`main`-run-per-checkout rule, the
-   sidebar and project page showing `done` runs without a Review entry. Verified with a
-   throwaway `main` agent that writes an untracked file.
+   sidebar and project page showing `done` runs without a Review entry. — *Shipped; verified
+   with a throwaway `main` agent that wrote an untracked file, created no branch, and was
+   refused a second concurrent start.*
 2. **Status file.** `.sauron/status.json` read/write in the CLI without the app, the watcher
    over project directories, `.git/info/exclude` on add and on load, migration from
-   `status/`. The supervisor keeps working unchanged through this phase, just against the
-   new location.
+   `status/`. — *Shipped; verified: four projects' files moved on load, a hand edit reached
+   the UI through the watcher, and `status get`/`set` worked with the app closed.*
 3. **Project summarizer.** The built-in template, default attachment, prompt file, Refresh
    as Run now, spinner from run state; then the supervisor's summary duty, queue and
-   preferences removed and its instructions rewritten.
+   preferences removed and its instructions rewritten. — *Shipped; the version 7 migration
+   attached it to every project, Refresh produced a summary in about a minute, and a commit
+   inside the cooldown correctly started nothing.*
 
 ---
 
