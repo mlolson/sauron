@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AgentDefinition, BackgroundAgentTemplate, JobTrigger } from '@shared/types'
+import type { AgentDefinition, BackgroundAgentTemplate, JobTrigger, JobWorkspace } from '@shared/types'
+import { WorkspaceSelect } from './WorkspaceSelect'
 import { slugifyJobId } from '@shared/jobs'
 import { TriggerEditor } from './TriggerEditor'
 
@@ -20,6 +21,7 @@ export function JobDialog({ agents, existing, taken, onSubmit, onClose }: {
   const [agentId, setAgentId] = useState(existing?.agentId ?? runnable[0]?.id ?? '')
   const [promptFile, setPromptFile] = useState(existing?.promptFile ?? '')
   const [trigger, setTrigger] = useState<JobTrigger>(existing?.trigger ?? { kind: 'manual' })
+  const [workspace, setWorkspace] = useState<JobWorkspace>(existing?.workspace ?? 'worktree')
   const [skipIfUnchanged, setSkipIfUnchanged] = useState(existing?.skipIfUnchanged ?? true)
   const [autoMerge, setAutoMerge] = useState(existing?.autoMerge ?? false)
   const first = useRef<HTMLInputElement>(null)
@@ -30,7 +32,7 @@ export function JobDialog({ agents, existing, taken, onSubmit, onClose }: {
   const valid = name.trim() && agentId && promptFile.trim() && !idTaken && (trigger.kind !== 'cron' || trigger.schedule) && (trigger.kind !== 'interval' || trigger.every >= 1)
   const submit = () => {
     if (!valid) return
-    onSubmit({ id, name: name.trim(), agentId, promptFile: promptFile.trim(), trigger, skipIfUnchanged, autoMerge })
+    onSubmit({ id, name: name.trim(), agentId, promptFile: promptFile.trim(), trigger, workspace, skipIfUnchanged, autoMerge })
     onClose()
   }
 
@@ -51,13 +53,14 @@ export function JobDialog({ agents, existing, taken, onSubmit, onClose }: {
         </label>
         <label className="pref-row"><span>Prompt file</span><input className="text" value={promptFile} onChange={(e) => setPromptFile(e.target.value)} placeholder="jobs/security-review.md" /></label>
         <p className="muted small">A Markdown file; relative paths resolve beside config.json. Supports {'{projectName}'}, {'{projectPath}'}, {'{branch}'}, {'{jobName}'}.</p>
-        <h3>Default trigger</h3>
-        <p className="muted small">What a project gets when it attaches this agent. Each project can override it.</p>
+        <h3>Defaults</h3>
+        <p className="muted small">What a project gets when it attaches this agent. Each project can override both.</p>
         <TriggerEditor value={trigger} onChange={setTrigger} />
+        <WorkspaceSelect value={workspace} onChange={(w) => setWorkspace(w ?? 'worktree')} />
         <h3>Options</h3>
         <label className="pref-row check"><input type="checkbox" checked={skipIfUnchanged} onChange={(e) => setSkipIfUnchanged(e.target.checked)} /><span>Skip when the project has no new commits since the last run</span></label>
-        <label className="pref-row check"><input type="checkbox" checked={autoMerge} onChange={(e) => setAutoMerge(e.target.checked)} /><span>Merge automatically, without review</span></label>
-        {autoMerge && (
+        {workspace === 'worktree' && <label className="pref-row check"><input type="checkbox" checked={autoMerge} onChange={(e) => setAutoMerge(e.target.checked)} /><span>Merge automatically, without review</span></label>}
+        {workspace === 'worktree' && autoMerge && (
           <p className="muted small">
             Only when the merge is clean and the main checkout has no uncommitted changes; otherwise the run waits in Review as usual. The
             agent runs unattended with permission prompts bypassed — enable this only for agents whose output you would accept unread.

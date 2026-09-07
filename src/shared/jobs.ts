@@ -1,4 +1,4 @@
-import type { BackgroundAgentTemplate, BackgroundJob, JobRunStatus, JobTrigger, Project } from './types'
+import type { BackgroundAgentTemplate, BackgroundJob, JobRunStatus, JobTrigger, JobWorkspace, Project } from './types'
 
 /** Pure helpers for background jobs, shared between the CLI runner and the app, and tested. */
 
@@ -20,9 +20,15 @@ export function expandJobPrompt(template: string, ctx: { projectName: string; pr
 }
 
 /** What a finished run is, from how the agent exited and what it left on the branch. */
-export function runOutcome(exitCode: number, commitCount: number): Exclude<JobRunStatus, 'running' | 'merged' | 'discarded'> {
+export function runOutcome(exitCode: number, commitCount: number, workspace: JobWorkspace = 'worktree'): Exclude<JobRunStatus, 'running' | 'merged' | 'discarded'> {
   if (exitCode !== 0) return 'failed'
+  // A main-checkout run has no branch to review: whatever it did is already in place.
+  if (workspace === 'main') return 'done'
   return commitCount > 0 ? 'needs_review' : 'no_changes'
+}
+
+export function describeWorkspace(workspace: JobWorkspace): string {
+  return workspace === 'main' ? 'in the main checkout' : 'in a fresh worktree'
 }
 
 /**
@@ -85,7 +91,7 @@ export function resolveProjectJobs(project: Pick<Project, 'backgroundJobs'>, tem
   for (const attached of project.backgroundJobs ?? []) {
     const template = byId.get(attached.template)
     if (!template) continue
-    out.push({ ...template, enabled: attached.enabled, trigger: attached.trigger ?? template.trigger, customTrigger: Boolean(attached.trigger) })
+    out.push({ ...template, enabled: attached.enabled, trigger: attached.trigger ?? template.trigger, workspace: attached.workspace ?? template.workspace ?? 'worktree', customTrigger: Boolean(attached.trigger) })
   }
   return out
 }

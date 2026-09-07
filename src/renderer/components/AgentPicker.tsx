@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { AgentDefinition, BackgroundAgentTemplate, Project } from '@shared/types'
-import { describeTrigger } from '@shared/jobs'
+import { describeTrigger, describeWorkspace } from '@shared/jobs'
 import { JobDialog } from './JobDialog'
 import { ToolIcon } from './ToolIcon'
 
@@ -45,7 +45,7 @@ export function AgentPicker({ project, templates, agents, onClose }: {
                   <span className="glyph"><ToolIcon tool={template.agentId} /></span>
                   <span className="name">
                     <span className="name-title">{template.name}</span>
-                    <span className="muted small">{describeTrigger(template)}{template.autoMerge ? ' · auto-merge' : ''} · {template.promptFile}</span>
+                    <span className="muted small">{describeTrigger(template)} · {describeWorkspace(template.workspace ?? 'worktree')}{template.autoMerge ? ' · auto-merge' : ''} · {template.promptFile}</span>
                   </span>
                   <button className="primary" disabled={isAttached} title={isAttached ? 'Already attached to this project' : `Attach with its default trigger`} onClick={() => attach(template)}>
                     {isAttached ? 'Attached' : 'Attach'}

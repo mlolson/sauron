@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { AgentDefinition, BackgroundAgentTemplate, Project } from '@shared/types'
-import { describeTrigger } from '@shared/jobs'
+import { describeTrigger, describeWorkspace } from '@shared/jobs'
 import { JobDialog } from './JobDialog'
 import { ToolIcon } from './ToolIcon'
 
@@ -52,7 +52,7 @@ export function AgentsView({ templates, agents, projects, onClose }: {
                   <span className="glyph"><ToolIcon tool={template.agentId} /></span>
                   <span className="name">
                     <span className="name-title">{template.name}</span>
-                    <span className="muted small">{describeTrigger(template)}{template.autoMerge ? ' · auto-merge' : ''} · {template.promptFile}</span>
+                    <span className="muted small">{describeTrigger(template)} · {describeWorkspace(template.workspace ?? 'worktree')}{template.autoMerge ? ' · auto-merge' : ''} · {template.promptFile}</span>
                     <span className="muted small">{names.length ? `Attached to ${names.join(', ')}` : 'Not attached to any project'}</span>
                   </span>
                   <button onClick={() => setEditing({ template })}>Edit…</button>

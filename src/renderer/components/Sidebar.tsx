@@ -76,7 +76,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
     const attached = project.backgroundJobs ?? []
     return [
       { label: running ? 'Running…' : 'Run now', disabled: Boolean(running) || !job.enabled, action: () => void window.sauron.runJob(project.id, job.id) },
-      { label: 'Trigger…', action: () => setEditingTrigger({ project, job }) },
+      { label: 'Configure…', action: () => setEditingTrigger({ project, job }) },
       { label: job.enabled ? 'Disable' : 'Enable', action: () => void window.sauron.saveProjectJobs(project.id, attached.map((j) => (j.template === job.id ? { ...j, enabled: !job.enabled } : j))) },
       { separator: true },
       {
@@ -339,7 +339,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                         <span className={`glyph ${running ? 'accent' : 'muted'}`}><ToolIcon tool={job.agentId} /></span>
                         <span className={`label ${running ? '' : 'muted'}`}>
                           <span className="name">{job.name}</span>
-                          <span className="sub">{running ? `running · ${running.branch}` : job.enabled ? 'idle' : 'disabled'}</span>
+                          <span className="sub">{running ? `running · ${running.branch ?? 'main checkout'}` : job.enabled ? 'idle' : 'disabled'}</span>
                         </span>
                         <span className="when" title={last ? `Last run started ${new Date(last.startedAt).toLocaleString()}` : 'Never run'}>
                           {running ? compactTime(running.startedAt) : last ? compactTime(last.startedAt) : '—'}
@@ -470,6 +470,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
           project={snapshot.projects.find((p) => p.id === editingTrigger.project.id) ?? editingTrigger.project}
           job={editingTrigger.job}
           defaultTrigger={snapshot.preferences.backgroundAgents.find((t) => t.id === editingTrigger.job.id)?.trigger ?? { kind: 'manual' }}
+          defaultWorkspace={snapshot.preferences.backgroundAgents.find((t) => t.id === editingTrigger.job.id)?.workspace ?? 'worktree'}
           onClose={() => setEditingTrigger(null)}
         />
       )}

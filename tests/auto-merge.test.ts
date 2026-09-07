@@ -24,7 +24,7 @@ async function setup(): Promise<{ project: Project; run: JobRun; base: string; g
   await writeFile(join(worktreePath, 'g.txt'), 'from the run\n')
   execFileSync(GIT, ['-C', worktreePath, 'add', '-A']); execFileSync(GIT, ['-C', worktreePath, '-c', 'user.email=a@b', '-c', 'user.name=t', 'commit', '-q', '-m', 'run work'])
   const project = { id: 'p', name: 'proj', path: dir, addedAt: '', pinned: false, archived: false } as Project
-  const run = { id: 'r', jobId: 'job', projectId: 'p', sessionId: 's', tmuxName: 't', branch, worktreePath, baseCommit, trigger: 'manual', startedAt: '', finishedAt: null, status: 'needs_review', summary: null, exitCode: 0, logPath: '', commitCount: 1 } as JobRun
+  const run = { id: 'r', jobId: 'job', projectId: 'p', sessionId: 's', tmuxName: 't', workspace: 'worktree', branch, worktreePath, baseCommit, trigger: 'manual', startedAt: '', finishedAt: null, status: 'needs_review', summary: null, exitCode: 0, logPath: '', commitCount: 1 } as JobRun
   return { project, run, base, git }
 }
 
@@ -34,7 +34,7 @@ describe('mergeRunIntoProject', () => {
     expect(await mergeRunIntoProject(GIT, base, project, run, 'Job')).toEqual({ merged: true })
     expect(git('log', '-1', '--format=%s').trim()).toBe('Merge background run: Job')
     expect(git('log', '--oneline').split('\n').filter(Boolean)).toHaveLength(3)
-    expect(git('branch', '--list', run.branch).trim()).toBe('')
+    expect(git('branch', '--list', run.branch!).trim()).toBe('')
     expect(git('worktree', 'list').split('\n').filter(Boolean)).toHaveLength(1)
   })
 
@@ -45,7 +45,7 @@ describe('mergeRunIntoProject', () => {
     const result = await mergeRunIntoProject(GIT, base, project, run, 'Job')
     expect(result).toMatchObject({ merged: false, reason: expect.stringContaining('conflicts') })
     expect(git('rev-parse', 'HEAD').trim()).toBe(before)
-    expect(git('branch', '--list', run.branch).trim()).not.toBe('')
+    expect(git('branch', '--list', run.branch!).trim()).not.toBe('')
     expect(git('status', '--porcelain').trim()).toBe('')
   })
 

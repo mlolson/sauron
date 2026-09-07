@@ -109,6 +109,11 @@ export async function startRun(root: string, projectId: string, jobId: string, t
   try {
     const running = store.running(project.id, job.id)
     if (running) throw new SauronError('invalid_state', `Job "${job.name}" is already running (started ${running.startedAt}).`)
+    if (job.workspace === 'main') {
+      // Two agents loose in one checkout would trip over each other's edits.
+      const busy = store.runningInMainCheckout(project.id)
+      if (busy) throw new SauronError('invalid_state', `"${busy.jobId}" is already running in ${project.name}'s main checkout (started ${busy.startedAt}).`)
+    }
 
     const overrides: Partial<Preferences['toolOverrides']> = config.preferences?.toolOverrides ?? {}
     const tools = await resolveTools(
@@ -123,23 +128,25 @@ export async function startRun(root: string, projectId: string, jobId: string, t
     const now = new Date()
     const runId = randomUUID()
     const sessionId = randomUUID()
-    const branch = runBranchName(job.id, now)
+    const branch = job.workspace === 'worktree' ? runBranchName(job.id, now) : null
     const worktrees = new WorktreeService(tools.git, config.preferences?.worktreeBase || paths.worktreesDir)
-    const worktreePath = await worktrees.create(project.path, project.name, branch)
-    const base = await runCommand(tools.git, ['rev-parse', 'HEAD'], { cwd: worktreePath })
+    const worktreePath = branch ? await worktrees.create(project.path, project.name, branch) : null
+    const cwd = worktreePath ?? project.path
+    const base = await runCommand(tools.git, ['rev-parse', 'HEAD'], { cwd })
     if (base.code !== 0) throw new SauronError('command_failed', `git rev-parse: ${base.stderr.trim()}`)
+    const current = branch ?? (await runCommand(tools.git, ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd })).stdout.trim() ?? 'HEAD'
 
     const promptPath = isAbsolute(job.promptFile) ? job.promptFile : resolvePath(paths.root, job.promptFile)
     const template = await readFile(promptPath, 'utf8')
-    const prompt = expandJobPrompt(template, { projectName: project.name, projectPath: project.path, branch, jobName: job.name })
+    const prompt = expandJobPrompt(template, { projectName: project.name, projectPath: project.path, branch: current, jobName: job.name })
 
     const sauronBin = join(paths.binDir, 'sauron')
-    const values = { prompt, cwd: worktreePath, sessionId, sauronBin }
+    const values = { prompt, cwd, sessionId, sauronBin }
     const integration: string[] = []
     if (profile.id === 'claude') {
       // Same integration as an interactive launch: a known session id so the transcript is
       // discoverable, hooks that report state, and trust for the new directory.
-      await ensureClaudeTrusts(worktreePath)
+      await ensureClaudeTrusts(cwd)
       const settings = join(paths.sessionsDir, sessionId, 'claude-settings.json')
       await writeJsonAtomic(settings, claudeHookSettings(sauronBin))
       integration.push('--session-id', sessionId, '--settings', settings)
@@ -155,7 +162,7 @@ export async function startRun(root: string, projectId: string, jobId: string, t
     // preserves the agent's exit code through the pipe. Every path reports back.
     await writeFile(script, [
       '#!/bin/bash',
-      `cd ${shellQuote(worktreePath)} || exit 97`,
+      `cd ${shellQuote(cwd)} || exit 97`,
       `${command.map(shellQuote).join(' ')} 2>&1 | tee ${shellQuote(logPath)}`,
       'code=${PIPESTATUS[0]}',
       `${shellQuote(sauronBin)} job finish --run ${shellQuote(runId)} --exit "$code"`,
@@ -172,6 +179,7 @@ export async function startRun(root: string, projectId: string, jobId: string, t
       projectId: project.id,
       sessionId,
       tmuxName,
+      workspace: job.workspace,
       branch,
       worktreePath,
       baseCommit: base.stdout.trim(),
@@ -188,7 +196,7 @@ export async function startRun(root: string, projectId: string, jobId: string, t
     // unobserved and could never be reviewed. If the spawn fails the record says so.
     store.insert(run)
     try {
-      await spawnAgent(tmux, tmuxName, script, worktreePath, sessionId, project.id, job.name, profile.id, paths, tools.path)
+      await spawnAgent(tmux, tmuxName, script, cwd, sessionId, project.id, job.name, profile.id, paths, tools.path)
     } catch (error) {
       store.finish(runId, { status: 'failed', summary: `Could not start the agent: ${(error as Error).message}`, exitCode: -1, commitCount: 0, finishedAt: new Date().toISOString() })
       throw error
@@ -230,6 +238,7 @@ export async function mergeRunIntoProject(git: string, worktreeBase: string, pro
   if (dirty.code === 0 && dirty.stdout.trim()) return { merged: false, reason: 'the main checkout has uncommitted changes' }
   const head = await runCommand(git, ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: project.path })
   const current = head.code === 0 ? head.stdout.trim() : 'HEAD'
+  if (!run.branch || !run.worktreePath) return { merged: false, reason: 'the run happened in the main checkout and has no branch' }
   const probe = await runCommand(git, ['merge-tree', '--write-tree', current, run.branch], { cwd: project.path })
   if (probe.code !== 0) return { merged: false, reason: `${run.branch} conflicts with ${current}` }
   const merge = await runCommand(git, ['merge', '--no-ff', '-m', `Merge background run: ${jobName}`, run.branch], { cwd: project.path })
@@ -253,20 +262,23 @@ export async function finishRun(root: string, runId: string, exitCode: number): 
     const tools = await resolveTools({ git: overrides.git || undefined }, agents)
     if (!tools.git) throw new SauronError('executable_not_found', 'git was not found on PATH.')
 
-    const count = await runCommand(tools.git, ['rev-list', '--count', `${run.baseCommit}..HEAD`], { cwd: run.worktreePath })
-    const commitCount = count.code === 0 ? Number(count.stdout.trim()) || 0 : 0
+    const project = config.projects.find((p) => p.id === run.projectId)
+    const job = project ? jobsOf(loaded, project).find((j) => j.id === run.jobId) : undefined
+    let commitCount = 0
+    if (run.worktreePath) {
+      const count = await runCommand(tools.git, ['rev-list', '--count', `${run.baseCommit}..HEAD`], { cwd: run.worktreePath })
+      commitCount = count.code === 0 ? Number(count.stdout.trim()) || 0 : 0
+    }
     const output = await readFile(run.logPath, 'utf8').catch(() => '')
-    const status = runOutcome(exitCode, commitCount)
-    if (status === 'no_changes') {
+    const status = runOutcome(exitCode, commitCount, run.workspace)
+    if (status === 'no_changes' && run.worktreePath && run.branch) {
       // Nothing to review, so nothing to keep: the worktree and branch go now.
       const worktrees = new WorktreeService(tools.git, config.preferences?.worktreeBase || paths.worktreesDir)
       await worktrees.remove(run.worktreePath.replace(/\/[^/]+$/, ''), run.worktreePath, true).catch(() => undefined)
-      await runCommand(tools.git, ['branch', '-D', run.branch], { cwd: config.projects.find((p) => p.id === run.projectId)?.path ?? run.worktreePath })
+      await runCommand(tools.git, ['branch', '-D', run.branch], { cwd: project?.path ?? run.worktreePath })
     }
     let summary = summarizeAgentOutput(output) || null
     store.finish(runId, { status, summary, exitCode, commitCount, finishedAt: new Date().toISOString() })
-    const project = config.projects.find((p) => p.id === run.projectId)
-    const job = project ? jobsOf(loaded, project).find((j) => j.id === run.jobId) : undefined
     if (status === 'needs_review' && project && job?.autoMerge) {
       const result = await mergeRunIntoProject(tools.git, config.preferences?.worktreeBase || paths.worktreesDir, project, run, job.name)
       if (result.merged) {
@@ -465,6 +477,6 @@ async function changedSinceLastRun(config: AppConfig, store: JobStore, project: 
 }
 
 /** Where a Claude run's transcript will be, for the app to adopt. */
-export function runTranscriptPath(run: JobRun, tool: string): string | null {
-  return tool === 'claude' ? claudeTranscriptPath(homedir(), run.worktreePath, run.sessionId) : null
+export function runTranscriptPath(run: JobRun, tool: string, projectPath: string): string | null {
+  return tool === 'claude' ? claudeTranscriptPath(homedir(), run.worktreePath ?? projectPath, run.sessionId) : null
 }

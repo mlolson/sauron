@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import type { JobRun, JobRunStatus, JobTrigger } from '@shared/types'
+import type { JobRun, JobRunStatus, JobTrigger, JobWorkspace } from '@shared/types'
 
 /**
  * Background job runs. Written by the CLI runner (with the app open or closed) and read by
@@ -24,8 +24,9 @@ export class JobStore {
         project_id TEXT NOT NULL,
         session_id TEXT NOT NULL,
         tmux_name TEXT NOT NULL,
-        branch TEXT NOT NULL,
-        worktree_path TEXT NOT NULL,
+        workspace TEXT NOT NULL DEFAULT 'worktree',
+        branch TEXT,
+        worktree_path TEXT,
         base_commit TEXT NOT NULL,
         trigger TEXT NOT NULL,
         started_at TEXT NOT NULL,
@@ -44,6 +45,54 @@ export class JobStore {
         last_trigger_commit TEXT
       );
     `)
+    this.migrate()
+  }
+
+  /**
+   * Runs from before main-checkout runs existed have NOT NULL branch and worktree columns and
+   * no workspace column. SQLite cannot relax a constraint in place, so the table is rebuilt
+   * once; every old run was a worktree run.
+   */
+  private migrate(): void {
+    const db = this.requireDb()
+    const columns = db.prepare('PRAGMA table_info(runs)').all() as unknown as { name: string; notnull: number }[]
+    const branch = columns.find((c) => c.name === 'branch')
+    if (columns.some((c) => c.name === 'workspace') && branch && !branch.notnull) return
+    db.exec(`
+      BEGIN;
+      CREATE TABLE runs_new (
+        id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        tmux_name TEXT NOT NULL,
+        workspace TEXT NOT NULL DEFAULT 'worktree',
+        branch TEXT,
+        worktree_path TEXT,
+        base_commit TEXT NOT NULL,
+        trigger TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        status TEXT NOT NULL,
+        summary TEXT,
+        exit_code INTEGER,
+        log_path TEXT NOT NULL,
+        commit_count INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT INTO runs_new (id, job_id, project_id, session_id, tmux_name, workspace, branch, worktree_path, base_commit, trigger, started_at, finished_at, status, summary, exit_code, log_path, commit_count)
+        SELECT id, job_id, project_id, session_id, tmux_name, 'worktree', branch, worktree_path, base_commit, trigger, started_at, finished_at, status, summary, exit_code, log_path, commit_count FROM runs;
+      DROP TABLE runs;
+      ALTER TABLE runs_new RENAME TO runs;
+      CREATE INDEX IF NOT EXISTS runs_project ON runs (project_id, started_at);
+      CREATE INDEX IF NOT EXISTS runs_job ON runs (job_id, started_at);
+      COMMIT;
+    `)
+  }
+
+  /** The in-progress main-checkout run in a project, whichever job it belongs to: the checkout is shared. */
+  runningInMainCheckout(projectId: string): JobRun | null {
+    const row = this.requireDb().prepare("SELECT * FROM runs WHERE project_id = ? AND workspace = 'main' AND status = 'running' ORDER BY started_at DESC LIMIT 1").get(projectId) as unknown as Row | undefined
+    return row ? toRun(row) : null
   }
 
   /** job_state is keyed per project and job: one template attached to two projects is two jobs. */
@@ -53,10 +102,10 @@ export class JobStore {
 
   insert(run: JobRun): void {
     this.requireDb().prepare(`
-      INSERT INTO runs (id, job_id, project_id, session_id, tmux_name, branch, worktree_path, base_commit, trigger,
+      INSERT INTO runs (id, job_id, project_id, session_id, tmux_name, workspace, branch, worktree_path, base_commit, trigger,
                         started_at, finished_at, status, summary, exit_code, log_path, commit_count)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(run.id, run.jobId, run.projectId, run.sessionId, run.tmuxName, run.branch, run.worktreePath, run.baseCommit, run.trigger,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(run.id, run.jobId, run.projectId, run.sessionId, run.tmuxName, run.workspace, run.branch, run.worktreePath, run.baseCommit, run.trigger,
       run.startedAt, run.finishedAt, run.status, run.summary, run.exitCode, run.logPath, run.commitCount)
     this.requireDb().prepare(`
       INSERT INTO job_state (job_id, last_run_at) VALUES (?, ?)
@@ -140,8 +189,9 @@ interface Row {
   project_id: string
   session_id: string
   tmux_name: string
-  branch: string
-  worktree_path: string
+  workspace: string | null
+  branch: string | null
+  worktree_path: string | null
   base_commit: string
   trigger: string
   started_at: string
@@ -160,6 +210,7 @@ function toRun(r: Row): JobRun {
     projectId: r.project_id,
     sessionId: r.session_id,
     tmuxName: r.tmux_name,
+    workspace: (r.workspace ?? 'worktree') as JobWorkspace,
     branch: r.branch,
     worktreePath: r.worktree_path,
     baseCommit: r.base_commit,

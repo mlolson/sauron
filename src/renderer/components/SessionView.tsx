@@ -184,7 +184,9 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
           <h2>{session.background ? 'Background run finished' : 'Session Closed'}</h2>
           <p>
             {session.background
-              ? 'This run has ended. Its commits are in the Commits pane and on the project page under Review.'
+              ? run?.workspace === 'main'
+                ? 'This run has ended. It worked directly in the main checkout, so there is nothing to review; its log is on the project page.'
+                : 'This run has ended. Its commits are in the Commits pane and on the project page under Review.'
               : session.cliSessionId ? 'Resume starts a new terminal and continues this agent conversation.' : 'This terminal is gone.'}
           </p>
           <div className="actions">

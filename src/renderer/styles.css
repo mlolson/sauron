@@ -485,7 +485,7 @@ button:disabled { opacity: 0.5; }
 .run-status { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 4px; background: rgba(128,128,128,0.2); color: var(--fg-muted); }
 .run-status.running { background: var(--bg-selected); color: var(--fg); }
 .run-status.failed { background: rgba(220,80,80,0.18); color: #e88; }
-.run-status.merged { background: rgba(80,180,100,0.18); color: #8d8; }
+.run-status.merged, .run-status.done { background: rgba(80,180,100,0.18); color: #8d8; }
 /* Covers the content pane only: the sidebar stays, and the traffic lights stay over it
    rather than over the pane's own header. */
 .review-pane { position: absolute; inset: 0; z-index: 40; }

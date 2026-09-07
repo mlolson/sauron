@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { BackgroundJob, JobRun, KeyDocument, Preferences, Project, RecentCommit, SelectionTarget, Session, SessionCommit, ToolPaths } from '@shared/types'
-import { describeTrigger, resolveProjectJobs } from '@shared/jobs'
+import { describeTrigger, describeWorkspace, resolveProjectJobs } from '@shared/jobs'
 import { AgentPicker } from './AgentPicker'
 import { TriggerDialog } from './TriggerDialog'
 import { CommitsPane } from './CommitsPane'
@@ -353,12 +353,12 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
                   <span className="glyph"><ToolIcon tool={job.agentId} /></span>
                   <span className="name">
                     <span className="name-title">{job.name}{!job.enabled && <span className="tag" style={{ marginLeft: 8 }}>disabled</span>}</span>
-                    <span className="muted small">{describeTrigger(job)}{job.customTrigger ? ' (this project)' : ''}{job.autoMerge ? ' · auto-merge' : ''} · {job.promptFile}</span>
+                    <span className="muted small">{describeTrigger(job)}{job.customTrigger ? ' (this project)' : ''} · {describeWorkspace(job.workspace)}{job.autoMerge && job.workspace === 'worktree' ? ' · auto-merge' : ''} · {job.promptFile}</span>
                   </span>
                   <button disabled={!job.enabled || running} title={running ? 'A run is in progress' : 'Start a run now'} onClick={() => void window.sauron.runJob(project.id, job.id)}>
                     {running ? 'Running…' : 'Run now'}
                   </button>
-                  <button title="When this agent runs for this project" onClick={() => setEditingTrigger(job)}>Trigger…</button>
+                  <button title="When and where this agent runs for this project" onClick={() => setEditingTrigger(job)}>Configure…</button>
                   <button onClick={() => setJobEnabled(job, !job.enabled)}>{job.enabled ? 'Disable' : 'Enable'}</button>
                   <button className="destructive" title="Stop running this agent here; the agent itself is kept" onClick={() => detachJob(job)}>Detach</button>
                 </li>
@@ -488,6 +488,7 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
           project={project}
           job={editingTrigger}
           defaultTrigger={preferences.backgroundAgents.find((t) => t.id === editingTrigger.id)?.trigger ?? { kind: 'manual' }}
+          defaultWorkspace={preferences.backgroundAgents.find((t) => t.id === editingTrigger.id)?.workspace ?? 'worktree'}
           onClose={() => setEditingTrigger(null)}
         />
       )}
@@ -508,7 +509,7 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
             <CommitsPane
               session={session}
               projectId={project.id}
-              initialBranch={reviewing.branch}
+              initialBranch={reviewing.branch ?? undefined}
               onClose={() => setReviewing(null)}
               banner={
                 <div className="review-banner">

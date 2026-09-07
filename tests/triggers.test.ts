@@ -3,7 +3,7 @@ import { cooldownCutoff, dueCommitJobs, dueCronJobs, dueIntervalJobs } from '../
 import type { BackgroundJob } from '../src/shared/types'
 
 const job = (id: string, over: Partial<BackgroundJob> = {}): BackgroundJob => ({
-  id, name: id, enabled: true, agentId: 'claude', promptFile: 'p.md', trigger: { kind: 'commit', cooldownMinutes: 30 }, skipIfUnchanged: false, customTrigger: false, ...over,
+  id, name: id, enabled: true, agentId: 'claude', promptFile: 'p.md', trigger: { kind: 'commit', cooldownMinutes: 30 }, workspace: 'worktree', skipIfUnchanged: false, customTrigger: false, ...over,
 })
 const now = new Date('2026-09-05T12:00:00Z')
 const minutesAgo = (m: number) => new Date(now.getTime() - m * 60_000).toISOString()

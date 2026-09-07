@@ -18,6 +18,13 @@ export interface Project {
 
 export type IntervalUnit = 'minutes' | 'hours' | 'days'
 
+/**
+ * Where a background run happens. `worktree`: a fresh worktree on a run branch, output
+ * reviewed before it reaches the project. `main`: the project's own checkout, no branch and
+ * no review; for agents that only read the repository or write outside version control.
+ */
+export type JobWorkspace = 'worktree' | 'main'
+
 export type JobTrigger =
   | { kind: 'manual' }
   /** Every N minutes/hours/days, measured from when the last run began. */
@@ -38,6 +45,8 @@ export interface BackgroundAgentTemplate {
   /** Markdown prompt; relative paths resolve beside config.json. Supports {projectName}, {projectPath}, {branch}. */
   promptFile: string
   trigger: JobTrigger
+  /** Default `worktree`. See JobWorkspace. */
+  workspace?: JobWorkspace
   /** Do not run when the project has no new commits since the job last ran. */
   skipIfUnchanged: boolean
   /**
@@ -53,16 +62,19 @@ export interface ProjectJob {
   template: string
   enabled: boolean
   trigger?: JobTrigger
+  workspace?: JobWorkspace
 }
 
 /** A template as it applies to one project: what the runner, tick and hook work from. */
 export interface BackgroundJob extends BackgroundAgentTemplate {
   enabled: boolean
+  workspace: JobWorkspace
   /** True when the project overrides the template's trigger. */
   customTrigger: boolean
 }
 
-export type JobRunStatus = 'running' | 'no_changes' | 'failed' | 'needs_review' | 'merged' | 'discarded'
+/** `done` is how a main-checkout run ends when the agent exits cleanly: there is nothing to review. */
+export type JobRunStatus = 'running' | 'no_changes' | 'failed' | 'needs_review' | 'merged' | 'discarded' | 'done'
 
 /** One execution of a background job. Written by the CLI runner, read by the app. */
 export interface JobRun {
@@ -72,9 +84,11 @@ export interface JobRun {
   /** The Sauron session the run is; also the tmux session's @sauron_session. */
   sessionId: string
   tmuxName: string
-  branch: string
-  worktreePath: string
-  /** The commit the branch was cut from; commits past it are the run's output. */
+  workspace: JobWorkspace
+  /** Null for a main-checkout run. */
+  branch: string | null
+  worktreePath: string | null
+  /** HEAD when the run started. For a worktree run, commits past it are the run's output. */
   baseCommit: string
   trigger: JobTrigger['kind']
   startedAt: string

@@ -983,7 +983,7 @@ export class AppState extends EventEmitter<StateEvents> {
             displayName: `${job?.name ?? run.jobId} (run)`,
             tmuxName: run.tmuxName,
             cliSessionId: tool === 'claude' ? run.sessionId : null,
-            transcriptPath: runTranscriptPath(run, tool),
+            transcriptPath: runTranscriptPath(run, tool, project.path),
             workingDir: project.path,
             worktreePath: run.worktreePath,
             createdAt: run.startedAt,
@@ -1020,6 +1020,7 @@ export class AppState extends EventEmitter<StateEvents> {
       if (!this.agentDefinition(t.agentId)?.backgroundCommand?.length) throw new SauronError('invalid_state', `Agent profile "${t.agentId}" has no background command, so it cannot run in the background.`)
       if (!t.promptFile.trim()) throw new SauronError('invalid_state', `"${t.name}" needs a prompt file.`)
       validateTrigger(t.trigger)
+      validateWorkspace(t.workspace)
     }
     this.setPreferences({ backgroundAgents: templates })
   }
@@ -1033,6 +1034,7 @@ export class AppState extends EventEmitter<StateEvents> {
       if (seen.has(job.template)) throw new SauronError('invalid_state', `"${job.template}" is attached twice.`)
       seen.add(job.template)
       if (job.trigger) validateTrigger(job.trigger)
+      validateWorkspace(job.workspace)
     }
     project.backgroundJobs = jobs
     this.persistConfig()
@@ -1082,8 +1084,8 @@ export class AppState extends EventEmitter<StateEvents> {
   async discardRun(runId: string): Promise<void> {
     const { run, project, git, worktrees } = this.runContext(runId)
     if (run.status === 'running') throw new SauronError('invalid_state', 'The run is still in progress; stop its session first.')
-    await worktrees.remove(project.path, run.worktreePath, true).catch(() => undefined)
-    await runCommand(git, ['branch', '-D', run.branch], { cwd: project.path })
+    if (run.worktreePath) await worktrees.remove(project.path, run.worktreePath, true).catch(() => undefined)
+    if (run.branch) await runCommand(git, ['branch', '-D', run.branch], { cwd: project.path })
     this.jobStore.setStatus(run.id, 'discarded')
     await this.refreshRuns()
     await this.refreshWorktrees(project.id)
@@ -1094,7 +1096,7 @@ export class AppState extends EventEmitter<StateEvents> {
     const { run, project } = this.runContext(runId)
     const job = this.projectJobs(project).find((j) => j.id === run.jobId)
     const tool = job?.agentId ?? this.preferences.supervisorAgentId
-    await this.launchSession(project.id, tool, { title: `${job?.name ?? run.jobId} (review)`, worktreePath: run.worktreePath, prompt })
+    await this.launchSession(project.id, tool, { title: `${job?.name ?? run.jobId} (review)`, worktreePath: run.worktreePath ?? undefined, prompt })
   }
 
   async runLog(runId: string, maxChars = 20_000): Promise<string> {
@@ -1869,6 +1871,10 @@ export class AppState extends EventEmitter<StateEvents> {
     this.jobStore.close()
     await this.persistence.flush()
   }
+}
+
+function validateWorkspace(workspace: unknown): void {
+  if (workspace !== undefined && workspace !== 'worktree' && workspace !== 'main') throw new SauronError('invalid_state', `Workspace must be "worktree" or "main", not "${String(workspace)}".`)
 }
 
 /** Rejects a trigger the tick could not honour, before it is saved. */

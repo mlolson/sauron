@@ -30,6 +30,10 @@ describe('outcomes', () => {
     expect(runOutcome(1, 3)).toBe('failed')
     expect(runOutcome(0, 0)).toBe('no_changes')
     expect(runOutcome(0, 2)).toBe('needs_review')
+    // A main-checkout run has nothing to review however much it did.
+    expect(runOutcome(0, 0, 'main')).toBe('done')
+    expect(runOutcome(0, 5, 'main')).toBe('done')
+    expect(runOutcome(2, 0, 'main')).toBe('failed')
   })
 })
 
@@ -80,7 +84,7 @@ describe('resolveProjectJobs', () => {
     const jobs = resolveProjectJobs({ backgroundJobs: [{ template: 'review', enabled: false }, { template: 'tidy', enabled: true, trigger: { kind: 'commit', cooldownMinutes: 5 } }] }, [tidy, review])
     expect(jobs.map((j) => j.id)).toEqual(['review', 'tidy'])
     expect(jobs[0]).toMatchObject({ enabled: false, customTrigger: false, trigger: { kind: 'manual' }, autoMerge: true })
-    expect(jobs[1]).toMatchObject({ enabled: true, customTrigger: true, trigger: { kind: 'commit', cooldownMinutes: 5 }, agentId: 'claude' })
+    expect(jobs[1]).toMatchObject({ enabled: true, customTrigger: true, trigger: { kind: 'commit', cooldownMinutes: 5 }, agentId: 'claude', workspace: 'worktree' })
   })
 
   it('drops attachments whose template is gone, and handles a project with none', () => {
@@ -102,5 +106,14 @@ describe('migrateLegacyProjectJobs', () => {
     const project = { backgroundJobs: [{ template: 'tidy', enabled: true }] }
     expect(migrateLegacyProjectJobs([project], []).migrated).toBe(0)
     expect(project.backgroundJobs).toEqual([{ template: 'tidy', enabled: true }])
+  })
+})
+
+describe('resolveProjectJobs workspaces', () => {
+  const t = { id: 'sum', name: 'Sum', agentId: 'claude', promptFile: 's.md', trigger: { kind: 'manual' } as const, skipIfUnchanged: true, workspace: 'main' as const }
+  it('takes the template workspace, overridden per project, defaulting to a worktree', () => {
+    expect(resolveProjectJobs({ backgroundJobs: [{ template: 'sum', enabled: true }] }, [t])[0]?.workspace).toBe('main')
+    expect(resolveProjectJobs({ backgroundJobs: [{ template: 'sum', enabled: true, workspace: 'worktree' }] }, [t])[0]?.workspace).toBe('worktree')
+    expect(resolveProjectJobs({ backgroundJobs: [{ template: 'sum', enabled: true }] }, [{ ...t, workspace: undefined }])[0]?.workspace).toBe('worktree')
   })
 })

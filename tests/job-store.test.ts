@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { DatabaseSync } from 'node:sqlite'
 import { JobStore } from '../src/main/services/job-store'
 import type { JobRun } from '../src/shared/types'
 
@@ -10,7 +11,7 @@ afterEach(async () => Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: t
 
 const run = (over: Partial<JobRun> = {}): JobRun => ({
   id: 'r1', jobId: 'cleanup', projectId: 'p1', sessionId: 's1', tmuxName: 'sauron-bg-cleanup-s1',
-  branch: 'sauron/bg/cleanup/20260905-000000Z', worktreePath: '/wt/r1', baseCommit: 'a'.repeat(40),
+  workspace: 'worktree', branch: 'sauron/bg/cleanup/20260905-000000Z', worktreePath: '/wt/r1', baseCommit: 'a'.repeat(40),
   trigger: 'manual', startedAt: '2026-09-05T00:00:00.000Z', finishedAt: null, status: 'running',
   summary: null, exitCode: null, logPath: '/logs/r1.log', commitCount: 0, ...over,
 })
@@ -75,6 +76,40 @@ describe('claims and run sessions', () => {
     store.insert(run({ sessionId: 'run-session' }))
     expect(store.isRunSession('run-session')).toBe(true)
     expect(store.isRunSession('someone-else')).toBe(false)
+    store.close()
+  })
+})
+
+describe('main-checkout runs', () => {
+  it('stores a run without a branch and finds the one occupying the checkout', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sauron-jobs-')); dirs.push(dir)
+    const store = new JobStore(join(dir, 'jobs.sqlite')); store.open()
+    store.insert(run({ id: 'm1', jobId: 'summarize', workspace: 'main', branch: null, worktreePath: null }))
+    store.insert(run({ id: 'w1', jobId: 'cleanup' }))
+    expect(store.get('m1')).toMatchObject({ workspace: 'main', branch: null, worktreePath: null })
+    expect(store.runningInMainCheckout('p1')?.id).toBe('m1')
+    expect(store.runningInMainCheckout('p2')).toBeNull()
+    store.finish('m1', { status: 'done', summary: 'Updated.', exitCode: 0, commitCount: 0, finishedAt: '2026-09-05T00:05:00.000Z' })
+    expect(store.runningInMainCheckout('p1')).toBeNull()
+    store.close()
+  })
+
+  it('rebuilds a database from before workspaces existed', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sauron-jobs-')); dirs.push(dir)
+    const path = join(dir, 'jobs.sqlite')
+    const old = new DatabaseSync(path)
+    old.exec(`
+      CREATE TABLE runs (id TEXT PRIMARY KEY, job_id TEXT NOT NULL, project_id TEXT NOT NULL, session_id TEXT NOT NULL, tmux_name TEXT NOT NULL,
+        branch TEXT NOT NULL, worktree_path TEXT NOT NULL, base_commit TEXT NOT NULL, trigger TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT,
+        status TEXT NOT NULL, summary TEXT, exit_code INTEGER, log_path TEXT NOT NULL, commit_count INTEGER NOT NULL DEFAULT 0);
+      INSERT INTO runs (id, job_id, project_id, session_id, tmux_name, branch, worktree_path, base_commit, trigger, started_at, status, log_path, commit_count)
+        VALUES ('old', 'cleanup', 'p1', 's1', 't', 'sauron/bg/cleanup/x', '/wt/x', 'abc', 'manual', '2026-09-01T00:00:00.000Z', 'merged', '/l', 2);
+    `)
+    old.close()
+    const store = new JobStore(path); store.open()
+    expect(store.get('old')).toMatchObject({ workspace: 'worktree', branch: 'sauron/bg/cleanup/x', status: 'merged', commitCount: 2 })
+    store.insert(run({ id: 'm1', workspace: 'main', branch: null, worktreePath: null }))
+    expect(store.get('m1')?.branch).toBeNull()
     store.close()
   })
 })
