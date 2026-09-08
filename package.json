@@ -15,8 +15,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package": "scripts/make-icon.sh && electron-vite build && electron-builder --mac --dir",
-    "postinstall": "electron-rebuild -f -w node-pty"
+    "package": "scripts/make-icon.sh && electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
+    "postinstall": "electron-rebuild -f -w node-pty",
+    "dist": "scripts/dist.sh"
   },
   "build": {
     "appId": "com.mattolson.sauron",
@@ -33,9 +34,19 @@
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
-      "identity": null,
       "target": [
-        "dir"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
       ],
       "minimumSystemVersion": "15.0",
       "extendInfo": {
@@ -52,7 +63,12 @@
         "NSSupportsAutomaticTermination": false,
         "NSSupportsSuddenTermination": false
       },
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true
     },
     "protocols": [
       {
@@ -61,7 +77,23 @@
           "sauron"
         ]
       }
-    ]
+    ],
+    "dmg": {
+      "sign": false,
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "artifactName": "${productName}-${version}-${arch}.${ext}"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

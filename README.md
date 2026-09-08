@@ -94,6 +94,24 @@ pnpm typecheck
 pnpm package          # unsigned Sauron.app in dist/
 ```
 
+## Distributing
+
+`pnpm dist` builds a signed, notarized DMG (and zip) into `dist/`. It needs two things set up
+once on the machine that builds:
+
+1. A **Developer ID Application** certificate in the login keychain, from Xcode > Settings >
+   Accounts > Manage Certificates, or from developer.apple.com.
+2. Notarization credentials stored as a keychain profile named `sauron-notary`:
+   ```sh
+   xcrun notarytool store-credentials sauron-notary --apple-id you@example.com --team-id TEAMID
+   ```
+   It asks for an app-specific password, made at appleid.apple.com.
+
+The script refuses to run without both. `scripts/dist.sh --unsigned` builds the same DMG
+unsigned for a local check; other Macs will only open that one via right-click > Open.
+Signing uses the hardened runtime with the entitlements in `build/entitlements.mac.plist`
+(JIT and unsigned executable memory for Electron, library validation off for node-pty).
+
 ## Using it
 
 - **⌘O** add a project, **⌘,** preferences, **⌘K** quick switcher, **⌘⇧]** / **⌘⇧[** next and
