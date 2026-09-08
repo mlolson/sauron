@@ -251,8 +251,8 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
                     <span className="name-title">{s.displayName}</span>
                     <LastCommitLine commit={sessionCommits[s.id]} />
                   </span>
-                  <span className="muted small">{s.background ? 'run finished' : 'closed'} {relativeTime(s.lastActivityAt)}</span>
-                  {!s.background && <button onClick={() => void window.sauron.resumeSession(s.id)}>Resume</button>}
+                  <span className="muted small">closed {relativeTime(s.lastActivityAt)}</span>
+                  <button onClick={() => void window.sauron.resumeSession(s.id)}>Resume</button>
                   <button className="destructive" onClick={() => void window.sauron.forgetSession(s.id)}>
                     Forget
                   </button>
@@ -466,4 +466,3 @@ function DiffViewer({ commit, content, onClose, onGoToSession }: { commit: Recen
     </div>
   )
 }
-
