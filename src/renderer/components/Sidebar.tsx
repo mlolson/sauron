@@ -53,6 +53,11 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
     ] : []),
     { label: 'Reveal in Finder', action: () => window.sauron.revealInFinder(project.path) },
     { separator: true },
+    ...(!project.archived ? [
+      project.pinned
+        ? { label: 'Unpin', action: () => void window.sauron.pinProject(project.id, false) } satisfies MenuItem
+        : { label: 'Pin to top', action: () => void window.sauron.pinProject(project.id, true) } satisfies MenuItem,
+    ] : []),
     project.archived
       ? { label: 'Unarchive project', action: () => void window.sauron.archiveProject(project.id, false) }
       : {
@@ -189,7 +194,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
 
         <div className="section-title">Projects</div>
         {snapshot.projects.filter((project) => !project.archived).length === 0 && <div className="hint">Drop a git repository here or press ⌘O.</div>}
-        {snapshot.projects.filter((project) => !project.archived).map((project) => {
+        {activeProjects(snapshot.projects).map((project) => {
           const collapsed = collapsedProjects.has(project.id)
           const all = snapshot.sessions.filter((s) => s.projectId === project.id)
           const jobs = resolveProjectJobs(project, snapshot.preferences.backgroundAgents)
@@ -229,7 +234,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   {collapsed ? '▸' : '▾'}
                 </button>
                 <span className="label">
-                  <span className="name">{project.name}</span>
+                  <span className="name">{project.pinned && <span className="pin" title="Pinned">📌</span>}{project.name}</span>
                   <span className="sub" title={snapshot.statuses[project.id]?.summary}>{snapshot.statuses[project.id]?.summary ?? abbreviate(project.path)}</span>
                 </span>
                 {runs.some((r) => r.jobId === PROJECT_SUMMARIZER_ID && r.status === 'running') && <span className="spinner" title="Refreshing summary" />}
@@ -474,6 +479,12 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
       )}
     </aside>
   )
+}
+
+/** Unarchived projects, pinned ones first; within each group the configured order is kept. */
+function activeProjects(projects: Project[]): Project[] {
+  const active = projects.filter((project) => !project.archived)
+  return [...active.filter((p) => p.pinned), ...active.filter((p) => !p.pinned)]
 }
 
 /** Adds the id to the set when absent and removes it when present. */

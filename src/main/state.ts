@@ -537,6 +537,14 @@ export class AppState extends EventEmitter<StateEvents> {
     void this.statusStore.sync(this.projects)
   }
 
+  async pinProject(id: string, pinned: boolean): Promise<void> {
+    const project = this.project(id)
+    if (!project || Boolean(project.pinned) === pinned) return
+    project.pinned = pinned
+    this.persistConfig()
+    this.changed()
+  }
+
   async archiveProject(id: string, archived: boolean): Promise<void> {
     const project = this.project(id)
     if (!project || Boolean(project.archived) === archived) return

@@ -30,6 +30,7 @@ export function registerIpc(state: AppState, getWindow: () => BrowserWindow | nu
   handle('addProjects', (paths) => state.addProjects(paths))
   handle('removeProject', async (id) => state.removeProject(id))
   handle('archiveProject', (id, archived) => state.archiveProject(id, archived))
+  handle('pinProject', (id, pinned) => state.pinProject(id, pinned))
   handle('resolveTools', () => state.refreshTools())
 
   handle('launchSession', async (projectId, tool, options) => {

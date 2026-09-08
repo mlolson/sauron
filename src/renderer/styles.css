@@ -517,3 +517,4 @@ button:disabled { opacity: 0.5; }
 .job-facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0 0 10px; }
 .job-facts dt { color: var(--fg-muted); }
 .job-facts dd { margin: 0; }
+.row .name .pin { font-size: 10px; margin-right: 5px; opacity: 0.8; }

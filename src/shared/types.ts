@@ -337,6 +337,8 @@ export interface SauronApi {
   addProjects(paths: string[]): Promise<void>
   removeProject(id: string): Promise<void>
   archiveProject(id: string, archived: boolean): Promise<void>
+  /** Pinned projects sort to the top of the sidebar. */
+  pinProject(id: string, pinned: boolean): Promise<void>
   resolveTools(): Promise<void>
 
   launchSession(projectId: string, tool: AgentTool, options?: LaunchOptions): Promise<void>

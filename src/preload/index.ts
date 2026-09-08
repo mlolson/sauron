@@ -18,6 +18,7 @@ const api: SauronApi = {
   addProjects: (paths) => ipcRenderer.invoke('addProjects', paths),
   removeProject: (id) => ipcRenderer.invoke('removeProject', id),
   archiveProject: (id, archived) => ipcRenderer.invoke('archiveProject', id, archived),
+  pinProject: (id, pinned) => ipcRenderer.invoke('pinProject', id, pinned),
   resolveTools: () => ipcRenderer.invoke('resolveTools'),
 
   launchSession: (projectId, tool, options) => ipcRenderer.invoke('launchSession', projectId, tool, options),
