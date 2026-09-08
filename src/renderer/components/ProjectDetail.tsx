@@ -92,14 +92,14 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
     const forkable = Boolean(profile?.forkCommand?.length && session.cliSessionId)
     const common: MenuItem[] = [
       { label: 'Rename…', action: () => setRenaming(session) },
-      ...(forkable
-        ? [
-            { label: 'Fork', action: () => void window.sauron.forkSession(session.id) } satisfies MenuItem,
-            { label: 'Fork to worktree…', action: () => setForkingToWorktree(session) } satisfies MenuItem,
-          ]
-        : []),
-      ...handoffItems(preferences.agents, toolPaths?.agents ?? {}, session),
     ]
+    if (forkable) {
+      common.push(
+        { label: 'Fork', action: () => void window.sauron.forkSession(session.id) },
+        { label: 'Fork to worktree…', action: () => setForkingToWorktree(session) },
+      )
+    }
+    common.push(...handoffItems(preferences.agents, toolPaths?.agents ?? {}, session))
     if (!isAlive(session)) return [...common, { label: 'Resume', action: () => void window.sauron.resumeSession(session.id) }, { label: 'Forget', destructive: true, action: () => void window.sauron.forgetSession(session.id) }]
     const attach: MenuItem[] = session.tmuxName ? [{ label: 'Copy attach cmd', action: () => window.sauron.copyToClipboard(`tmux attach -t ${session.tmuxName}`) }] : []
     return [...common, ...attach, {
