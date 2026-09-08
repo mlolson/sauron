@@ -32,9 +32,9 @@ agents. It does not put anything in your repository except a `post-commit` hook,
 Codex come preconfigured; add anything else that runs in a terminal, including a plain shell.
 Run agents the way you already do, with the flags you already use. Sauron keeps track.
 
-### 3. Several agents, no lock-in
+### 3. Designed to avoid vendor lock-in
 
-Run Claude, Codex, and a local model side by side under the same project. Fork a session into
+Run Claude, Codex, Openrouter and a local model side by side under the same project. Fork a session into
 a second one that continues the conversation. Hand a session's work to a *different* agent:
 Sauron writes a briefing from the recent transcript, the session's commits, and the state of
 the working tree, and starts the other agent with it. No model in the loop, so it takes a
