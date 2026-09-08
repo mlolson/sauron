@@ -9,12 +9,10 @@ Open items, roughly in priority order. Check them off or delete them when done.
 
 ## Session page header
 
-- [ ] **Refactor the header.**
-  - Remove the Terminal / Transcript toggle.
-  - Add a **Commits** view listing the commits made by this session (the attribution store
-    already has them per session; see `lastCommitBySession` and `commitsForSession`).
-  - Remove the session pills (the sibling-session switcher).
-  - Add labels showing the session's **worktree** and **branch**.
+- [x] **Refactor the header.** Done in `src/renderer/components/SessionView.tsx`: the
+      Terminal / Transcript toggle and the sibling-session pills are gone, a **Commits** button
+      opens the Commits pane, and the header shows the session's **branch** and **worktree** as
+      chips.
 
 ## Known gaps
 
