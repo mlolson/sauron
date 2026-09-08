@@ -45,7 +45,7 @@ Run on a build from `main` with `scripts/app.sh`. Each item maps to a slice's Do
 - [ ] Transcript tab on a managed session shows the structured conversation.
 
 ## Slice 7: supervisor agent
-- [ ] On first launch the master starts, pinned at the top; you can chat with it.
+- [ ] The supervisor is off by default and hidden; enabling it in Preferences shows its row, pinned at the top, and you can chat with it.
 - [ ] Refresh on a project produces a summary on the row and in the Status card with a fresh timestamp; `<project>/.sauron/status.json` exists.
 - [ ] "Start a Claude session on X to do Y" in the master chat creates a worker with that prompt.
 - [ ] "Tell session Z to …" delivers text into Z's terminal.
