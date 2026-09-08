@@ -13,6 +13,11 @@ giving up the terminal. It is not quite an IDE and it is not quite a terminal. I
 
 It is free and open source and always will be!
 
+**Download:** [Sauron-0.1.0-arm64.dmg](https://github.com/mlolson/sauron/releases/latest/download/Sauron-0.1.0-arm64.dmg)
+for Apple silicon Macs on macOS 15 or later, signed and notarized. Other builds are on the
+[releases page](https://github.com/mlolson/sauron/releases). It needs `tmux`, `git`, and at least
+one agent CLI such as `claude` or `codex` on your PATH.
+
 ![The project page: status summary, key documents, sessions, background agents](docs/screenshots/project.png)
 
 ## Five things worth knowing
