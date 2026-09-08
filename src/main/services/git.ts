@@ -60,13 +60,24 @@ export async function listBranches(git: string, dir: string): Promise<string[]> 
  * into memory whole.
  */
 export async function hashesOnBranch(git: string, dir: string, branch: string): Promise<Set<string>> {
+  requireRefName(branch)
   const result = await runCommand(git, ['rev-list', '--max-count=50000', branch], { cwd: dir })
   if (result.code !== 0) return new Set()
   return new Set(result.stdout.split('\n').map((h) => h.trim()).filter(Boolean))
 }
 
+/**
+ * A branch name is passed to git as a positional argument, so one that looks like an option
+ * (`--output=<file>` makes `git log` write there) must never reach the command line. git
+ * itself forbids a leading dash in ref names, so nothing real is refused.
+ */
+function requireRefName(branch: string): void {
+  if (branch.startsWith('-')) throw new SauronError('invalid_state', `"${branch}" is not a valid branch name.`)
+}
+
 /** Most recent commits, newest first: across local branches, or on one branch when named. */
 export async function recentGitCommits(git: string, dir: string, limit = 20, branch?: string): Promise<RecentCommit[]> {
+  if (branch) requireRefName(branch)
   const result = await runCommand(git, ['log', branch || '--all', `-${limit}`, '--date-order', DECORATE_LOCAL, COMMIT_FORMAT], { cwd: dir })
   if (result.code !== 0) throw new SauronError('command_failed', `git log: ${result.stderr.trim()}`)
   return parseCommitRows(result.stdout)
