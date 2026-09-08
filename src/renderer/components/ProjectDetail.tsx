@@ -77,9 +77,8 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
     const warnings: string[] = []
     if (check.dirty) warnings.push('it has uncommitted changes')
     if (check.unmergedCommits > 0) warnings.push(`its branch has ${check.unmergedCommits} commit(s) the main checkout does not`)
-    const message = warnings.length
-      ? `Remove worktree ${wt.branch ?? wt.path}?\n\nWarning: ${warnings.join(' and ')}. The branch is kept; only the directory is removed.`
-      : `Remove worktree ${wt.branch ?? wt.path}?\n\nThe branch is kept; only the directory is removed.`
+    const warning = warnings.length ? `Warning: ${warnings.join(' and ')}. ` : ''
+    const message = `Remove worktree ${wt.branch ?? wt.path}?\n\n${warning}The branch is kept; only the directory is removed.`
     // Errors surface as banners from the main process.
     if (confirm(message)) await window.sauron.removeWorktree(project.id, wt.path, check.dirty).catch(() => undefined)
   }
