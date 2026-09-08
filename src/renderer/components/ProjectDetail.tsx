@@ -74,7 +74,9 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
   const jobRunning = (jobId: string) => runs.some((r) => r.jobId === jobId && r.status === 'running')
   const awaiting = runs.filter((r) => r.status === 'needs_review')
   const recent = runs.filter((r) => r.status !== 'needs_review').slice(0, 8)
-  const managed = sessions.filter((s) => s.projectId === project.id && s.kind === 'managed')
+  // Background runs are not sessions of this list: they live on their agent's page, and a
+  // finished run is not something to resume.
+  const managed = sessions.filter((s) => s.projectId === project.id && s.kind === 'managed' && !s.background)
   const mine = managed.filter(isAlive).sort(compareSessions)
   const resumable = managed.filter((s) => !isAlive(s))
   const external = sessions
