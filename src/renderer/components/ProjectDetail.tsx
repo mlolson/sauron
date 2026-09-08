@@ -92,14 +92,14 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
     const forkable = Boolean(profile?.forkCommand?.length && session.cliSessionId)
     const common: MenuItem[] = [
       { label: 'Rename…', action: () => setRenaming(session) },
-      ...(forkable
-        ? [
-            { label: 'Fork', action: () => void window.sauron.forkSession(session.id) } satisfies MenuItem,
-            { label: 'Fork to worktree…', action: () => setForkingToWorktree(session) } satisfies MenuItem,
-          ]
-        : []),
-      ...handoffItems(preferences.agents, toolPaths?.agents ?? {}, session),
     ]
+    if (forkable) {
+      common.push(
+        { label: 'Fork', action: () => void window.sauron.forkSession(session.id) },
+        { label: 'Fork to worktree…', action: () => setForkingToWorktree(session) },
+      )
+    }
+    common.push(...handoffItems(preferences.agents, toolPaths?.agents ?? {}, session))
     if (!isAlive(session)) return [...common, { label: 'Resume', action: () => void window.sauron.resumeSession(session.id) }, { label: 'Forget', destructive: true, action: () => void window.sauron.forgetSession(session.id) }]
     const attach: MenuItem[] = session.tmuxName ? [{ label: 'Copy attach cmd', action: () => window.sauron.copyToClipboard(`tmux attach -t ${session.tmuxName}`) }] : []
     return [...common, ...attach, {
@@ -251,8 +251,8 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
                     <span className="name-title">{s.displayName}</span>
                     <LastCommitLine commit={sessionCommits[s.id]} />
                   </span>
-                  <span className="muted small">{s.background ? 'run finished' : 'closed'} {relativeTime(s.lastActivityAt)}</span>
-                  {!s.background && <button onClick={() => void window.sauron.resumeSession(s.id)}>Resume</button>}
+                  <span className="muted small">closed {relativeTime(s.lastActivityAt)}</span>
+                  <button onClick={() => void window.sauron.resumeSession(s.id)}>Resume</button>
                   <button className="destructive" onClick={() => void window.sauron.forgetSession(s.id)}>
                     Forget
                   </button>
@@ -466,4 +466,3 @@ function DiffViewer({ commit, content, onClose, onGoToSession }: { commit: Recen
     </div>
   )
 }
-
