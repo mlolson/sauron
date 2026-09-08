@@ -234,7 +234,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   {collapsed ? '▸' : '▾'}
                 </button>
                 <span className="label">
-                  <span className="name">{project.pinned && <span className="pin" title="Pinned">📌</span>}{project.name}</span>
+                  <span className="name">{project.pinned && <PinGlyph />}{project.name}</span>
                   <span className="sub" title={snapshot.statuses[project.id]?.summary}>{snapshot.statuses[project.id]?.summary ?? abbreviate(project.path)}</span>
                 </span>
                 {runs.some((r) => r.jobId === PROJECT_SUMMARIZER_ID && r.status === 'running') && <span className="spinner" title="Refreshing summary" />}
@@ -478,6 +478,16 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
         />
       )}
     </aside>
+  )
+}
+
+/** A pushpin drawn in the current text colour, so it stays monochrome in every theme. */
+function PinGlyph() {
+  return (
+    <svg className="pin" viewBox="0 0 16 16" width="11" height="11" aria-label="Pinned" role="img">
+      <title>Pinned</title>
+      <path fill="currentColor" d="M9.5 1.5 14.5 6.5l-1.4 1.4-.7-.7-3 3 .3 2.8-1.4 1.4L5.6 11.7 2 15.3 .7 14 4.3 10.4 1.6 7.7 3 6.3l2.8.3 3-3-.7-.7z" />
+    </svg>
   )
 }
 
