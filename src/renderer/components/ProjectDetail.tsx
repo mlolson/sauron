@@ -3,6 +3,7 @@ import type { BackgroundJob, JobRun, KeyDocument, Preferences, Project, RecentCo
 import { PROJECT_SUMMARIZER_ID, describeTrigger, describeWorkspace, resolveProjectJobs } from '@shared/jobs'
 import { AgentPicker } from './AgentPicker'
 import { TriggerDialog } from './TriggerDialog'
+import { RunLogDialog, useRunLog } from './RunLogDialog'
 import { CommitsPane } from './CommitsPane'
 import { isAlive } from '@shared/types'
 import type { Worktree } from '@shared/worktrees'
@@ -45,7 +46,7 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
   const [picking, setPicking] = useState(false)
   const [editingTrigger, setEditingTrigger] = useState<BackgroundJob | null>(null)
   const [reviewing, setReviewing] = useState<JobRun | null>(null)
-  const [logFor, setLogFor] = useState<{ run: JobRun; text: string | null } | null>(null)
+  const { logFor, showLog, closeLog } = useRunLog()
   const jobs = resolveProjectJobs(project, preferences.backgroundAgents)
   const jobName = (id: string) => jobs.find((j) => j.id === id)?.name ?? preferences.backgroundAgents.find((t) => t.id === id)?.name ?? id
   const setJobEnabled = (job: BackgroundJob, enabled: boolean) => {
@@ -59,11 +60,6 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
   }
   const discardRun = (run: JobRun) => {
     if (confirm(`Discard this run of "${jobName(run.jobId)}"?\n\nIts branch and worktree are deleted. This cannot be undone.`)) void window.sauron.discardRun(run.id)
-  }
-  const showLog = async (run: JobRun) => {
-    setLogFor({ run, text: null })
-    const text = await window.sauron.runLog(run.id)
-    setLogFor((cur) => (cur?.run.id === run.id ? { run, text } : cur))
   }
   const rerun = (run: JobRun) => {
     const job = jobs.find((j) => j.id === run.jobId)
@@ -495,13 +491,7 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
         />
       )}
       {logFor && (
-        <div className="modal-backdrop" onMouseDown={() => setLogFor(null)}>
-          <div className="modal log-modal" onMouseDown={(e) => e.stopPropagation()}>
-            <header><h2>{jobName(logFor.run.jobId)} · log</h2></header>
-            <pre className="run-log">{logFor.text === null ? 'Loading…' : logFor.text || '(empty)'}</pre>
-            <div className="actions right"><button onClick={() => setLogFor(null)}>Close</button></div>
-          </div>
-        </div>
+        <RunLogDialog name={jobName(logFor.run.jobId)} text={logFor.text} onClose={closeLog} />
       )}
       {reviewing && (() => {
         const session = sessions.find((s) => s.id === reviewing.sessionId)

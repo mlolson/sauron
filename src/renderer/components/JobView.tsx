@@ -4,6 +4,7 @@ import { describeTrigger, describeWorkspace } from '@shared/jobs'
 import { relativeTime } from '@shared/time'
 import { ToolIcon } from './ToolIcon'
 import { TriggerDialog } from './TriggerDialog'
+import { RunLogDialog, useRunLog } from './RunLogDialog'
 
 /**
  * One background agent as attached to one project: what it is, when and where it runs, and
@@ -12,7 +13,7 @@ import { TriggerDialog } from './TriggerDialog'
  */
 export function JobView({ project, job, snapshot, onSelect }: { project: Project; job: BackgroundJob; snapshot: Snapshot; onSelect: (t: SelectionTarget) => void }) {
   const [configuring, setConfiguring] = useState(false)
-  const [logFor, setLogFor] = useState<{ run: JobRun; text: string | null } | null>(null)
+  const { logFor, showLog, closeLog } = useRunLog()
   const [error, setError] = useState<string | null>(null)
   const runs = (snapshot.runs[project.id] ?? []).filter((r) => r.jobId === job.id)
   const running = runs.find((r) => r.status === 'running')
@@ -20,11 +21,6 @@ export function JobView({ project, job, snapshot, onSelect }: { project: Project
   const attached = project.backgroundJobs ?? []
   const act = (p: Promise<unknown>) => void p.catch((e: Error) => setError(e.message))
 
-  const showLog = async (run: JobRun) => {
-    setLogFor({ run, text: null })
-    const text = await window.sauron.runLog(run.id)
-    setLogFor((cur) => (cur?.run.id === run.id ? { run, text } : cur))
-  }
   const setEnabled = (enabled: boolean) => act(window.sauron.saveProjectJobs(project.id, attached.map((j) => (j.template === job.id ? { ...j, enabled } : j))))
   const detach = () => {
     if (confirm(`Detach "${job.name}" from ${project.name}?\n\nThe agent itself is kept, and so are past runs and their branches.`)) {
@@ -124,13 +120,7 @@ export function JobView({ project, job, snapshot, onSelect }: { project: Project
         />
       )}
       {logFor && (
-        <div className="modal-backdrop" onMouseDown={() => setLogFor(null)}>
-          <div className="modal log-modal" onMouseDown={(e) => e.stopPropagation()}>
-            <header><h2>{job.name} · log</h2></header>
-            <pre className="run-log">{logFor.text === null ? 'Loading…' : logFor.text || '(empty)'}</pre>
-            <div className="actions right"><button onClick={() => setLogFor(null)}>Close</button></div>
-          </div>
-        </div>
+        <RunLogDialog name={job.name} text={logFor.text} onClose={closeLog} />
       )}
     </div>
   )
