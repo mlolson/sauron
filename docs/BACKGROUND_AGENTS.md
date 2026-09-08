@@ -232,9 +232,13 @@ accept unread.
 
 ### 6.3 Where it appears
 
-A **Review** section on the project overview page listing runs awaiting a decision, and a
-badge on the project's sidebar row with the count. Runs also appear as sessions under the
-project, with a distinct glyph, so they can be watched while in progress.
+Each background agent has its own page, reached from its sidebar row or with `sauron select
+--job`, listing every run of that agent on the project. A run awaiting a decision offers
+**Review commits**, Merge, Open in session and Discard there; a finished run offers Re-run.
+A badge on the agent's sidebar row counts its runs awaiting review, and the project's
+sidebar row carries the total across its agents. Runs are not listed among the project's
+sessions; a run's session opens on its transcript from the agent's page, so it can still be
+watched while in progress.
 
 ---
 
