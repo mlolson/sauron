@@ -69,7 +69,6 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
   }
   const jobRunning = (jobId: string) => runs.some((r) => r.jobId === jobId && r.status === 'running')
   const awaiting = runs.filter((r) => r.status === 'needs_review')
-  const recent = runs.filter((r) => r.status !== 'needs_review').slice(0, 8)
   // Background runs are not sessions of this list: they live on their agent's page, and a
   // finished run is not something to resume.
   const managed = sessions.filter((s) => s.projectId === project.id && s.kind === 'managed' && !s.background)
@@ -365,11 +364,11 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
         )}
       </section>
 
-      {(awaiting.length > 0 || recent.length > 0) && (
+      {awaiting.length > 0 && (
         <section className="card">
           <div className="card-head">
             <h2>Review</h2>
-            <span className="muted small">{awaiting.length === 0 ? 'Nothing waiting' : `${awaiting.length} run${awaiting.length === 1 ? '' : 's'} waiting for a decision`}</span>
+            <span className="muted small">{`${awaiting.length} run${awaiting.length === 1 ? '' : 's'} with commits waiting for a decision`}</span>
           </div>
           {awaiting.length > 0 && (
             <ul className="run-list">
@@ -388,23 +387,6 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
                     <button disabled={jobRunning(run.jobId)} onClick={() => rerun(run)}>Re-run</button>
                     <button className="destructive" onClick={() => discardRun(run)}>Discard</button>
                   </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          {recent.length > 0 && (
-            <ul className="run-list recent">
-              {recent.map((run) => (
-                <li key={run.id}>
-                  <div className="run-head">
-                    <span className={`run-status ${run.status}`}>{run.status.replace('_', ' ')}</span>
-                    <span>{jobName(run.jobId)}</span>
-                    <span className="muted small">{run.status === 'running' ? `started ${relativeTime(run.startedAt)}` : relativeTime(run.finishedAt ?? run.startedAt)}</span>
-                    {run.status === 'running' && <button onClick={() => onSelect({ kind: 'session', id: run.sessionId })}>Watch</button>}
-                    {run.status !== 'running' && <button onClick={() => void showLog(run)}>Log</button>}
-                    {run.status !== 'running' && <button disabled={jobRunning(run.jobId)} onClick={() => rerun(run)}>Re-run</button>}
-                  </div>
-                  {run.status === 'failed' && run.summary && <p className="run-summary muted small">{run.summary}</p>}
                 </li>
               ))}
             </ul>
