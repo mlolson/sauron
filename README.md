@@ -27,7 +27,7 @@ command). Nothing you run is trapped inside the app. Sauron can also see session
 
 ### 2. It is unopinionated
 
-Sauron does not ship skills, a task framework, a planning ritual, or instructions for your
+Sauron does not include skills, a task framework, a planning routine, or instructions for your
 agents. It does not put anything in your repository except a `post-commit` hook, an entry in
 `.git/info/exclude`, and the ignored `.sauron/` directory that entry covers. An agent is a profile: an executable and its arguments. Claude and
 Codex come preconfigured; add anything else that runs in a terminal, including a plain shell.
