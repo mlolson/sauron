@@ -161,20 +161,18 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
           if (!enabled) return null
           const running = Boolean(master && isAlive(master))
           // The old menu offered Rename/Fork/Close, none of which the supervisor supports.
-          const menu: MenuItem[] = enabled
-            ? [
-                { label: 'Restart', action: () => void window.sauron.restartMaster() },
-                {
-                  label: 'Disable',
-                  destructive: true,
-                  action: () => {
-                    if (!running || confirm('Disable the supervisor agent?\n\nIt will be stopped.')) {
-                      void window.sauron.setPreferences({ supervisorEnabled: false })
-                    }
-                  },
-                },
-              ]
-            : [{ label: 'Enable', action: () => void window.sauron.setPreferences({ supervisorEnabled: true }) }]
+          const menu: MenuItem[] = [
+            { label: 'Restart', action: () => void window.sauron.restartMaster() },
+            {
+              label: 'Disable',
+              destructive: true,
+              action: () => {
+                if (!running || confirm('Disable the supervisor agent?\n\nIt will be stopped.')) {
+                  void window.sauron.setPreferences({ supervisorEnabled: false })
+                }
+              },
+            },
+          ]
           return (
             <Row
               selected={sameTarget(selection, { kind: 'master' })}
@@ -184,13 +182,13 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
               <span className={`glyph ${running ? 'accent' : 'muted'}`}>
                 <ToolIcon tool={master?.tool ?? snapshot.preferences.supervisorAgentId} />
               </span>
-              <span className={`label ${enabled ? '' : 'muted'}`}>
+              <span className="label">
                 <span className="name">Supervisor Agent</span>
                 <span className="sub">
-                  {!enabled ? 'disabled' : running ? 'ready' : 'not running'}
+                  {running ? 'ready' : 'not running'}
                 </span>
               </span>
-              {enabled && master && <StateDot state={master.state} />}
+              {master && <StateDot state={master.state} />}
             </Row>
           )
         })()}
