@@ -11,13 +11,18 @@ export function diffLineKind(line: string): string {
   return ''
 }
 
-export function CopyHashButton({ hash, label = 'Copy hash to clipboard' }: { hash: string; label?: string }) {
+function useCopyFeedback(value: string) {
   const [copied, setCopied] = useState(false)
   const copy = () => {
-    window.sauron.copyToClipboard(hash)
+    window.sauron.copyToClipboard(value)
     setCopied(true)
     setTimeout(() => setCopied(false), 1400)
   }
+  return { copied, copy }
+}
+
+export function CopyHashButton({ hash, label = 'Copy hash to clipboard' }: { hash: string; label?: string }) {
+  const { copied, copy } = useCopyFeedback(hash)
   return (
     <span className="copy-hash-wrap">
       <button onClick={copy}>{label}</button>
@@ -32,15 +37,13 @@ export function CopyHashButton({ hash, label = 'Copy hash to clipboard' }: { has
  * reach the row underneath.
  */
 export function CopyLabel({ value, children, className = '', title }: { value: string; children?: React.ReactNode; className?: string; title?: string }) {
-  const [copied, setCopied] = useState(false)
-  const copy = (e: React.MouseEvent) => {
+  const { copied, copy } = useCopyFeedback(value)
+  const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation()
-    window.sauron.copyToClipboard(value)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1400)
+    copy()
   }
   return (
-    <span className={`copyable ${className}`} title={title ?? `${value} · click to copy`} onClick={copy}>
+    <span className={`copyable ${className}`} title={title ?? `${value} · click to copy`} onClick={handleClick}>
       {children ?? value}
       {copied && <span className="copy-tooltip" role="status">Copied</span>}
     </span>
