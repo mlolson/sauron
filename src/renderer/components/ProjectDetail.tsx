@@ -15,7 +15,7 @@ import { ToolIcon } from './ToolIcon'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { RenameDialog } from './RenameDialog'
 import { WorktreeDialog } from './WorktreeDialog'
-import { CopyHashButton, DiffBody } from './CommitUI'
+import { CopyHashButton, DiffBody, CopyLabel } from './CommitUI'
 
 interface Props {
   project: Project
@@ -356,8 +356,8 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
               const users = sessions.filter((s) => s.projectId === project.id && s.kind === 'managed' && s.worktreePath === wt.path && isAlive(s))
               return (
                 <li key={wt.path}>
-                  <span className="branch">{wt.branch ?? <span className="muted">(detached)</span>}</span>
-                  <span className="path" title={wt.path}>{abbreviate(wt.path)}</span>
+                  <span className="branch">{wt.branch ? <CopyLabel value={wt.branch} /> : <span className="muted">(detached)</span>}</span>
+                  <CopyLabel value={wt.path} className="path" title={`${wt.path} · click to copy`}>{abbreviate(wt.path)}</CopyLabel>
                   {wt.isMain && <span className="tag">main checkout</span>}
                   {wt.isSauron && <span className="tag accent">sauron</span>}
                   {users.length > 0 && <span className="tag">in use: {users.map((u) => u.displayName).join(', ')}</span>}

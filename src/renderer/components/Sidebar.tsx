@@ -11,6 +11,7 @@ import { WorktreeDialog } from './WorktreeDialog'
 import { AgentPicker } from './AgentPicker'
 import { PROJECT_SUMMARIZER_ID, resolveProjectJobs } from '@shared/jobs'
 import { TriggerDialog } from './TriggerDialog'
+import { CopyLabel } from './CommitUI'
 import type { BackgroundJob, JobRun } from '@shared/types'
 import { ToolIcon } from './ToolIcon'
 
@@ -293,7 +294,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   <span className={`label ${isAlive(session) ? '' : 'muted'}`}>
                     <span className="name">{session.displayName}</span>
                     {(session.background || session.worktreePath) && (
-                      <span className="sub">{session.background ? `background run · ${branchOf(snapshot, session)}` : branchOf(snapshot, session)}</span>
+                      <span className="sub">{session.background && 'background run · '}<CopyLabel value={branchOf(snapshot, session)} /></span>
                     )}
                   </span>
                   <span className="when" title={`Last active ${new Date(session.lastActivityAt).toLocaleString()}`}>{compactTime(session.lastActivityAt)}</span>
@@ -335,7 +336,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                         <span className={`glyph ${running ? 'accent' : 'muted'}`}><ToolIcon tool={job.agentId} /></span>
                         <span className={`label ${running ? '' : 'muted'}`}>
                           <span className="name">{job.name}</span>
-                          <span className="sub">{running ? `running · ${running.branch ?? 'main checkout'}` : job.enabled ? 'idle' : 'disabled'}</span>
+                          <span className="sub">{running ? <>running · {running.branch ? <CopyLabel value={running.branch} /> : 'main checkout'}</> : job.enabled ? 'idle' : 'disabled'}</span>
                         </span>
                         {awaitingReview > 0 && <span className="badge review" title={`${awaitingReview} run${awaitingReview === 1 ? '' : 's'} waiting for review`}>{awaitingReview}</span>}
                         <span className="when" title={last ? `Last run started ${new Date(last.startedAt).toLocaleString()}` : 'Never run'}>

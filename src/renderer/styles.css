@@ -518,3 +518,6 @@ button:disabled { opacity: 0.5; }
 .job-facts dt { color: var(--fg-muted); }
 .job-facts dd { margin: 0; }
 .row .name .pin { margin-right: 6px; vertical-align: -1px; color: var(--fg-muted); }
+
+.copyable { position: relative; cursor: copy; border-bottom: 1px dotted transparent; }
+.copyable:hover { border-bottom-color: currentColor; }

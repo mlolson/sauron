@@ -3,6 +3,7 @@ import type { BackgroundJob, JobRun, Project, SelectionTarget, Snapshot } from '
 import { describeTrigger, describeWorkspace } from '@shared/jobs'
 import { relativeTime } from '@shared/time'
 import { CommitsPane } from './CommitsPane'
+import { CopyLabel } from './CommitUI'
 import { ToolIcon } from './ToolIcon'
 import { TriggerDialog } from './TriggerDialog'
 import { RunLogDialog, useRunLog } from './RunLogDialog'
@@ -100,7 +101,7 @@ export function JobView({ project, job, snapshot, onSelect }: { project: Project
                     <span className="muted small">
                       {run.status === 'running' ? `started ${relativeTime(run.startedAt)}` : `finished ${relativeTime(run.finishedAt ?? run.startedAt)}`}
                       {' · '}{run.trigger === 'manual' ? 'started by hand' : `${run.trigger} trigger`}
-                      {run.branch && <> · <code>{run.branch}</code></>}
+                      {run.branch && <> · <CopyLabel value={run.branch}><code>{run.branch}</code></CopyLabel></>}
                       {run.workspace === 'worktree' && run.status !== 'running' && ` · ${run.commitCount} commit${run.commitCount === 1 ? '' : 's'}`}
                     </span>
                   </div>
@@ -145,7 +146,7 @@ export function JobView({ project, job, snapshot, onSelect }: { project: Project
               <div className="review-banner">
                 <div>
                   <strong>{job.name}</strong>
-                  <span className="muted small"> · {reviewing.commitCount} commit{reviewing.commitCount === 1 ? '' : 's'} on <code>{reviewing.branch}</code></span>
+                  <span className="muted small"> · {reviewing.commitCount} commit{reviewing.commitCount === 1 ? '' : 's'} on {reviewing.branch && <CopyLabel value={reviewing.branch}><code>{reviewing.branch}</code></CopyLabel>}</span>
                   {reviewing.summary && <p className="run-summary">{reviewing.summary}</p>}
                 </div>
                 <div className="commit-actions">

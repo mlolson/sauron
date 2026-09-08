@@ -5,6 +5,7 @@ import { SessionTerminal } from './SessionTerminal'
 import { TranscriptView } from './TranscriptView'
 import { CommitsPane } from './CommitsPane'
 import { ToolIcon } from './ToolIcon'
+import { CopyLabel } from './CommitUI'
 import { importExternalSession } from './Sidebar'
 
 interface Props {
@@ -110,11 +111,11 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
         <div className="session-meta">
           <span className="chip" title={branch ? `Branch ${branch}` : 'This checkout is not on a branch'}>
             <span className="k">branch</span>
-            <span className="v">{branch ?? 'detached'}</span>
+            {branch ? <CopyLabel value={branch} className="v" /> : <span className="v">detached</span>}
           </span>
           <span className="chip" title={cwd}>
             <span className="k">worktree</span>
-            <span className="v">{worktreeLabel}</span>
+            <CopyLabel value={cwd} className="v" title={`${cwd} · click to copy the path`}>{worktreeLabel}</CopyLabel>
           </span>
         </div>
         <div className="actions">

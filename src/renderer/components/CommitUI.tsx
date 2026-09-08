@@ -26,6 +26,27 @@ export function CopyHashButton({ hash, label = 'Copy hash to clipboard' }: { has
   )
 }
 
+/**
+ * A branch name or path that copies itself when clicked. Used wherever one is shown, so the
+ * behaviour is the same in a header chip, a sidebar row and a run list. The click does not
+ * reach the row underneath.
+ */
+export function CopyLabel({ value, children, className = '', title }: { value: string; children?: React.ReactNode; className?: string; title?: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    window.sauron.copyToClipboard(value)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1400)
+  }
+  return (
+    <span className={`copyable ${className}`} title={title ?? `${value} · click to copy`} onClick={copy}>
+      {children ?? value}
+      {copied && <span className="copy-tooltip" role="status">Copied</span>}
+    </span>
+  )
+}
+
 /** Renders unified diff text. `null` means still loading; empty means a commit with no textual diff. */
 export function DiffBody({ content }: { content: string | null }) {
   if (content === null) return <p className="muted">Loading diff…</p>

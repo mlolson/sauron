@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { RecentCommit, Session } from '@shared/types'
 import { relativeTime } from '@shared/time'
-import { CopyHashButton, DiffBody } from './CommitUI'
+import { CopyHashButton, CopyLabel, DiffBody } from './CommitUI'
 import { ToolIcon } from './ToolIcon'
 
 type Scope = 'session' | 'all'
@@ -159,7 +159,7 @@ export function CommitsPane({ session, projectId, onClose, initialBranch, banner
               {current.message && <p className="muted small">{current.message}</p>}
               <div className="muted small">
                 <code>{current.shortHash}</code> · {current.author} · {relativeTime(current.authoredAt)}
-                {current.branch && <> · {current.branch}</>}
+                {current.branch && <> · <CopyLabel value={current.branch} /></>}
               </div>
             </div>
           )}
