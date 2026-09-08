@@ -423,7 +423,8 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
         ) : (
           <ul className="worktree-list">
             {worktrees.map((wt) => {
-              const users = mine.filter((s) => s.worktreePath === wt.path && isAlive(s))
+              // Every live session counts here, background runs included: their worktree is busy too.
+              const users = sessions.filter((s) => s.projectId === project.id && s.kind === 'managed' && s.worktreePath === wt.path && isAlive(s))
               return (
                 <li key={wt.path}>
                   <span className="branch">{wt.branch ?? <span className="muted">(detached)</span>}</span>
