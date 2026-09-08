@@ -9,7 +9,9 @@ A "super terminal" desktop app for running a lot of coding agents across a lot o
 I like running agents in the terminal. Claude Code, Codex, Opencode, Picode, local AI, cloud providers, etc. What I did not like was keeping track of fifteen of them across six
 repositories. Which ones are waiting on me? What did that one commit? Where was I on this
 project three weeks ago? Sauron is the thing I built to answer those questions without
-giving up the terminal. It is not an IDE and it does not try to be one.
+giving up the terminal. It is not quite an IDE and it is not quite a terminal. I call it a TDE (terminal development environment).
+
+It is free and open source and always will be!
 
 ![The project page: status summary, key documents, sessions, background agents](docs/screenshots/project.png)
 
