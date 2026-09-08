@@ -134,7 +134,7 @@ export async function startRun(root: string, projectId: string, jobId: string, t
     const worktreePath = branch ? await worktrees.create(project.path, project.name, branch) : null
     const cwd = worktreePath ?? project.path
     const base = await runCommand(tools.git, ['rev-parse', 'HEAD'], { cwd })
-    if (base.code !== 0) throw new SauronError('command_failed', `git rev-parse: ${base.stderr.trim()}`)
+    if (base.code !== 0) throw new SauronError('invalid_state', `${project.name} has no commits yet; background agents need a commit to work from.`)
     const current = branch ?? (await runCommand(tools.git, ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd })).stdout.trim() ?? 'HEAD'
 
     const promptPath = isAbsolute(job.promptFile) ? job.promptFile : resolvePath(paths.root, job.promptFile)
