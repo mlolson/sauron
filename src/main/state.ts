@@ -1057,6 +1057,8 @@ export class AppState extends EventEmitter<StateEvents> {
   async runJob(projectId: string, jobId: string): Promise<void> {
     const project = this.project(projectId)
     if (!project || !this.sauronBin) throw new SauronError('invalid_state', 'Unknown project, or the CLI is not installed.')
+    // The runner reads config.json itself; an attachment made a moment ago must be on disk first.
+    await this.persistence.flush()
     const result = await runCommand(this.sauronBin, ['job', 'run', '--project', project.id, '--job', jobId, '--trigger', 'manual'], { timeoutMs: 90_000 })
     if (result.code !== 0) throw new SauronError('command_failed', result.stderr.trim() || result.stdout.trim() || `sauron job run exited ${result.code}`)
     await this.refreshRuns()
