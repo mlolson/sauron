@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { BackgroundJob, JobRun, Project, SelectionTarget, Snapshot } from '@shared/types'
 import { describeTrigger, describeWorkspace } from '@shared/jobs'
 import { relativeTime } from '@shared/time'
+import { CommitsPane } from './CommitsPane'
 import { ToolIcon } from './ToolIcon'
 import { TriggerDialog } from './TriggerDialog'
 import { RunLogDialog, useRunLog } from './RunLogDialog'
@@ -14,6 +15,7 @@ import { RunLogDialog, useRunLog } from './RunLogDialog'
 export function JobView({ project, job, snapshot, onSelect }: { project: Project; job: BackgroundJob; snapshot: Snapshot; onSelect: (t: SelectionTarget) => void }) {
   const [configuring, setConfiguring] = useState(false)
   const { logFor, showLog, closeLog } = useRunLog()
+  const [reviewing, setReviewing] = useState<JobRun | null>(null)
   const [error, setError] = useState<string | null>(null)
   const runs = (snapshot.runs[project.id] ?? []).filter((r) => r.jobId === job.id)
   const running = runs.find((r) => r.status === 'running')
@@ -28,11 +30,19 @@ export function JobView({ project, job, snapshot, onSelect }: { project: Project
     }
   }
   const merge = (run: JobRun) => {
-    if (confirm(`Merge "${job.name}" into the current branch?\n\n${run.commitCount} commit(s) from ${run.branch}. The worktree and branch are removed afterwards.`)) act(window.sauron.mergeRun(run.id))
+    if (confirm(`Merge "${job.name}" into the current branch?\n\n${run.commitCount} commit(s) from ${run.branch}. The worktree and branch are removed afterwards.`)) {
+      setReviewing(null)
+      act(window.sauron.mergeRun(run.id))
+    }
   }
   const discard = (run: JobRun) => {
-    if (confirm(`Discard this run of "${job.name}"?\n\nIts branch ${run.branch} and worktree are deleted.`)) act(window.sauron.discardRun(run.id))
+    if (confirm(`Discard this run of "${job.name}"?\n\nIts branch ${run.branch} and worktree are deleted.`)) {
+      setReviewing(null)
+      act(window.sauron.discardRun(run.id))
+    }
   }
+  const rerun = () => act(window.sauron.runJob(project.id, job.id))
+  const awaiting = runs.filter((r) => r.status === 'needs_review').length
 
   return (
     <div className="page job-view">
@@ -71,7 +81,10 @@ export function JobView({ project, job, snapshot, onSelect }: { project: Project
       <section className="card">
         <div className="card-head">
           <h2>Runs</h2>
-          <span className="muted small">{runs.length === 0 ? 'Has not run on this project yet' : `${runs.length} on this project, newest first`}</span>
+          <span className="muted small">
+            {runs.length === 0 ? 'Has not run on this project yet' : `${runs.length} on this project, newest first`}
+            {awaiting > 0 && ` · ${awaiting} waiting for review`}
+          </span>
         </div>
         {runs.length === 0 ? (
           <p className="muted">Nothing yet. {job.enabled ? `It will run ${describeTrigger(job)}, or click Run now.` : 'Enable it to let its trigger start runs, or click Run now after enabling.'}</p>
@@ -94,9 +107,10 @@ export function JobView({ project, job, snapshot, onSelect }: { project: Project
                   <div className="commit-actions">
                     {session && <button onClick={() => onSelect({ kind: 'session', id: session.id })}>{run.status === 'running' ? 'Watch' : 'Session'}</button>}
                     <button onClick={() => void showLog(run)}>Log</button>
+                    {run.status !== 'running' && <button disabled={Boolean(running) || !job.enabled} title={running ? 'A run is in progress' : 'Start a new run'} onClick={rerun}>Re-run</button>}
                     {run.status === 'needs_review' && (
                       <>
-                        <button className="primary" onClick={() => onSelect({ kind: 'project', id: project.id })}>Review on project page</button>
+                        <button className="primary" disabled={!session} title={session ? 'Read the commits and their diffs' : 'The run session is gone'} onClick={() => setReviewing(run)}>Review commits</button>
                         <button onClick={() => merge(run)}>Merge</button>
                         <button onClick={() => act(window.sauron.openRun(run.id))}>Open in session</button>
                         <button className="destructive" onClick={() => discard(run)}>Discard</button>
@@ -119,6 +133,34 @@ export function JobView({ project, job, snapshot, onSelect }: { project: Project
           onClose={() => setConfiguring(false)}
         />
       )}
+      {reviewing && (() => {
+        const session = snapshot.sessions.find((s) => s.id === reviewing.sessionId)
+        if (!session) return null
+        return (
+          <div className="review-pane">
+            <CommitsPane
+              session={session}
+              projectId={project.id}
+              initialBranch={reviewing.branch ?? undefined}
+              onClose={() => setReviewing(null)}
+              banner={
+                <div className="review-banner">
+                  <div>
+                    <strong>{job.name}</strong>
+                    <span className="muted small"> · {reviewing.commitCount} commit{reviewing.commitCount === 1 ? '' : 's'} on <code>{reviewing.branch}</code></span>
+                    {reviewing.summary && <p className="run-summary">{reviewing.summary}</p>}
+                  </div>
+                  <div className="commit-actions">
+                    <button className="primary" onClick={() => merge(reviewing)}>Merge</button>
+                    <button onClick={() => act(window.sauron.openRun(reviewing.id))}>Open in session</button>
+                    <button className="destructive" onClick={() => discard(reviewing)}>Discard</button>
+                  </div>
+                </div>
+              }
+            />
+          </div>
+        )
+      })()}
       {logFor && (
         <RunLogDialog name={job.name} text={logFor.text} onClose={closeLog} />
       )}

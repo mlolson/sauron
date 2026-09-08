@@ -3,8 +3,6 @@ import type { BackgroundJob, JobRun, KeyDocument, Preferences, Project, RecentCo
 import { PROJECT_SUMMARIZER_ID, describeTrigger, describeWorkspace, resolveProjectJobs } from '@shared/jobs'
 import { AgentPicker } from './AgentPicker'
 import { TriggerDialog } from './TriggerDialog'
-import { RunLogDialog, useRunLog } from './RunLogDialog'
-import { CommitsPane } from './CommitsPane'
 import { isAlive } from '@shared/types'
 import type { Worktree } from '@shared/worktrees'
 import type { ProjectStatus } from '@shared/status'
@@ -45,30 +43,13 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
   const [forkingToWorktree, setForkingToWorktree] = useState<Session | null>(null)
   const [picking, setPicking] = useState(false)
   const [editingTrigger, setEditingTrigger] = useState<BackgroundJob | null>(null)
-  const [reviewing, setReviewing] = useState<JobRun | null>(null)
-  const { logFor, showLog, closeLog } = useRunLog()
   const jobs = resolveProjectJobs(project, preferences.backgroundAgents)
-  const jobName = (id: string) => jobs.find((j) => j.id === id)?.name ?? preferences.backgroundAgents.find((t) => t.id === id)?.name ?? id
   const setJobEnabled = (job: BackgroundJob, enabled: boolean) => {
     void window.sauron.saveProjectJobs(project.id, (project.backgroundJobs ?? []).map((j) => (j.template === job.id ? { ...j, enabled } : j)))
   }
   const detachJob = (job: BackgroundJob) => {
     if (confirm(`Detach "${job.name}" from ${project.name}?\n\nThe agent itself is kept, and so are past runs and their branches.`)) void window.sauron.saveProjectJobs(project.id, (project.backgroundJobs ?? []).filter((j) => j.template !== job.id))
   }
-  const mergeRun = (run: JobRun) => {
-    if (confirm(`Merge "${jobName(run.jobId)}" into the current branch?\n\n${run.commitCount} commit(s) from ${run.branch}. The worktree and branch are removed afterwards.`)) void window.sauron.mergeRun(run.id)
-  }
-  const discardRun = (run: JobRun) => {
-    if (confirm(`Discard this run of "${jobName(run.jobId)}"?\n\nIts branch and worktree are deleted. This cannot be undone.`)) void window.sauron.discardRun(run.id)
-  }
-  const rerun = (run: JobRun) => {
-    const job = jobs.find((j) => j.id === run.jobId)
-    if (!job) return alert(`The job "${run.jobId}" no longer exists, so it cannot be re-run.`)
-    if (!job.enabled) return alert(`"${job.name}" is disabled. Enable it to run it again.`)
-    void window.sauron.runJob(project.id, job.id)
-  }
-  const jobRunning = (jobId: string) => runs.some((r) => r.jobId === jobId && r.status === 'running')
-  const awaiting = runs.filter((r) => r.status === 'needs_review')
   // Background runs are not sessions of this list: they live on their agent's page, and a
   // finished run is not something to resume.
   const managed = sessions.filter((s) => s.projectId === project.id && s.kind === 'managed' && !s.background)
@@ -364,35 +345,6 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
         )}
       </section>
 
-      {awaiting.length > 0 && (
-        <section className="card">
-          <div className="card-head">
-            <h2>Review</h2>
-            <span className="muted small">{`${awaiting.length} run${awaiting.length === 1 ? '' : 's'} with commits waiting for a decision`}</span>
-          </div>
-          {awaiting.length > 0 && (
-            <ul className="run-list">
-              {awaiting.map((run) => (
-                <li key={run.id}>
-                  <div className="run-head">
-                    <strong>{jobName(run.jobId)}</strong>
-                    <span className="muted small">{run.commitCount} commit{run.commitCount === 1 ? '' : 's'} · finished {relativeTime(run.finishedAt ?? run.startedAt)} · <code>{run.branch}</code></span>
-                  </div>
-                  {run.summary && <p className="run-summary">{run.summary}</p>}
-                  <div className="commit-actions">
-                    <button className="primary" onClick={() => setReviewing(run)}>Review commits</button>
-                    <button onClick={() => mergeRun(run)}>Merge</button>
-                    <button onClick={() => void window.sauron.openRun(run.id)}>Open in session</button>
-                    <button onClick={() => void showLog(run)}>Log</button>
-                    <button disabled={jobRunning(run.jobId)} onClick={() => rerun(run)}>Re-run</button>
-                    <button className="destructive" onClick={() => discardRun(run)}>Discard</button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
 
       <section className="card">
         <h2>Worktrees</h2>
@@ -472,38 +424,6 @@ export function ProjectDetail({ project, sessions, toolPaths, preferences, workt
           onClose={() => setEditingTrigger(null)}
         />
       )}
-      {logFor && (
-        <RunLogDialog name={jobName(logFor.run.jobId)} text={logFor.text} onClose={closeLog} />
-      )}
-      {reviewing && (() => {
-        const session = sessions.find((s) => s.id === reviewing.sessionId)
-        if (!session) return null
-        return (
-          <div className="review-pane">
-            <CommitsPane
-              session={session}
-              projectId={project.id}
-              initialBranch={reviewing.branch ?? undefined}
-              onClose={() => setReviewing(null)}
-              banner={
-                <div className="review-banner">
-                  <div>
-                    <strong>{jobName(reviewing.jobId)}</strong>
-                    <span className="muted small"> · {reviewing.commitCount} commit{reviewing.commitCount === 1 ? '' : 's'} on <code>{reviewing.branch}</code></span>
-                    {reviewing.summary && <p className="run-summary">{reviewing.summary}</p>}
-                  </div>
-                  <div className="commit-actions">
-                    <button className="primary" onClick={() => { mergeRun(reviewing); setReviewing(null) }}>Merge</button>
-                    <button onClick={() => void window.sauron.openRun(reviewing.id)}>Open in session</button>
-                    <button disabled={jobRunning(reviewing.jobId)} onClick={() => rerun(reviewing)}>Re-run</button>
-                    <button className="destructive" onClick={() => { discardRun(reviewing); setReviewing(null) }}>Discard</button>
-                  </div>
-                </div>
-              }
-            />
-          </div>
-        )
-      })()}
     </div>
   )
 }

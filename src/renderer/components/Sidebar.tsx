@@ -335,6 +335,10 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                           <span className="name">{job.name}</span>
                           <span className="sub">{running ? `running · ${running.branch ?? 'main checkout'}` : job.enabled ? 'idle' : 'disabled'}</span>
                         </span>
+                        {(() => {
+                          const n = runs.filter((r) => r.jobId === job.id && r.status === 'needs_review').length
+                          return n > 0 ? <span className="badge review" title={`${n} run${n === 1 ? '' : 's'} waiting for review`}>{n}</span> : null
+                        })()}
                         <span className="when" title={last ? `Last run started ${new Date(last.startedAt).toLocaleString()}` : 'Never run'}>
                           {running ? compactTime(running.startedAt) : last ? compactTime(last.startedAt) : '—'}
                         </span>
