@@ -1,6 +1,10 @@
+<img src="build/icon.png" alt="Sauron" width="128" align="left" style="margin-right: 16px">
+
 # Sauron
 
 A desktop app for running a lot of coding agents across a lot of projects, built on tmux.
+
+<br clear="all">
 
 I like running agents in the terminal. Claude Code, Codex, whatever comes next: a prompt, a
 directory, a shell. What I did not like was keeping track of fifteen of them across six
