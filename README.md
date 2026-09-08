@@ -21,7 +21,7 @@ It is free and open source and always will be!
 
 Every session Sauron starts is a tmux session. Quit the app and they keep running. Reboot and
 resume them. Attach from any terminal with `tmux attach` (there is a button that copies the
-command). Nothing you run is trapped inside the app.
+command). Nothing you run is trapped inside the app. Sauron can see sessions that are started in external terminal, and it allows you to import them if you wish.
 
 ![A session: the terminal, its branch and checkout, and the commits it made](docs/screenshots/session.png)
 
