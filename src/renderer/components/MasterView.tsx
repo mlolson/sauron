@@ -10,7 +10,7 @@ export function MasterView({ session, preferences }: { session: Session | undefi
         A long-lived {profile?.name ?? preferences.supervisorAgentId} session that keeps project summaries current and can start or direct worker sessions. It runs in its own
         home directory with generated CLAUDE.md and AGENTS.md instructions.
         {preferences.supervisorEnabled && session?.cliSessionId ? ' Starting will resume its previous conversation.' : ''}
-        {!preferences.supervisorEnabled ? ' It is currently disabled, so it will not run or refresh summaries.' : ''}
+        {!preferences.supervisorEnabled ? ' It is currently disabled, so it will not run.' : ''}
       </p>
       <div className="actions">
         {preferences.supervisorEnabled ? (

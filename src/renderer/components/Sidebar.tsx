@@ -156,6 +156,9 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
         {(() => {
           const master = snapshot.sessions.find((s) => s.id === 'master')
           const enabled = snapshot.preferences.supervisorEnabled
+          // Off is the default; the row would only be a reminder of a feature not in use. Turn it
+          // on in Preferences.
+          if (!enabled) return null
           const running = Boolean(master && isAlive(master))
           // The old menu offered Rename/Fork/Close, none of which the supervisor supports.
           const menu: MenuItem[] = enabled

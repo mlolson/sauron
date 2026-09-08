@@ -61,9 +61,9 @@ that rewrites the project's status after commits (5 minute cooldown) or on **Ref
 status lives in `<project>/.sauron/status.json`, ignored by git through `.git/info/exclude`,
 so any agent working in the checkout can read it. See `docs/PROJECT_SUMMARIZER.md`.
 
-**Supervisor agent.** A long-lived agent with its own generated home directory and
-instructions. Chat with it, ask it to start or message workers, or ask it about any project.
-Right-click it to restart or disable it.
+**Supervisor agent.** Optional, off by default: enable it in Preferences. A long-lived agent
+with its own generated home directory and instructions. Chat with it, ask it to start or
+message workers, or ask it about any project. Right-click it to restart or disable it.
 
 
 ## Stack

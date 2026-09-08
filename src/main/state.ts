@@ -242,8 +242,13 @@ export class AppState extends EventEmitter<StateEvents> {
     await this.syncGitWatchers()
     await this.syncCommitHooks()
     await this.regenerateMasterHome()
-    if (this.preferences.supervisorEnabled && this.preferences.masterAutoStart && !(this.masterSession() && isAlive(this.masterSession()!))) {
+    const master = this.masterSession()
+    if (this.preferences.supervisorEnabled && this.preferences.masterAutoStart && !(master && isAlive(master))) {
       await this.startMaster()
+    } else if (!this.preferences.supervisorEnabled && master && isAlive(master)) {
+      // Disabled means off, not merely hidden: a supervisor left running in tmux from before
+      // the setting changed would keep working unseen.
+      await this.stopMaster().catch((error) => this.report(error, { sessionId: MASTER_SESSION_ID }))
     }
     this.changed()
   }
