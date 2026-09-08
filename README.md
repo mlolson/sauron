@@ -1,13 +1,12 @@
-<img src="build/icon.png" alt="Sauron" width="128" align="left" style="margin-right: 16px">
-
 # Sauron
 
-A desktop app for running a lot of coding agents across a lot of projects, built on tmux.
+<img src="build/icon.png" alt="Sauron" width="128" align="left" style="margin-right: 16px">
+
+A "super terminal" desktop app for running a lot of coding agents across a lot of projects, built on tmux.
 
 <br clear="all">
 
-I like running agents in the terminal. Claude Code, Codex, whatever comes next: a prompt, a
-directory, a shell. What I did not like was keeping track of fifteen of them across six
+I like running agents in the terminal. Claude Code, Codex, Opencode, Picode, local AI, cloud providers, etc. What I did not like was keeping track of fifteen of them across six
 repositories. Which ones are waiting on me? What did that one commit? Where was I on this
 project three weeks ago? Sauron is the thing I built to answer those questions without
 giving up the terminal. It is not an IDE and it does not try to be one.
