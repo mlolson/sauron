@@ -21,8 +21,7 @@ It is free and open source and always will be!
 
 Every session Sauron starts is a tmux session. Quit the app and they keep running. Reboot and
 resume them. Attach from any terminal with `tmux attach` (there is a button that copies the
-command) and Sauron notices, hides its own view of the pane so the two do not fight over the
-window size, and shows it again when you detach. Nothing you run is trapped inside the app.
+command). Nothing you run is trapped inside the app.
 
 ![A session: the terminal, its branch and checkout, and the commits it made](docs/screenshots/session.png)
 
@@ -32,24 +31,22 @@ Sauron does not ship skills, a task framework, a planning ritual, or instruction
 agents. It does not put anything in your repository except a `post-commit` hook, an entry in
 `.git/info/exclude`, and the ignored `.sauron/` directory that entry covers. An agent is a profile: an executable and its arguments. Claude and
 Codex come preconfigured; add anything else that runs in a terminal, including a plain shell.
-Run agents the way you already do, with the flags you already use. Sauron keeps track.
+Run agents the way you already do, with the flags you already use. Sauron just keeps track of them.
 
 ### 3. Designed to avoid vendor lock-in
 
-Run Claude, Codex, Openrouter and a local model side by side under the same project. Fork a session into
-a second one that continues the conversation. Hand a session's work to a *different* agent:
+Run Claude, Codex, Openrouter, and a local model side by side under the same project. Fork a session into
+a worktree. Hand a session's work to a *different* agent:
 Sauron writes a briefing from the recent transcript, the session's commits, and the state of
 the working tree, and starts the other agent with it. No model in the loop, so it takes a
 fraction of a second. Hit a usage limit on one vendor, carry on with another.
 
 ### 4. Background agents whose output you review
 
-Define an agent once (a profile, a prompt file, a trigger) and attach it to any project. It
-runs headless in a fresh worktree on its own branch, manually, on a schedule, or after commits
+Sauron allows you to define "background" agents and attach them to any project. Background agetns
+run headless in a fresh worktree on its own branch, manually, on a schedule, or after commits
 with a cooldown, and it runs whether or not the app is open. When it finishes, its commits
-wait on the agent's page with a diff viewer and Merge, Open in a session, or Discard. Nothing
-reaches your checkout without you looking at it first, unless you opt a specific agent into
-auto-merge. Agents that only read the repository can run in the main checkout instead.
+wait on the agent's page with a diff viewer and Merge. Or they can run on your main repo and just do whatever.
 
 ![Reviewing a background run: the agent's summary, its commits with diffs, and Merge / Open in session / Discard](docs/screenshots/agent.png)
 
