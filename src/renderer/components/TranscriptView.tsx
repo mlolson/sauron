@@ -10,7 +10,6 @@ interface Props {
 
 export function TranscriptView({ sessionId, readOnly, note }: Props) {
   const [entries, setEntries] = useState<TranscriptEntry[]>([])
-  const [total, setTotal] = useState(0)
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing'>('loading')
   const [atBottom, setAtBottom] = useState(true)
   const scroller = useRef<HTMLDivElement>(null)
@@ -21,7 +20,6 @@ export function TranscriptView({ sessionId, readOnly, note }: Props) {
     setStatus('loading')
     const off = window.sauron.onTranscriptAppend(sessionId, (added) => {
       setEntries((prev) => [...prev, ...added])
-      setTotal((t) => t + added.length)
     })
     // A run that has just started has no transcript file for a moment; keep looking rather
     // than reporting it missing for good.
@@ -35,7 +33,6 @@ export function TranscriptView({ sessionId, readOnly, note }: Props) {
           return
         }
         setEntries(page.entries)
-        setTotal(page.total)
         setStatus('ready')
       })
     }
@@ -90,7 +87,7 @@ export function TranscriptView({ sessionId, readOnly, note }: Props) {
       </div>
       {!atBottom && (
         <button className="jump" onClick={() => setAtBottom(true)}>
-          ↓ Jump to bottom{total > entries.length ? '' : ''}
+          ↓ Jump to bottom
         </button>
       )}
     </div>
