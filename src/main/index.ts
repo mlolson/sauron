@@ -39,8 +39,16 @@ function createWindow(): BrowserWindow {
   })
   win.once('ready-to-show', () => win.show())
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    openExternally(url)
     return { action: 'deny' }
+  })
+  // Rendered documents come from project checkouts and can hold any link. Following one in
+  // place would load a remote page into the window that holds the `sauron` bridge; keep the
+  // renderer on its own origin and hand the link to the browser instead.
+  win.webContents.on('will-navigate', (event, url) => {
+    if (sameOrigin(url, win.webContents.getURL())) return
+    event.preventDefault()
+    openExternally(url)
   })
   if (process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -60,6 +68,23 @@ function createWindow(): BrowserWindow {
     state.pty?.closeAll()
   })
   return win
+}
+
+/** Only web links leave the app; any other scheme could start an arbitrary handler. */
+function openExternally(url: string): void {
+  if (!/^(https?|mailto):/i.test(url)) {
+    console.warn('refusing to open', url)
+    return
+  }
+  void shell.openExternal(url)
+}
+
+function sameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin
+  } catch {
+    return false
+  }
 }
 
 function broadcast(channel: string, payload: unknown): void {

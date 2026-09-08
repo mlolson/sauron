@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -47,6 +48,14 @@ describe('branch filtering', () => {
     const titles = all.filter((c) => onFeature.has(c.hash)).map((c) => c.title).sort()
     expect(titles).toEqual(['base', 'on feature'])
     expect(await hashesOnBranch(GIT, dir, 'nope')).toEqual(new Set())
+  })
+
+  it('refuses a branch name that git would read as an option', async () => {
+    const dir = await repo()
+    const output = join(dir, 'written-by-git-log')
+    await expect(recentGitCommits(GIT, dir, 20, `--output=${output}`)).rejects.toThrow(/not a valid branch name/)
+    await expect(hashesOnBranch(GIT, dir, '--all')).rejects.toThrow(/not a valid branch name/)
+    expect(existsSync(output)).toBe(false)
   })
 })
 
