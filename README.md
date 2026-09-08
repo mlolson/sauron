@@ -1,70 +1,71 @@
-# Sauron: An agentic terminal development environment, based on tmux
+# Sauron
 
-**About Sauron**
-I really like the simplicity of running agents in the terminal, but I was having problems managing the complexity of running many of them across multiple projects. I decided to build something for my own use, custom tailored to exactly how I like to work. 
+A desktop app for running a lot of coding agents across a lot of projects, built on tmux.
 
-It's not quite and IDE, and it's not quite a terminal. I therefore call it a "terminal development environment". 
+I like running agents in the terminal. Claude Code, Codex, whatever comes next: a prompt, a
+directory, a shell. What I did not like was keeping track of fifteen of them across six
+repositories. Which ones are waiting on me? What did that one commit? Where was I on this
+project three weeks ago? Sauron is the thing I built to answer those questions without
+giving up the terminal. It is not an IDE and it does not try to be one.
 
-## Key design principles
+![The project page: status summary, key documents, sessions, background agents](docs/screenshots/project.png)
 
-* **Unopinionated**: Sauron doesn't provide any frameworks, skills, or other instructions for your agents. Agents run in regular tmux sessions, Sauron simply keeps track of them. Sauron is also not opinionated about which harness or inference provider you use. Anything that runs in a terminal is supported.
+## Five things worth knowing
 
-* **Organized around projects**: Agents are organized around the projects that they are working on. A background agent keeps an up to date summary of the status of each project, written into the project's own `.sauron/status.json`: recent updates, blockers, and TODO's. Come back to a project after a week or a month and immediately know where to pick it up.
+### 1. It is tmux underneath
 
-* **Persistent sessions** Because sessions are running in tmux, they are persistent. You can quit the app or reboot your laptop and the sessions will still be there. 
+Every session Sauron starts is a tmux session. Quit the app and they keep running. Reboot and
+resume them. Attach from any terminal with `tmux attach` (there is a button that copies the
+command) and Sauron notices, hides its own view of the pane so the two do not fight over the
+window size, and shows it again when you detach. Nothing you run is trapped inside the app.
 
-* **Commit attribution and code review tools**: Sauron keeps track of the commits that each agent writes. Code review tools allow you to quickly review each agent's code output.
+![A session: the terminal, its branch and checkout, and the commits it made](docs/screenshots/session.png)
 
-* **Seamless handoff between agents**: Fork agents and handoff work to another type of agent with a single click. Ran into your limit for Claude? Hand off to Codex and don't miss a beat. Helps avoid vendor lock-in.
+### 2. It is unopinionated
 
-* **Totally Customizable**: Add as many types of agents as you wish. Customize supervisor agent type and behavior. 
+Sauron does not ship skills, a task framework, a planning ritual, or instructions for your
+agents. It does not put anything in your repository except a `post-commit` hook, an entry in
+`.git/info/exclude`, and the ignored `.sauron/` directory that entry covers. An agent is a profile: an executable and its arguments. Claude and
+Codex come preconfigured; add anything else that runs in a terminal, including a plain shell.
+Run agents the way you already do, with the flags you already use. Sauron keeps track.
 
+### 3. Several agents, no lock-in
 
+Run Claude, Codex, and a local model side by side under the same project. Fork a session into
+a second one that continues the conversation. Hand a session's work to a *different* agent:
+Sauron writes a briefing from the recent transcript, the session's commits, and the state of
+the working tree, and starts the other agent with it. No model in the loop, so it takes a
+fraction of a second. Hit a usage limit on one vendor, carry on with another.
 
+### 4. Background agents whose output you review
 
-## Key features
+Define an agent once (a profile, a prompt file, a trigger) and attach it to any project. It
+runs headless in a fresh worktree on its own branch, manually, on a schedule, or after commits
+with a cooldown, and it runs whether or not the app is open. When it finishes, its commits
+wait on the agent's page with a diff viewer and Merge, Open in a session, or Discard. Nothing
+reaches your checkout without you looking at it first, unless you opt a specific agent into
+auto-merge. Agents that only read the repository can run in the main checkout instead.
 
-**Built on tmux** 
+![A background agent's page: its configuration and every run, with review actions](docs/screenshots/agent.png)
 
+### 5. Project summaries
 
+One built-in background agent rewrites a short status for each project after commits: what
+the project is, what changed recently, what is open or blocked. It lives in
+`<project>/.sauron/status.json`, kept out of git, where any agent working in the checkout can
+read it too. Come back to a project after a month and the sidebar tells you where you left off.
 
-**Built on tmux.** Every session Sauron starts runs in a tmux session. Quit the app, relaunch, and they are all still there. 
+## Also in the box
 
-**Commit attribution.** A post-commit hook, installed into each project, records which
-session made every commit — it fires only when git runs inside a Sauron session, so your own
-commits are left alone. Each session in the sidebar shows its last commit; the **Commits**
-pane shows a session's full history with a diff viewer, switchable to the whole project and
-filterable by branch.
-
-**Sessions you didn't start here.** Claude and Codex sessions launched from a terminal appear
-automatically under their project, read-only with a live transcript. **Import** brings one
-under Sauron as a managed session continuing a copy of the conversation.
-
-**Fork and handoff.** Fork a Claude or Codex session into a new one that continues a copy of
-its conversation. **Handoff** goes further: hand a session's work to a *different* agent.
-Agents cannot read each other's session stores, so Sauron writes a briefing — the recent
-conversation, the session's commits, the branch and working-tree state — and starts the new
-agent with it. No model in the loop; it takes a fraction of a second.
-
-**Worktrees.** Launch a session into a fresh git worktree on its own branch, so agents working
-in parallel cannot step on each other. The session header shows which branch and checkout a
-session is in, and updates within seconds when it changes.
-
-**Background agents.** Define an agent once (an agent profile, a prompt file, a default
-trigger) and attach it to any project. Triggers: manual, every N minutes/hours/days, a cron
-expression, or after commits with a cooldown. Runs happen with the app closed, in a fresh
-worktree whose output waits in a review queue, or directly in the main checkout for agents
-that only read the repository. See `docs/BACKGROUND_AGENTS.md`.
-
-**Project summarizer.** A built-in background agent, attached to every project by default,
-that rewrites the project's status after commits (5 minute cooldown) or on **Refresh**. The
-status lives in `<project>/.sauron/status.json`, ignored by git through `.git/info/exclude`,
-so any agent working in the checkout can read it. See `docs/PROJECT_SUMMARIZER.md`.
-
-**Supervisor agent.** Optional, off by default: enable it in Preferences. A long-lived agent
-with its own generated home directory and instructions. Chat with it, ask it to start or
-message workers, or ask it about any project. Right-click it to restart or disable it.
-
+- **Commit attribution.** A `post-commit` hook records which session made each commit. Every
+  session shows its last commit; the Commits pane shows its full history with diffs, or the
+  whole project's, filterable by branch.
+- **Sessions you started elsewhere.** Claude and Codex sessions launched from a terminal show
+  up under their project with a live transcript. Import one to bring it under Sauron.
+- **Worktrees.** Start a session in a fresh worktree on its own branch so parallel agents do
+  not step on each other. The header shows the branch and checkout and updates as they change.
+- **A supervisor agent**, off by default. A long-lived agent you chat with that can start and
+  message workers through the CLI.
 
 ## Stack
 
