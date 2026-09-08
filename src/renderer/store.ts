@@ -48,6 +48,7 @@ export function sameTarget(a: SelectionTarget | null, b: SelectionTarget | null)
   if (!a || !b || a.kind !== b.kind) return false
   if (a.kind === 'orphan' && b.kind === 'orphan') return a.name === b.name
   if (a.kind === 'document' && b.kind === 'document') return a.projectId === b.projectId && a.path === b.path
+  if (a.kind === 'job' && b.kind === 'job') return a.projectId === b.projectId && a.jobId === b.jobId
   if ('id' in a && 'id' in b) return a.id === b.id
   return a.kind === 'master'
 }

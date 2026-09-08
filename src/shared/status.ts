@@ -59,7 +59,9 @@ export interface MasterContext {
 }
 
 /** The prompt the built-in Project summarizer background agent runs with. Seeded into jobs/project-summarizer.md. */
-export const defaultProjectSummarizerPrompt = `# Project status refresh
+/** Earlier defaults, so a seeded file nobody edited can be brought up to date. */
+export const previousDefaultSummarizerPrompts: string[] = [
+  `# Project status refresh
 
 You are running unattended in the main checkout of project "{projectName}" (id {projectId}).
 Refresh its status summary. The previous summary timestamp is {previousSummaryUpdatedAt}.
@@ -76,6 +78,34 @@ thing you write is the status, through the \`sauron\` CLI.
    If the command fails, skip this step.
 4. Read README, CLAUDE.md, AGENTS.md, TODO.md, or similar planning docs if present.
 5. Write the result with \`sauron status set --project {projectId} --summary "..." --update
+   "..." --todo "..."\`.
+   - Summary: exactly one plain sentence saying what the project is and where it stands.
+   - Updates: 3–6 short bullets for recent changes, newest first.
+   - TODOs: 3–8 short bullets for open work. Prefix blockers with "Blocked:".
+   - Details are optional.
+6. Reply with one brief line saying the status was updated.
+
+Be economical: skip steps with nothing new and keep tool output small.
+`,
+]
+
+export const defaultProjectSummarizerPrompt = `# Project status refresh
+
+You are running unattended in the main checkout of project "{projectName}" (id {projectId}).
+Refresh its status summary. The previous summary timestamp is {previousSummaryUpdatedAt}.
+
+Work only in the current directory. Do not stage, commit, or modify any tracked file; the only
+thing you write is the status, through the Sauron CLI at \`{sauronBin}\` (use that absolute path; \`sauron\` may not be on PATH).
+
+1. Read the previous status with \`{sauronBin} status get --project {projectId}\` (it may not exist yet).
+2. Inspect \`git log --oneline -20\`, \`git status --short\`, and \`git branch -a\`. Note the HEAD commit.
+3. If \`{sauronBin} sessions --project {projectId}\` works (it needs the Sauron app to be running),
+   compare each session's \`lastActivityAt\` with the previous summary timestamp. Completely exclude
+   sessions whose last activity is not newer. For every eligible session, inspect at most its last
+   10 user and assistant messages from its transcript path. Do not ingest full transcripts.
+   If the command fails, skip this step.
+4. Read README, CLAUDE.md, AGENTS.md, TODO.md, or similar planning docs if present.
+5. Write the result with \`{sauronBin} status set --project {projectId} --summary "..." --update
    "..." --todo "..."\`.
    - Summary: exactly one plain sentence saying what the project is and where it stands.
    - Updates: 3–6 short bullets for recent changes, newest first.

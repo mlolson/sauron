@@ -444,3 +444,5 @@ export type SelectionTarget =
   | { kind: 'session'; id: string }
   | { kind: 'orphan'; name: string }
   | { kind: 'document'; projectId: string; path: string }
+  /** A background agent as attached to one project. */
+  | { kind: 'job'; projectId: string; jobId: string }

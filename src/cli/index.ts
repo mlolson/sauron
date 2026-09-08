@@ -18,7 +18,7 @@
  *   sauron status set --project <name|id> --summary <one sentence> [--update <bullet>]... [--todo <bullet>]... [--details <text>]
  *   sauron status refresh --project <name|id>
  *   sauron master                 (start or focus the supervisor agent)
- *   sauron select --project <name|id> | --session <id>
+ *   sauron select --project <name|id> [--job <agent id>] | --session <id>
  *   sauron raw '<json>'
  *   sauron hook claude <Event>      (Claude Code hook: JSON payload on stdin)
  *   sauron hook codex '<json>'      (Codex notify: JSON payload as the last argument)
@@ -238,7 +238,7 @@ async function main(): Promise<void> {
       payload = { cmd: 'master.start' }
       break
     case 'select':
-      payload = { cmd: 'select', project: flags.project, session: flags.session, document: flags.document }
+      payload = { cmd: 'select', project: flags.project, session: flags.session, document: flags.document, job: flags.job }
       break
     case 'raw':
       payload = JSON.parse(sub ?? '{}')

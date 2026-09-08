@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { missingRequiredTools } from '@shared/types'
 import { Sidebar } from './components/Sidebar'
 import { ProjectDetail } from './components/ProjectDetail'
+import { JobView } from './components/JobView'
+import { resolveProjectJobs } from '@shared/jobs'
 import { SessionView } from './components/SessionView'
 import { OrphanView } from './components/OrphanView'
 import { SetupView } from './components/SetupView'
@@ -90,6 +92,12 @@ export function App() {
     case 'orphan':
       detail = <OrphanView name={selection.name} onSelect={setSelection} />
       break
+    case 'job': {
+      const project = snapshot.projects.find((p) => p.id === selection.projectId)
+      const job = project ? resolveProjectJobs(project, snapshot.preferences.backgroundAgents).find((j) => j.id === selection.jobId) : undefined
+      detail = project && job ? <JobView key={`${project.id}:${job.id}`} project={project} job={job} snapshot={snapshot} onSelect={setSelection} /> : <EmptyDetail />
+      break
+    }
     case 'document': {
       const project = snapshot.projects.find((p) => p.id === selection.projectId)
       detail = project ? (

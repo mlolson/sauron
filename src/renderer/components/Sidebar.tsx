@@ -316,15 +316,13 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   {jobsOpen && jobs.map((job) => {
                     const running = runs.find((r) => r.jobId === job.id && r.status === 'running')
                     const last = latestRun(runs, job.id)
-                    const runSession = (run: JobRun | undefined) => run && snapshot.sessions.find((s) => s.id === run.sessionId)
-                    const target = runSession(running) ?? runSession(last)
                     return (
                       <Row
                         key={job.id}
                         nested
                         deep
-                        selected={target ? sameTarget(selection, { kind: 'session', id: target.id }) : false}
-                        onClick={() => onSelect(target ? { kind: 'session', id: target.id } : { kind: 'project', id: project.id })}
+                        selected={sameTarget(selection, { kind: 'job', projectId: project.id, jobId: job.id })}
+                        onClick={() => onSelect({ kind: 'job', projectId: project.id, jobId: job.id })}
                         onContextMenu={(e) => openMenu(e, jobMenu(project, job, running))}
                       >
                         <span className={`glyph ${running ? 'accent' : 'muted'}`}><ToolIcon tool={job.agentId} /></span>

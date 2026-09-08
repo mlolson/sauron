@@ -28,7 +28,9 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
   const alive = isAlive(session)
   const external = session.kind === 'external'
   const forkable = Boolean(snapshot.preferences.agents.find((agent) => agent.id === session.tool)?.forkCommand?.length && session.cliSessionId)
-  const [view, setView] = useState<'terminal' | 'transcript'>(external ? 'transcript' : 'terminal')
+  // A background run's terminal shows nothing until the headless agent exits, so its live
+  // transcript is the view that answers "what is it doing".
+  const [view, setView] = useState<'terminal' | 'transcript'>(external || session.background ? 'transcript' : 'terminal')
   const [showCommits, setShowCommits] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(session.displayName)
@@ -177,7 +179,11 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
           </div>
         </>
       ) : external || (alive && view === 'transcript') ? (
-        <TranscriptView sessionId={session.id} readOnly={external} />
+        <TranscriptView
+          sessionId={session.id}
+          readOnly={external || Boolean(session.background)}
+          note={session.background ? 'A background run, shown as its live transcript: the headless agent takes no input and its terminal stays blank until it exits.' : undefined}
+        />
       ) : (
         <div className="placeholder">
           <div className="big">■</div>
@@ -200,7 +206,7 @@ export function SessionView({ session, snapshot, onSelect }: Props) {
           </div>
           {view === 'transcript' && session.transcriptPath && (
             <div className="stopped-transcript">
-              <TranscriptView sessionId={session.id} readOnly />
+              <TranscriptView sessionId={session.id} readOnly note={session.background ? 'What the run did, from its transcript.' : undefined} />
             </div>
           )}
         </div>

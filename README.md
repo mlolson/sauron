@@ -119,7 +119,7 @@ scripts/sauron status set --project <name|id> --summary "..." [--details "..."] 
 scripts/sauron status get|set ...                # also work with the app closed, straight from the project's status file
 scripts/sauron job run|list|merge|discard ...    # background agent runs; `sauron tick` is what launchd calls every minute
 scripts/sauron master                            # start the supervisor
-scripts/sauron select --project <name|id> | --session <id> | --document <path>
+scripts/sauron select --project <name|id> [--job <agent id>] | --session <id> | --document <path>
 ```
 
 Set `SAURON_TOOL_CLAUDE`, `SAURON_TOOL_CODEX`, `SAURON_TOOL_TMUX`, or `SAURON_TOOL_GIT` to override

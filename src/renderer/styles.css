@@ -511,3 +511,9 @@ button:disabled { opacity: 0.5; }
 .subsection-title .count { font-weight: 400; opacity: 0.8; }
 .subsection-title .link { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
 .card > .subsection-title:first-of-type { margin-top: 12px; }
+
+.job-view h1 { display: flex; align-items: center; gap: 10px; }
+.job-view .page-header .actions { display: flex; gap: 8px; align-items: center; }
+.job-facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0 0 10px; }
+.job-facts dt { color: var(--fg-muted); }
+.job-facts dd { margin: 0; }

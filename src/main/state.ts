@@ -13,7 +13,7 @@ import { Notifier } from './services/notifier'
 import { TranscriptIndexer, TranscriptTailer, type TranscriptFile } from './services/transcripts'
 import { projectForCwd } from '@shared/transcripts'
 import type { TranscriptEntry, TranscriptPage } from '@shared/transcript-types'
-import { defaultProjectSummarizerPrompt, MASTER_SESSION_ID, firstSentence, type ProjectStatus } from '@shared/status'
+import { defaultProjectSummarizerPrompt, previousDefaultSummarizerPrompts, MASTER_SESSION_ID, firstSentence, type ProjectStatus } from '@shared/status'
 import { StatusStore } from './services/status-store'
 import { MasterHome } from './services/master'
 import { ensureClaudeTrusts } from './services/claude-config'
@@ -1644,6 +1644,9 @@ export class AppState extends EventEmitter<StateEvents> {
       await writeFile(path, defaultProjectSummarizerPrompt, { encoding: 'utf8', flag: 'wx' })
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      // An untouched seed from an earlier version is ours to update; anything edited is left alone.
+      const current = await readFile(path, 'utf8')
+      if (previousDefaultSummarizerPrompts.includes(current)) await writeFile(path, defaultProjectSummarizerPrompt, 'utf8')
     }
   }
 

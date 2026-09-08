@@ -147,6 +147,7 @@ export async function startRun(root: string, projectId: string, jobId: string, t
       branch: current,
       jobName: job.name,
       previousSummaryUpdatedAt: previous?.updatedAt ?? 'none (this is the first summary)',
+      sauronBin: join(paths.binDir, 'sauron'),
     })
 
     const sauronBin = join(paths.binDir, 'sauron')

@@ -233,7 +233,11 @@ export class SocketServer {
           if (!project) throw new Error(`unknown project ${req.project}`)
           state.select({ kind: 'document', projectId: project.id, path: req.document })
         } else if (typeof req.session === 'string') state.select({ kind: 'session', id: req.session })
-        else if (req.project !== undefined) {
+        else if (typeof req.job === 'string') {
+          const project = this.findProject(req.project)
+          if (!project) throw new Error(`unknown project ${req.project}`)
+          state.select({ kind: 'job', projectId: project.id, jobId: req.job })
+        } else if (req.project !== undefined) {
           const project = this.findProject(req.project)
           if (!project) throw new Error(`unknown project ${req.project}`)
           state.select({ kind: 'project', id: project.id })

@@ -4,9 +4,11 @@ import type { TranscriptEntry } from '@shared/transcript-types'
 interface Props {
   sessionId: string
   readOnly: boolean
+  /** Why it is read-only; defaults to the external-session explanation. */
+  note?: string
 }
 
-export function TranscriptView({ sessionId, readOnly }: Props) {
+export function TranscriptView({ sessionId, readOnly, note }: Props) {
   const [entries, setEntries] = useState<TranscriptEntry[]>([])
   const [total, setTotal] = useState(0)
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing'>('loading')
@@ -21,18 +23,26 @@ export function TranscriptView({ sessionId, readOnly }: Props) {
       setEntries((prev) => [...prev, ...added])
       setTotal((t) => t + added.length)
     })
-    void window.sauron.transcriptOpen(sessionId).then((page) => {
-      if (cancelled) return
-      if (!page) {
-        setStatus('missing')
-        return
-      }
-      setEntries(page.entries)
-      setTotal(page.total)
-      setStatus('ready')
-    })
+    // A run that has just started has no transcript file for a moment; keep looking rather
+    // than reporting it missing for good.
+    let retry: ReturnType<typeof setTimeout> | null = null
+    const open = () => {
+      void window.sauron.transcriptOpen(sessionId).then((page) => {
+        if (cancelled) return
+        if (!page) {
+          setStatus('missing')
+          retry = setTimeout(open, 2000)
+          return
+        }
+        setEntries(page.entries)
+        setTotal(page.total)
+        setStatus('ready')
+      })
+    }
+    open()
     return () => {
       cancelled = true
+      if (retry) clearTimeout(retry)
       off()
       void window.sauron.transcriptClose(sessionId)
     }
@@ -65,7 +75,7 @@ export function TranscriptView({ sessionId, readOnly }: Props) {
 
   return (
     <div className="transcript">
-      {readOnly && <div className="transcript-banner">Read-only. This session was started outside Sauron; attach to it from the terminal where it runs.</div>}
+      {readOnly && <div className="transcript-banner">{note ?? 'Read-only. This session was started outside Sauron; attach to it from the terminal where it runs.'}</div>}
       <div className="transcript-scroll" ref={scroller} onScroll={onScroll}>
         {status === 'missing' && <p className="muted center">No transcript file yet.</p>}
         {status === 'ready' && entries.length === 0 && <p className="muted center">Transcript is empty so far.</p>}

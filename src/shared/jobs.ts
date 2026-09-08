@@ -15,8 +15,8 @@ export function jobIdOfBranch(branch: string): string | null {
 }
 
 /** Fills the prompt template. Unknown placeholders are left as written, so they are visible. */
-export function expandJobPrompt(template: string, ctx: { projectName: string; projectPath: string; branch: string; jobName: string; projectId?: string; previousSummaryUpdatedAt?: string }): string {
-  return template.replace(/\{(projectName|projectPath|branch|jobName|projectId|previousSummaryUpdatedAt)\}/g, (m, key: keyof typeof ctx) => ctx[key] ?? m)
+export function expandJobPrompt(template: string, ctx: { projectName: string; projectPath: string; branch: string; jobName: string; projectId?: string; previousSummaryUpdatedAt?: string; sauronBin?: string }): string {
+  return template.replace(/\{(projectName|projectPath|branch|jobName|projectId|previousSummaryUpdatedAt|sauronBin)\}/g, (m, key: keyof typeof ctx) => ctx[key] ?? m)
 }
 
 export const PROJECT_SUMMARIZER_ID = 'project-summarizer'
