@@ -321,6 +321,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                   {jobsOpen && jobs.map((job) => {
                     const running = runs.find((r) => r.jobId === job.id && r.status === 'running')
                     const last = latestRun(runs, job.id)
+                    const awaitingReview = runs.filter((r) => r.jobId === job.id && r.status === 'needs_review').length
                     return (
                       <Row
                         key={job.id}
@@ -335,10 +336,7 @@ export function Sidebar({ snapshot, selection, onSelect, onOpenPreferences }: Pr
                           <span className="name">{job.name}</span>
                           <span className="sub">{running ? `running · ${running.branch ?? 'main checkout'}` : job.enabled ? 'idle' : 'disabled'}</span>
                         </span>
-                        {(() => {
-                          const n = runs.filter((r) => r.jobId === job.id && r.status === 'needs_review').length
-                          return n > 0 ? <span className="badge review" title={`${n} run${n === 1 ? '' : 's'} waiting for review`}>{n}</span> : null
-                        })()}
+                        {awaitingReview > 0 && <span className="badge review" title={`${awaitingReview} run${awaitingReview === 1 ? '' : 's'} waiting for review`}>{awaitingReview}</span>}
                         <span className="when" title={last ? `Last run started ${new Date(last.startedAt).toLocaleString()}` : 'Never run'}>
                           {running ? compactTime(running.startedAt) : last ? compactTime(last.startedAt) : '—'}
                         </span>
