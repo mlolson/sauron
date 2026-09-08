@@ -99,16 +99,10 @@ function Entry({ entry }: { entry: TranscriptEntry }) {
   const time = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
   switch (entry.kind) {
     case 'user':
-      return (
-        <div className="entry user">
-          <div className="meta">You · {time}</div>
-          <div className="body">{entry.text}</div>
-        </div>
-      )
     case 'assistant':
       return (
-        <div className="entry assistant">
-          <div className="meta">Agent · {time}</div>
+        <div className={`entry ${entry.kind}`}>
+          <div className="meta">{entry.kind === 'user' ? 'You' : 'Agent'} · {time}</div>
           <div className="body">{entry.text}</div>
         </div>
       )
