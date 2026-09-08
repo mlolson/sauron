@@ -48,18 +48,22 @@ auto-merge. Agents that only read the repository can run in the main checkout in
 
 ![A background agent's page: its configuration and every run, with review actions](docs/screenshots/agent.png)
 
-### 5. Project summaries
+### 5. Every commit knows which session made it
 
-One built-in background agent rewrites a short status for each project after commits: what
-the project is, what changed recently, what is open or blocked. It lives in
-`<project>/.sauron/status.json`, kept out of git, where any agent working in the checkout can
-read it too. Come back to a project after a month and the sidebar tells you where you left off.
+A `post-commit` hook records which session was behind each commit, so an agent's work is
+never just "Matt Olson, 4d ago" in the log. Each session shows its last commit under its name
+in the sidebar. The Commits pane lists everything a session committed, with the diff, or
+switches to the whole project so you can see who did what across every agent and branch.
+It works for you too: commits you make by hand inside a Sauron terminal are attributed to that
+terminal. The hook only ever exits 0, so it cannot break a commit.
+
+![The Commits pane: one session's commits on the left, the selected diff on the right](docs/screenshots/commits.png)
 
 ## Also in the box
 
-- **Commit attribution.** A `post-commit` hook records which session made each commit. Every
-  session shows its last commit; the Commits pane shows its full history with diffs, or the
-  whole project's, filterable by branch.
+- **Project summaries.** A built-in background agent rewrites a short status for each project
+  after commits: what it is, what changed, what is open or blocked. It lives in
+  `<project>/.sauron/status.json`, kept out of git, where your other agents can read it too.
 - **Sessions you started elsewhere.** Claude and Codex sessions launched from a terminal show
   up under their project with a live transcript. Import one to bring it under Sauron.
 - **Worktrees.** Start a session in a fresh worktree on its own branch so parallel agents do
