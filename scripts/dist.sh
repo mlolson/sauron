@@ -30,4 +30,16 @@ fi
 scripts/make-icon.sh
 pnpm -s electron-vite build
 pnpm -s electron-builder --mac
+
+# electron-builder notarizes and staples the app. The DMG that wraps it is signed but not
+# notarized, so Gatekeeper's assessment of the disk image itself would still be "no usable
+# signature". Notarize and staple the DMG too, so both the container and its contents pass.
+if [ "${1:-}" != "--unsigned" ]; then
+  for dmg in dist/*.dmg; do
+    echo "Notarizing $dmg (this waits on Apple's queue)..."
+    xcrun notarytool submit "$dmg" --keychain-profile "$APPLE_KEYCHAIN_PROFILE" --wait
+    xcrun stapler staple "$dmg"
+    spctl -a -vv -t install "$dmg"
+  done
+fi
 ls -la dist/*.dmg dist/*.zip 2>/dev/null
