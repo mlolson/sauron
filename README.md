@@ -49,7 +49,7 @@ wait on the agent's page with a diff viewer and Merge, Open in a session, or Dis
 reaches your checkout without you looking at it first, unless you opt a specific agent into
 auto-merge. Agents that only read the repository can run in the main checkout instead.
 
-![A background agent's page: its configuration and every run, with review actions](docs/screenshots/agent.png)
+![Reviewing a background run: the agent's summary, its commits with diffs, and Merge / Open in session / Discard](docs/screenshots/agent.png)
 
 ### 5. Every commit knows which session made it
 
