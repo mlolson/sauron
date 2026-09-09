@@ -2,7 +2,7 @@
 
 <img src="build/icon.png" alt="Sauron" width="128" align="left" style="margin-right: 16px">
 
-A "super terminal" desktop app for running a lot of coding agents across a lot of projects, built on tmux.
+A "terminal development environment" for running a lot of coding agents across a lot of projects, built on tmux.
 
 <br clear="all">
 
