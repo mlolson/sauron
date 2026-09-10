@@ -20,7 +20,7 @@ one agent CLI such as `claude` or `codex` on your PATH.
 
 ![The project page: status summary, key documents, sessions, background agents](docs/screenshots/project.png)
 
-## Five things worth knowing
+## Six key points
 
 ### 1. It is tmux underneath
 
@@ -65,6 +65,10 @@ It works for you too: commits you make by hand inside a Sauron terminal are attr
 terminal. The hook only ever exits 0, so it cannot break a commit.
 
 ![The Commits pane: one session's commits on the left, the selected diff on the right](docs/screenshots/commits.png)
+
+### 6. 100% Free and Open Source
+
+No paid tier, no subscription, no credit card. Free to use and modify as you wish.
 
 ## Also in the box
 
