@@ -16,7 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "package": "scripts/make-icon.sh && electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
-    "postinstall": "electron-rebuild -f -w node-pty",
+    "postinstall": "(electron-rebuild -f -w node-pty || echo \"electron-rebuild failed; using node-pty prebuilds\") && scripts/fix-node-pty.sh",
     "dist": "scripts/dist.sh"
   },
   "build": {
